@@ -1,0 +1,29 @@
+/* Layout container */
+.layout-container[b-p4cfc5yo9t] {
+    display: flex;
+    min-height: 100vh;
+}
+
+.main-content[b-p4cfc5yo9t] {
+    flex: 1;
+    margin-left: 260px;
+    transition: margin-left 0.3s ease;
+    min-height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.main-content.sidebar-collapsed[b-p4cfc5yo9t] {
+    margin-left: 90px;
+}
+
+/* Mobile/Tablet - No left margin */
+@media (max-width: 1024px) {
+    .main-content[b-p4cfc5yo9t] {
+        margin-left: 0 !important;
+    }
+
+    .main-content.sidebar-collapsed[b-p4cfc5yo9t] {
+        margin-left: 0 !important;
+    }
+}

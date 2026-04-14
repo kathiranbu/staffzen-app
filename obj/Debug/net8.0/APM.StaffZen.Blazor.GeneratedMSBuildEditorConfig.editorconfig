@@ -1,0 +1,247 @@
+is_global = true
+build_property.TargetFramework = net8.0
+build_property.TargetFrameworkIdentifier = .NETCoreApp
+build_property.TargetFrameworkVersion = v8.0
+build_property.TargetPlatformMinVersion = 
+build_property.UsingMicrosoftNETSdkWeb = true
+build_property.ProjectTypeGuids = 
+build_property.InvariantGlobalization = 
+build_property.PlatformNeutralAssembly = 
+build_property.EnforceExtendedAnalyzerRules = 
+build_property._SupportedPlatformList = Linux,macOS,Windows
+build_property.RootNamespace = APM.StaffZen.Blazor
+build_property.RootNamespace = APM.StaffZen.Blazor
+build_property.ProjectDir = F:\AttendanceLocation\APM-StaffZen.Blazor\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.RazorLangVersion = 8.0
+build_property.SupportLocalizedComponentNames = 
+build_property.GenerateRazorMetadataSourceChecksumAttributes = 
+build_property.MSBuildProjectDirectory = F:\AttendanceLocation\APM-StaffZen.Blazor
+build_property._RazorSourceGeneratorDebug = 
+build_property.EffectiveAnalysisLevelStyle = 8.0
+build_property.EnableCodeStyleSeverity = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/App.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xBcHAucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Layout/EmptyLayout.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcRW1wdHlMYXlvdXQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Layout/ReconnectModal.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcUmVjb25uZWN0TW9kYWwucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Admin.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBZG1pbi5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Attendance/AttendanceDashboard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBdHRlbmRhbmNlXEF0dGVuZGFuY2VEYXNoYm9hcmQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Attendance/MyAttendance.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBdHRlbmRhbmNlXE15QXR0ZW5kYW5jZS5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Dashboard/Components/ActivitiesCard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xEYXNoYm9hcmRcQ29tcG9uZW50c1xBY3Rpdml0aWVzQ2FyZC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Dashboard/Components/GreetingCard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xEYXNoYm9hcmRcQ29tcG9uZW50c1xHcmVldGluZ0NhcmQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Dashboard/Components/Holidaycard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xEYXNoYm9hcmRcQ29tcG9uZW50c1xIb2xpZGF5Y2FyZC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Dashboard/Components/LocationsCard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xEYXNoYm9hcmRcQ29tcG9uZW50c1xMb2NhdGlvbnNDYXJkLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Dashboard/Components/ProjectsCard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xEYXNoYm9hcmRcQ29tcG9uZW50c1xQcm9qZWN0c0NhcmQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Dashboard/Components/RightPanel.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xEYXNoYm9hcmRcQ29tcG9uZW50c1xSaWdodFBhbmVsLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Dashboard/Components/Trackedhours.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xEYXNoYm9hcmRcQ29tcG9uZW50c1xUcmFja2VkaG91cnMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Dashboard/TimesheetApprovalDetail.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xEYXNoYm9hcmRcVGltZXNoZWV0QXBwcm92YWxEZXRhaWwucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Dashboard/Timesheets.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xEYXNoYm9hcmRcVGltZXNoZWV0cy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/GettingStarted/AdminGetStarted.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xHZXR0aW5nU3RhcnRlZFxBZG1pbkdldFN0YXJ0ZWQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/GettingStarted/GsDevicesForm.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xHZXR0aW5nU3RhcnRlZFxHc0RldmljZXNGb3JtLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/GettingStarted/GsOrgForm.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xHZXR0aW5nU3RhcnRlZFxHc09yZ0Zvcm0ucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Kiosk/FaceClockIn.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xLaW9za1xGYWNlQ2xvY2tJbi5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Locations/LiveLocations.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2NhdGlvbnNcTGl2ZUxvY2F0aW9ucy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Locations/Locations.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2NhdGlvbnNcTG9jYXRpb25zLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/AccountExistsModal.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXEFjY291bnRFeGlzdHNNb2RhbC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/GettingStarted.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXEdldHRpbmdTdGFydGVkLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/GoogleSuccess.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXEdvb2dsZVN1Y2Nlc3MucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/LoginForm.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXExvZ2luRm9ybS5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/LoginLeftPanel.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXExvZ2luTGVmdFBhbmVsLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/LoginSocialButtons.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXExvZ2luU29jaWFsQnV0dG9ucy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/SignupForm.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXFNpZ251cEZvcm0ucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/SignupSocialButtons.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXFNpZ251cFNvY2lhbEJ1dHRvbnMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Organizations/OrganizationSettings.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xPcmdhbml6YXRpb25zXE9yZ2FuaXphdGlvblNldHRpbmdzLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Organizations/OrganizationSwitcher.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xPcmdhbml6YXRpb25zXE9yZ2FuaXphdGlvblN3aXRjaGVyLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/People/Components/EmployeeOnboarding.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xQZW9wbGVcQ29tcG9uZW50c1xFbXBsb3llZU9uYm9hcmRpbmcucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/People/Components/InviteMember.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xQZW9wbGVcQ29tcG9uZW50c1xJbnZpdGVNZW1iZXIucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/People/Components/SetPassword.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xQZW9wbGVcQ29tcG9uZW50c1xTZXRQYXNzd29yZC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/TimeOffPolicies.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xUaW1lT2ZmUG9saWNpZXMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/TimeOff/HolidaysTab.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xUaW1lT2ZmXEhvbGlkYXlzVGFiLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/TimeOff/TimeOff.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xUaW1lT2ZmXFRpbWVPZmYucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/TimeTracking.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xUaW1lVHJhY2tpbmcucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/WorkSchedules.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xXb3JrU2NoZWR1bGVzLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Routes.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xSb3V0ZXMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/_Imports.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xfSW1wb3J0cy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Layout/AppLayout.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcQXBwTGF5b3V0LnJhem9y
+build_metadata.AdditionalFiles.CssScope = b-p4cfc5yo9t
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Layout/Sidebar.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcU2lkZWJhci5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = b-yqaa495vqi
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Approval.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBcHByb3ZhbC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = b-kk2vkgmc30
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Dashboard/Dashboard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xEYXNoYm9hcmRcRGFzaGJvYXJkLnJhem9y
+build_metadata.AdditionalFiles.CssScope = b-ahic0hnn6c
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/ForgotPassword.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXEZvcmdvdFBhc3N3b3JkLnJhem9y
+build_metadata.AdditionalFiles.CssScope = b-ze152gucxw
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/ForgotPasswordSent.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXEZvcmdvdFBhc3N3b3JkU2VudC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = b-y5e4foh5iz
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Components/ResetPassword.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxDb21wb25lbnRzXFJlc2V0UGFzc3dvcmQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = b-bhqte48y3k
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/Login/Login.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xMb2dpblxMb2dpbi5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = b-ckgfo6qji6
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/People/Groups.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xQZW9wbGVcR3JvdXBzLnJhem9y
+build_metadata.AdditionalFiles.CssScope = b-2lsctxn0fu
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/People/People.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xQZW9wbGVcUGVvcGxlLnJhem9y
+build_metadata.AdditionalFiles.CssScope = b-qmyojkqm1k
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Pages/UserProfile/AccountSettings.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xVc2VyUHJvZmlsZVxBY2NvdW50U2V0dGluZ3MucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = b-0qjk0dn2ws
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Shared/AddMembersModal.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xTaGFyZWRcQWRkTWVtYmVyc01vZGFsLnJhem9y
+build_metadata.AdditionalFiles.CssScope = b-f0zfzmlkep
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Shared/BasePage.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xTaGFyZWRcQmFzZVBhZ2UucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = b-84q874zdib
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Shared/Card.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xTaGFyZWRcQ2FyZC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = b-pwn7niangq
+
+[F:/AttendanceLocation/APM-StaffZen.Blazor/Components/Shared/ViewProfilePanel.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xTaGFyZWRcVmlld1Byb2ZpbGVQYW5lbC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = b-lxz42lnis6

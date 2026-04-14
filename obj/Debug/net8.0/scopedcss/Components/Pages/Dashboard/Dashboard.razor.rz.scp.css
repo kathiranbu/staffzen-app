@@ -1,0 +1,469 @@
+
+.dashboard-wrapper[b-ahic0hnn6c] {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 60px);
+    overflow: hidden;
+}
+
+.dashboard-header[b-ahic0hnn6c] {
+    flex-shrink: 0;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    z-index: 100;
+}
+
+/* ── Admin/TL/HR: content area is fixed height, no outer scroll ── */
+.dashboard-content[b-ahic0hnn6c] {
+    flex: 1;
+    overflow: hidden;
+    background: #f9fafb;
+    min-height: 0;
+}
+
+/* Container inside content — admin: fixed height; user-mode overridden below */
+.dashboard-content > .container-fluid[b-ahic0hnn6c] {
+    height: 100%;
+    overflow: hidden;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+/* User mode: let container grow naturally so dash-user-mode can scroll it */
+.dashboard-content.dash-user-mode > .container-fluid[b-ahic0hnn6c] {
+    height: auto;
+    overflow: visible;
+    min-height: 100%;
+}
+
+/* ── Admin two-col row: full height, no wrap ── */
+.dash-two-col-row[b-ahic0hnn6c] {
+    height: 100%;
+    overflow: hidden;
+    flex-wrap: nowrap !important;
+    align-items: stretch;
+}
+
+/* ── Left column: scrolls independently ── */
+.dash-left-scroll[b-ahic0hnn6c] {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}
+
+.dash-left-scroll[b-ahic0hnn6c]::-webkit-scrollbar { width: 5px; }
+.dash-left-scroll[b-ahic0hnn6c]::-webkit-scrollbar-track { background: transparent; }
+.dash-left-scroll[b-ahic0hnn6c]::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.dash-left-scroll[b-ahic0hnn6c]::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Right column: scrolls independently ── */
+.dash-right-scroll[b-ahic0hnn6c] {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}
+
+.dash-right-scroll[b-ahic0hnn6c]::-webkit-scrollbar { width: 5px; }
+.dash-right-scroll[b-ahic0hnn6c]::-webkit-scrollbar-track { background: transparent; }
+.dash-right-scroll[b-ahic0hnn6c]::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.dash-right-scroll[b-ahic0hnn6c]::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── User role: single col, outer content scrolls ── */
+.dashboard-content.dash-user-mode[b-ahic0hnn6c] {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Legacy classes kept for any remaining references */
+.dashboard-left-col[b-ahic0hnn6c] {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}
+
+.dashboard-left-col[b-ahic0hnn6c]::-webkit-scrollbar {
+    width: 5px;
+}
+
+.dashboard-left-col[b-ahic0hnn6c]::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.dashboard-left-col[b-ahic0hnn6c]::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+.dashboard-left-col[b-ahic0hnn6c]::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Right column — fixed height, no scroll (RightPanel manages its own list scroll) */
+.dashboard-right-col[b-ahic0hnn6c] {
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Legacy — no longer used for scrolling */
+.dashboard-left-panel[b-ahic0hnn6c] {
+    height: auto;
+    overflow: visible;
+}
+
+.dashboard-tabs[b-ahic0hnn6c] {
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 0 20px;
+    height: 48px;
+    font-weight: 600;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.tabs-left[b-ahic0hnn6c] {
+    display: flex;
+    gap: 4px;
+    align-items: stretch;
+}
+
+.tabs-right[b-ahic0hnn6c] {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.tab[b-ahic0hnn6c] {
+    color: #9ca3af;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 0 14px 0 14px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    position: relative;
+    transition: color 0.15s;
+    white-space: nowrap;
+    border-bottom: 3px solid transparent;
+    line-height: 1;
+    padding-bottom: 2px;
+}
+
+.tab:hover[b-ahic0hnn6c] {
+    color: #374151;
+}
+
+.tab.active[b-ahic0hnn6c] {
+    color: #ff7a00;
+    font-weight: 600;
+    border-bottom: 3px solid #ff7a00;
+}
+
+.tab-pill[b-ahic0hnn6c] {
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    border: 1.5px solid transparent;
+    background: transparent;
+    line-height: 1.4;
+}
+
+.tab-pill:hover[b-ahic0hnn6c] {
+    color: #374151;
+    border-color: #d1d5db;
+}
+
+.tab-pill.active[b-ahic0hnn6c] {
+    color: #ff7a00;
+    border-color: #ff7a00;
+    background: transparent;
+    font-weight: 600;
+}
+
+.dashboard-filters[b-ahic0hnn6c] {
+    display: flex;
+    gap: 40px;
+    padding: 15px 20px;
+    border-bottom: 1px solid #e5e5e5;
+    font-weight: 500;
+    font-size: 14px;
+    flex-wrap: wrap;
+    color: #374151;
+}
+
+.filter-item[b-ahic0hnn6c] {
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.filter-item:hover[b-ahic0hnn6c] {
+    color: #ff7a00;
+}
+
+.filter-item--active[b-ahic0hnn6c] {
+    color: #ff7a00;
+    font-weight: 600;
+}
+
+/* Group filter dropdown */
+.filter-group-wrap[b-ahic0hnn6c] {
+    position: relative;
+}
+
+.filter-group-dropdown[b-ahic0hnn6c] {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    min-width: 180px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    z-index: 200;
+    overflow: hidden;
+    animation: fgd-in .12s ease;
+}
+
+@@keyframes fgd-in {
+    from[b-ahic0hnn6c] { opacity: 0; transform: translateY(-4px); }
+    to[b-ahic0hnn6c]   { opacity: 1; transform: translateY(0); }
+}
+
+.fgd-item[b-ahic0hnn6c] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    cursor: pointer;
+    transition: background .12s;
+}
+
+.fgd-item:hover[b-ahic0hnn6c] {
+    background: #f9fafb;
+}
+
+.fgd-item--sel[b-ahic0hnn6c] {
+    color: #ff7a00;
+    font-weight: 600;
+}
+
+.fgd-item--sel i[b-ahic0hnn6c] {
+    font-size: 14px;
+    color: #ff7a00;
+}
+
+.filter-group-backdrop[b-ahic0hnn6c] {
+    position: fixed;
+    inset: 0;
+    z-index: 199;
+}
+
+.configure-widgets[b-ahic0hnn6c] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    color: #6b7280;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.2s;
+    margin-top: 20px;
+}
+
+.configure-widgets:hover[b-ahic0hnn6c] {
+    color: #ff7a00;
+}
+
+.configure-widgets i[b-ahic0hnn6c] {
+    font-size: 16px;
+}
+
+/* Responsive adjustments for large tablets */
+@media (max-width: 1199px) {
+    .dashboard-tabs[b-ahic0hnn6c] {
+        padding: 0 18px;
+        height: 46px;
+        gap: 10px;
+    }
+
+    .tabs-left[b-ahic0hnn6c] {
+        gap: 2px;
+    }
+
+    .dashboard-filters[b-ahic0hnn6c] {
+        gap: 30px;
+        padding: 14px 18px;
+        font-size: 13.5px;
+    }
+}
+
+/* Responsive adjustments for tablets */
+@media (max-width: 991px) {
+    .dashboard-tabs[b-ahic0hnn6c] {
+        padding: 0 16px;
+        height: 44px;
+        gap: 10px;
+    }
+
+    .tab[b-ahic0hnn6c] {
+        font-size: 14px;
+        padding: 0 10px;
+        padding-bottom: 2px;
+    }
+
+    .tabs-left[b-ahic0hnn6c] {
+        gap: 2px;
+    }
+
+    .dashboard-filters[b-ahic0hnn6c] {
+        gap: 25px;
+        padding: 13px 16px;
+        font-size: 13px;
+    }
+}
+
+/* Responsive adjustments for small tablets and large phones */
+@media (max-width: 768px) {
+    .dashboard-tabs[b-ahic0hnn6c] {
+        flex-direction: column;
+        align-items: stretch;
+        height: auto;
+        gap: 0;
+        padding: 0;
+    }
+
+    /* Row 1: Day / Week / Month — full width, bordered */
+    .tabs-left[b-ahic0hnn6c] {
+        display: flex;
+        gap: 0;
+        justify-content: flex-start;
+        height: 44px;
+        padding: 0 16px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .tab[b-ahic0hnn6c] {
+        font-size: 13.5px;
+        padding: 0 14px;
+        padding-bottom: 2px;
+    }
+
+    /* Row 2: Organization / Managed by me / Personal pills */
+    .tabs-right[b-ahic0hnn6c] {
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+    }
+
+    .tabs-right[b-ahic0hnn6c]::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tab-pill[b-ahic0hnn6c] {
+        padding: 5px 12px;
+        font-size: 12px;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .dashboard-filters[b-ahic0hnn6c] {
+        padding: 10px 16px;
+        gap: 18px;
+        font-size: 12.5px;
+    }
+}
+
+/* Responsive adjustments for mobile phones */
+@media (max-width: 576px) {
+    .tabs-left[b-ahic0hnn6c] {
+        padding: 0 12px;
+        height: 42px;
+    }
+
+    .tab[b-ahic0hnn6c] {
+        font-size: 13px;
+        padding: 0 12px;
+        padding-bottom: 2px;
+    }
+
+    .tab.active[b-ahic0hnn6c] {
+        border-bottom: 3px solid #ff7a00;
+    }
+
+    .tabs-right[b-ahic0hnn6c] {
+        padding: 7px 12px;
+        gap: 6px;
+    }
+
+    .tab-pill[b-ahic0hnn6c] {
+        padding: 4px 11px;
+        font-size: 11.5px;
+        border-radius: 16px;
+    }
+
+    .dashboard-filters[b-ahic0hnn6c] {
+        gap: 14px;
+        padding: 10px 12px;
+        font-size: 12px;
+    }
+
+    .configure-widgets[b-ahic0hnn6c] {
+        font-size: 13px;
+        padding: 12px;
+    }
+}
+
+/* Responsive adjustments for small mobile phones */
+@media (max-width: 400px) {
+    .tabs-left[b-ahic0hnn6c] {
+        padding: 0 10px;
+    }
+
+    .tab[b-ahic0hnn6c] {
+        font-size: 12px;
+        padding: 0 10px;
+        padding-bottom: 2px;
+    }
+
+    .tabs-right[b-ahic0hnn6c] {
+        padding: 6px 10px;
+        gap: 5px;
+    }
+
+    .tab-pill[b-ahic0hnn6c] {
+        padding: 4px 10px;
+        font-size: 11px;
+    }
+
+    .dashboard-filters[b-ahic0hnn6c] {
+        gap: 10px;
+        padding: 10px 10px;
+        font-size: 11px;
+    }
+}

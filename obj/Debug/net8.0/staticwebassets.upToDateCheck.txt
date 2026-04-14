@@ -1,0 +1,9 @@
+wwwroot\app.css
+wwwroot\css\timeoff.css
+wwwroot\favicon.png
+wwwroot\firebase-messaging-sw.js
+wwwroot\Images\Dashboard\greeting-illustration.png
+wwwroot\Images\Login\Jibble1.png
+wwwroot\js\faceRecognition.js
+wwwroot\js\firebase-push.js
+wwwroot\js\maps.js
