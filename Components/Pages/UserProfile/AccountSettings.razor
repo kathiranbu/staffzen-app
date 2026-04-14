@@ -1,0 +1,1250 @@
+@page "/account-settings"
+@inject SessionService SessionService
+@inject ProfileService ProfileService
+@inject NavigationManager NavManager
+@inject AuthService AuthService
+@inject NotificationSettingsService NotifService
+@inject IJSRuntime JS
+@inject IHttpClientFactory HttpClientFactory
+@implements IDisposable
+@rendermode RenderMode.InteractiveServer
+
+<BasePage Title="Your Account">
+
+    <div class="container-fluid p-0 min-vh-100" style="background: #f5f6f8;">
+        <div class="row g-0">
+            <div class="col-12">
+                <div class="px-4 py-3">
+                    <div class="row g-3">
+
+                        <!-- Left: Avatar Card -->
+                        <div class="col-12 col-lg-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body text-center p-4">
+                                    <div class="position-relative d-inline-block mb-3">
+                                        <div class="rounded-circle bg-secondary bg-opacity-10 d-flex align-items-center justify-content-center mx-auto"
+                                             style="width: 110px; height: 110px;">
+                                            @if (!string.IsNullOrEmpty(profile?.ProfileImageUrl))
+                                            {
+                                                <img src="@profile.ProfileImageUrl" class="rounded-circle w-100 h-100" style="object-fit: cover;" alt="Profile" />
+                                            }
+                                            else
+                                            {
+                                                <span class="fs-1 text-secondary fw-semibold">@GetInitial()</span>
+                                            }
+                                        </div>
+                                        <div class="position-absolute rounded-circle bg-warning d-flex align-items-center justify-content-center"
+                                             style="width: 30px; height: 30px; bottom: 0; right: 0; border: 3px solid white;">
+                                            <i class="bi bi-pencil-fill text-white" style="font-size: 11px;"></i>
+                                        </div>
+                                    </div>
+                                    <h5 class="fw-bold mb-1">@(profile?.FullName ?? SessionService.FullName ?? "User")</h5>
+                                    <p class="text-muted small mb-0">Member</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Settings Cards -->
+                        <div class="col-12 col-lg-9">
+
+                            <!-- YOUR DETAILS -->
+                            <div class="card border-0 shadow-sm mb-3">
+                                <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+                                    <h6 class="text-uppercase text-muted fw-bold mb-0" style="font-size: 11px; letter-spacing: 0.5px;">YOUR DETAILS</h6>
+                                    @if (editSection != "details")
+                                    {
+                                        <button class="btn btn-sm btn-light p-0 d-flex align-items-center justify-content-center"
+                                                style="width: 32px; height: 32px; border-radius: 6px;"
+                                                @onclick='() => ToggleEdit("details")'>
+                                            <i class="bi bi-pencil" style="font-size: 14px;"></i>
+                                        </button>
+                                    }
+                                </div>
+                                <div class="card-body p-4">
+                                    @if (editSection == "details")
+                                    {
+                                        <div class="row mb-3">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Full name</label>
+                                            <div class="col-sm-8"><input class="form-control" @bind="editFullName" /></div>
+                                        </div>
+                                        <div class="row mb-4">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Preferred name</label>
+                                            <div class="col-sm-8"><input class="form-control" @bind="editPreferredName" /></div>
+                                        </div>
+                                        <div class="d-flex justify-content-end gap-2">
+                                            <button class="btn btn-light px-4" @onclick="CancelEdit">Cancel</button>
+                                            <button class="btn text-white px-4" style="background-color: #ff6b35;" @onclick="SaveDetails" disabled="@isSaving">Save</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="row py-3 border-bottom align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Full name</div>
+                                            <div class="col-sm-8 fw-medium">@(profile?.FullName ?? "—")</div>
+                                        </div>
+                                        <div class="row py-3 align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Preferred name</div>
+                                            <div class="col-sm-8 fw-medium">@(profile?.FullName ?? "—")</div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- LOGIN & SECURITY -->
+                            <div class="card border-0 shadow-sm mb-3">
+                                <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+                                    <h6 class="text-uppercase text-muted fw-bold mb-0" style="font-size: 11px; letter-spacing: 0.5px;">LOGIN & SECURITY</h6>
+                                    @if (editSection != "security")
+                                    {
+                                        <button class="btn btn-sm btn-light p-0 d-flex align-items-center justify-content-center"
+                                                style="width: 32px; height: 32px; border-radius: 6px;"
+                                                @onclick='() => ToggleEdit("security")'>
+                                            <i class="bi bi-pencil" style="font-size: 14px;"></i>
+                                        </button>
+                                    }
+                                </div>
+                                <div class="card-body p-4">
+                                    @if (editSection == "security")
+                                    {
+                                        <div class="row mb-3">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Email</label>
+                                            <div class="col-sm-8">
+                                                <input class="form-control" value="@(profile?.Email ?? SessionService.Email)" disabled />
+                                            </div>
+                                        </div>
+                                        <div class="row mb-3">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Phone Number</label>
+                                            <div class="col-sm-8">
+                                                <div class="input-group">
+                                                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" style="width: 80px;">&#x1F1EE;&#x1F1F3; +91</button>
+                                                    <input class="form-control" @bind="editPhone" placeholder="7010352422" />
+                                                </div>
+                                                <small class="text-muted d-block mt-1">By providing your phone number you agree to receive text messages about your account.</small>
+                                            </div>
+                                        </div>
+                                        <div class="row mb-2">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Password</label>
+                                            <div class="col-sm-8">
+                                                <div class="d-flex align-items-center" style="margin-top:7px;">
+                                                    <span class="me-3">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</span>
+                                                    <button class="btn btn-link p-0 text-decoration-none small fw-semibold" style="color:#ff6b35;" @onclick="OpenChangePasswordModal">Change password</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row mb-3">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Kiosk PIN</label>
+                                            <div class="col-sm-8">
+                                                <div class="d-flex align-items-center" style="margin-top:7px;">
+                                                    <span class="me-3">&#x2022;&#x2022;&#x2022;&#x2022;</span>
+                                                    <a href="#" class="text-warning text-decoration-none small fw-semibold">Change PIN</a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row mb-4">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Two-factor authentication</label>
+                                            <div class="col-sm-8">
+                                                <div class="d-flex align-items-center" style="margin-top:7px;">
+                                                    <span class="badge bg-danger me-3">Disabled</span>
+                                                    <a href="#" class="text-warning text-decoration-none small fw-semibold">Enable</a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex justify-content-end gap-2">
+                                            <button class="btn btn-light px-4" @onclick="CancelEdit">Cancel</button>
+                                            <button class="btn text-white px-4" style="background-color: #ff6b35;" @onclick="SaveSecurity" disabled="@isSaving">Save</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="row py-3 border-bottom align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Email</div>
+                                            <div class="col-sm-8 fw-medium">@(profile?.Email ?? SessionService.Email ?? "—")</div>
+                                        </div>
+                                        <div class="row py-3 border-bottom align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Phone Number</div>
+                                            <div class="col-sm-8 fw-medium">@(profile?.MobileNumber ?? "—")</div>
+                                        </div>
+                                        <div class="row py-3 border-bottom align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Password</div>
+                                            <div class="col-sm-8 fw-medium">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</div>
+                                        </div>
+                                        <div class="row py-3 border-bottom align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Kiosk PIN</div>
+                                            <div class="col-sm-8 fw-medium">&#x2022;&#x2022;&#x2022;&#x2022;</div>
+                                        </div>
+                                        <div class="row py-3 align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Two-factor authentication</div>
+                                            <div class="col-sm-8"><span class="badge bg-danger">Disabled</span></div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- LANGUAGE -->
+                            <div class="card border-0 shadow-sm mb-3">
+                                <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+                                    <h6 class="text-uppercase text-muted fw-bold mb-0 d-flex align-items-center gap-1" style="font-size: 11px; letter-spacing: 0.5px;">
+                                        LANGUAGE <i class="bi bi-info-circle" style="font-size: 13px;"></i>
+                                    </h6>
+                                    @if (editSection != "language")
+                                    {
+                                        <button class="btn btn-sm btn-light p-0 d-flex align-items-center justify-content-center"
+                                                style="width: 32px; height: 32px; border-radius: 6px;"
+                                                @onclick='() => ToggleEdit("language")'>
+                                            <i class="bi bi-pencil" style="font-size: 14px;"></i>
+                                        </button>
+                                    }
+                                </div>
+                                <div class="card-body p-4">
+                                    @if (editSection == "language")
+                                    {
+                                        <div class="row mb-4">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Language</label>
+                                            <div class="col-sm-8">
+                                                <select class="form-select" @bind="selectedLanguage">
+                                                    <option value="English">English</option>
+                                                    <option value="Spanish">Spanish</option>
+                                                    <option value="French">French</option>
+                                                    <option value="German">German</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex justify-content-end gap-2">
+                                            <button class="btn btn-light px-4" @onclick="CancelEdit">Cancel</button>
+                                            <button class="btn text-white px-4" style="background-color: #ff6b35;">Save</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="row py-2 align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Language</div>
+                                            <div class="col-sm-8 fw-medium">@selectedLanguage</div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- DATE & TIME -->
+                            <div class="card border-0 shadow-sm mb-3">
+                                <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+                                    <h6 class="text-uppercase text-muted fw-bold mb-0 d-flex align-items-center gap-1" style="font-size: 11px; letter-spacing: 0.5px;">
+                                        DATE & TIME <i class="bi bi-info-circle" style="font-size: 13px;"></i>
+                                    </h6>
+                                    @if (editSection != "datetime")
+                                    {
+                                        <button class="btn btn-sm btn-light p-0 d-flex align-items-center justify-content-center"
+                                                style="width: 32px; height: 32px; border-radius: 6px;"
+                                                @onclick='() => ToggleEdit("datetime")'>
+                                            <i class="bi bi-pencil" style="font-size: 14px;"></i>
+                                        </button>
+                                    }
+                                </div>
+                                <div class="card-body p-4">
+                                    @if (editSection == "datetime")
+                                    {
+                                        <div class="row mb-3">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Timezone</label>
+                                            <div class="col-sm-8">
+                                                <select class="form-select" @bind="selectedTimezone">
+                                                    <option value="Asia/Calcutta (GMT+5:30)">Asia/Calcutta (GMT+5:30)</option>
+                                                    <option value="America/New_York (GMT-5:00)">America/New_York (GMT-5:00)</option>
+                                                    <option value="Europe/London (GMT+0:00)">Europe/London (GMT+0:00)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="row mb-3">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Duration format</label>
+                                            <div class="col-sm-8">
+                                                <select class="form-select" @bind="selectedDurationFormat">
+                                                    <option value="XXh YYm (2h 3m)">XXh YYm (2h 3m)</option>
+                                                    <option value="XX:YY (2:03)">XX:YY (2:03)</option>
+                                                    <option value="Decimal (2.05)">Decimal (2.05)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="row mb-3">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Time format</label>
+                                            <div class="col-sm-8">
+                                                <select class="form-select" @bind="selectedTimeFormat">
+                                                    <option value="12-hour clock (am/pm) (09:30 pm)">12-hour clock (am/pm) (09:30 pm)</option>
+                                                    <option value="24-hour clock (21:30)">24-hour clock (21:30)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="row mb-4">
+                                            <label class="col-sm-4 col-form-label text-end text-muted small">Geofence Radius</label>
+                                            <div class="col-sm-8">
+                                                <select class="form-select" @bind="selectedGeofence">
+                                                    <option value="Meters">Meters</option>
+                                                    <option value="Feet">Feet</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex justify-content-end gap-2">
+                                            <button class="btn btn-light px-4" @onclick="CancelEdit">Cancel</button>
+                                            <button class="btn text-white px-4" style="background-color: #ff6b35;">Save</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="row py-2 border-bottom align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Timezone</div>
+                                            <div class="col-sm-8 fw-medium small">@selectedTimezone</div>
+                                        </div>
+                                        <div class="row py-2 border-bottom align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Duration format</div>
+                                            <div class="col-sm-8 fw-medium small">@selectedDurationFormat</div>
+                                        </div>
+                                        <div class="row py-2 border-bottom align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Time format</div>
+                                            <div class="col-sm-8 fw-medium small">@selectedTimeFormat</div>
+                                        </div>
+                                        <div class="row py-2 align-items-center">
+                                            <div class="col-sm-4 text-sm-end text-muted small">Geofence Radius</div>
+                                            <div class="col-sm-8 fw-medium small">@selectedGeofence</div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- NOTIFICATIONS (fully dynamic) -->
+                            <!-- ... Keep your existing NOTIFICATIONS and SUBSCRIPTIONS cards unchanged ... -->
+
+                            <!-- ═══════════════════════════════════════════════ -->
+                            <!-- FACE DATA — fully wired up                     -->
+                            <!-- ═══════════════════════════════════════════════ -->
+                            <div class="card border-0 shadow-sm mb-3">
+                                <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+                                    <h6 class="text-uppercase text-muted fw-bold mb-0" style="font-size: 11px; letter-spacing: 0.5px;">FACE DATA</h6>
+                                    <button class="btn btn-sm btn-light p-0 d-flex align-items-center justify-content-center"
+                                            style="width: 32px; height: 32px; border-radius: 6px;"
+                                            title="Face data is used for facial recognition clock-in">
+                                        <i class="bi bi-info-circle" style="font-size: 14px;"></i>
+                                    </button>
+                                </div>
+                                <div class="card-body p-4">
+
+                                    @if (faceDataLoading)
+                                    {
+                                        <div class="text-center py-3 text-muted small">
+                                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                            Loading face data status...
+                                        </div>
+                                    }
+                                    else if (!showFaceCamera)
+                                    {
+                                        <!-- ── Status view ── -->
+                                        @if (hasFaceData)
+                                        {
+                                            <!-- Enrolled face photo + status -->
+                                            <div class="face-enrolled-card mb-3">
+                                                <div class="d-flex align-items-center gap-3">
+                                                    @if (!string.IsNullOrEmpty(enrollPhotoUrl))
+                                                    {
+                                                        <div class="position-relative" style="width:72px;height:72px;flex-shrink:0;">
+                                                            <img src="@enrollPhotoUrl" alt="Enrolled face"
+                                                                 class="rounded-circle border border-success"
+                                                                 style="width:72px;height:72px;object-fit:cover;cursor:pointer;"
+                                                                 @onclick="() => showEnrolledPhoto = true"
+                                                                 title="Click to view full photo" />
+                                                            <span class="position-absolute bottom-0 end-0 bg-success rounded-circle d-flex align-items-center justify-content-center"
+                                                                  style="width:22px;height:22px;">
+                                                                <i class="bi bi-check text-white" style="font-size:11px;"></i>
+                                                            </span>
+                                                        </div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="rounded-circle bg-success d-flex align-items-center justify-content-center"
+                                                             style="width:72px;height:72px;flex-shrink:0;">
+                                                            <i class="bi bi-person-fill text-white" style="font-size:28px;"></i>
+                                                        </div>
+                                                    }
+                                                    <div>
+                                                        <span class="badge bg-success px-3 py-2 mb-1 d-inline-flex align-items-center gap-1">
+                                                            <i class="bi bi-check-circle-fill"></i> Face data enrolled
+                                                        </span>
+                                                        <div class="text-muted small mb-1">Facial recognition clock-in is active.</div>
+                                                        @if (!string.IsNullOrEmpty(enrollPhotoUrl))
+                                                        {
+                                                            <button class="btn btn-link btn-sm p-0 text-decoration-none" style="font-size:12px; color:#ff7a00;"
+                                                                    @onclick="() => showEnrolledPhoto = true">
+                                                                <i class="bi bi-eye me-1"></i> View enrolled photo
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Action buttons -->
+                                            <div class="d-flex gap-2 flex-wrap">
+                                                <button class="btn btn-sm btn-outline-secondary" @onclick="StartFaceEnrollment" disabled="@isLoadingModels">
+                                                    @if (isLoadingModels)
+                                                    {
+                                                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                                        <span>Loading models...</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <i class="bi bi-camera me-1"></i>
+                                                        <span>Re-enroll face</span>
+                                                    }
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="DeleteFaceData" disabled="@isDeletingFace">
+                                                    @if (isDeletingFace)
+                                                    {
+                                                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                                        <span>Deleting...</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <i class="bi bi-trash me-1"></i>
+                                                        <span>Delete face data</span>
+                                                    }
+                                                </button>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <p class="text-muted mb-3">
+                                                No face data enrolled. Enroll your face so you can clock in using facial recognition on a shared kiosk device.
+                                            </p>
+                                            <button class="btn btn-outline-primary" @onclick="StartFaceEnrollment" disabled="@isLoadingModels">
+                                                @if (isLoadingModels)
+                                                {
+                                                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                                    <span>Loading models...</span>
+                                                }
+                                                else
+                                                {
+                                                    <i class="bi bi-camera me-1"></i>
+                                                    <span>Enroll face</span>
+                                                }
+                                            </button>
+                                        }
+
+                                        <!-- Feedback messages -->
+                                        @if (!string.IsNullOrEmpty(faceMessage))
+                                        {
+                                            <div class="alert @faceMessageClass mt-3 py-2 small">
+                                                <i class="bi @faceMessageIcon me-1"></i> @faceMessage
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <!-- ── Camera / capture view ── -->
+                                        <div class="face-enroll-wrap">
+
+                                            <!-- Status chip -->
+                                            <div class="face-status-chip @(enrollProgressPct >= 100 ? "face-chip--success" : enrollProgressPct > 0 ? "face-chip--scanning" : "face-chip--idle")">
+                                                @if (isCapturingFace)
+                                                {
+                                                    <span class="face-chip-dot face-chip-dot--pulse"></span>
+                                                    <span>Saving...</span>
+                                                }
+                                                else if (enrollProgressPct >= 100)
+                                                {
+                                                    <i class="bi bi-check-circle-fill"></i>
+                                                    <span>Captured!</span>
+                                                }
+                                                else if (enrollProgressPct > 0)
+                                                {
+                                                    <span class="face-chip-dot face-chip-dot--pulse"></span>
+                                                    <span>@enrollProgressPct% — Hold still</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="face-chip-dot"></span>
+                                                    <span>Position your face</span>
+                                                }
+                                            </div>
+
+                                            <!-- Video + canvas overlay -->
+                                            <div class="face-video-container">
+                                                <video id="faceEnrollVideo" autoplay muted playsinline class="face-video-el"></video>
+                                                <canvas id="faceEnrollCanvas" class="face-canvas-overlay"></canvas>
+
+                                                <!-- Progress ring overlay (pure CSS, behind canvas) -->
+                                                @if (enrollProgressPct > 0 && enrollProgressPct < 100)
+                                                {
+                                                    <div class="face-pct-badge">@enrollProgressPct%</div>
+                                                }
+                                            </div>
+
+                                            <!-- Simple progress bar -->
+                                            <div class="face-progress-track">
+                                                <div class="face-progress-fill" style="width:@(enrollProgressPct)%;"></div>
+                                            </div>
+
+                                            <!-- Bottom row -->
+                                            <div class="face-enroll-footer">
+                                                <span class="face-hint">
+                                                    @if (isCapturingFace)
+                                                    { <span>Saving face data, please wait...</span> }
+                                                    else if (enrollProgressPct > 60)
+                                                    { <span>Almost done — keep still</span> }
+                                                    else if (enrollProgressPct > 0)
+                                                    { <span>Face detected — hold position</span> }
+                                                    else
+                                                    { <span>Look straight at the camera</span> }
+                                                </span>
+                                                <button class="face-cancel-btn" @onclick="CancelFaceCamera" disabled="@isCapturingFace">Cancel</button>
+                                            </div>
+
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <p class="text-center text-muted small mt-4 mb-4">Web Client v2.75.4.02255bf</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CHANGE PASSWORD MODAL -->
+    @* ── Enrolled Face Photo Lightbox ── *@
+    @if (showEnrolledPhoto && !string.IsNullOrEmpty(enrollPhotoUrl))
+    {
+        <div class="face-lightbox-backdrop" @onclick="() => showEnrolledPhoto = false">
+            <div class="face-lightbox" @onclick:stopPropagation>
+                <div class="face-lightbox-header">
+                    <span class="fw-semibold">Enrolled Face Photo</span>
+                    <button class="btn btn-sm btn-light" @onclick="() => showEnrolledPhoto = false">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="face-lightbox-body">
+                    <img src="@enrollPhotoUrl" alt="Enrolled face"
+                         style="max-width:100%; max-height:420px; border-radius:12px; object-fit:contain;" />
+                </div>
+                <div class="face-lightbox-footer text-muted small">
+                    <i class="bi bi-info-circle me-1"></i>
+                    This photo was captured during face data enrollment.
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (showChangePasswordModal)
+    {
+        <div class="cp-backdrop" @onclick="CloseChangePasswordModal"></div>
+        <div class="cp-modal">
+            <div class="cp-modal-header">
+                <h5 class="cp-modal-title">Change your password</h5>
+                <button class="cp-close-btn" @onclick="CloseChangePasswordModal">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="cp-modal-body">
+                <div class="cp-field-group">
+                    <label class="cp-label">Current password</label>
+                    <div class="cp-input-wrap">
+                        <input type="@cpCurrentType" class="cp-input" placeholder="Enter current password"
+                               autocomplete="new-password" @bind="cpCurrentPassword" @bind:event="oninput" />
+                        <button type="button" class="cp-eye" @onclick="ToggleCpCurrent">
+                            <i class="@CpEyeIcon(cpCurrentType)"></i>
+                        </button>
+                    </div>
+                    <a href="/forgot-password" class="cp-forgot-link">Forgot your password?</a>
+                </div>
+                <div class="cp-divider"><span>Enter your new password twice to confirm</span></div>
+                <div class="cp-field-group">
+                    <div class="cp-input-wrap">
+                        <input type="@cpNewType" class="@CpInputLockedClass()"
+                               placeholder="New password" autocomplete="new-password"
+                               disabled="@(!cpCurrentFilled)" @bind="cpNewPassword" @bind:event="oninput" />
+                        <button type="button" class="cp-eye" @onclick="ToggleCpNew" disabled="@(!cpCurrentFilled)">
+                            <i class="@CpEyeIcon(cpNewType)"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="cp-field-group">
+                    <div class="cp-input-wrap">
+                        <input type="@cpConfirmType"
+                               class="@CpConfirmInputClass()"
+                               placeholder="Confirm password" autocomplete="new-password"
+                               disabled="@(!cpCurrentFilled)" @bind="cpConfirmPassword" @bind:event="oninput" />
+                        <button type="button" class="cp-eye" @onclick="ToggleCpConfirm" disabled="@(!cpCurrentFilled)">
+                            <i class="@CpEyeIcon(cpConfirmType)"></i>
+                        </button>
+                    </div>
+                    @if (cpMismatch) { <p class="cp-error-text">Passwords do not match</p> }
+                    @if (cpMatch) { <p class="cp-success-text"><i class="bi bi-check-circle-fill" style="font-size:12px;"></i> Passwords match</p> }
+                </div>
+                @if (!string.IsNullOrEmpty(cpError))
+                {
+                    <div class="cp-alert cp-alert-error"><i class="bi bi-exclamation-circle-fill"></i> @cpError</div>
+                }
+                @if (cpPasswordChanged)
+                {
+                    <div class="cp-alert cp-alert-success"><i class="bi bi-check-circle-fill"></i> Password updated successfully!</div>
+                }
+            </div>
+            <div class="cp-modal-footer">
+                <button class="cp-btn cp-btn-cancel" @onclick="CloseChangePasswordModal">Cancel</button>
+                <button class="@CpConfirmBtnClass()"
+                        disabled="@(!cpCanSubmit || cpSaving)" @onclick="HandleChangePassword">
+                    @if (cpSaving) { <span class="cp-spinner"></span><span>Saving...</span> }
+                    else { <span>Confirm</span> }
+                </button>
+            </div>
+        </div>
+    }
+
+</BasePage>
+
+@code {
+    // Profile
+    private ProfileViewModel? profile;
+    private string editSection       = string.Empty;
+    private string editFullName      = string.Empty;
+    private string editPreferredName = string.Empty;
+    private string editPhone         = string.Empty;
+    private string selectedLanguage        = "English";
+    private string selectedTimezone        = "Asia/Calcutta (GMT+5:30)";
+    private string selectedDurationFormat  = "XXh YYm (2h 3m)";
+    private string selectedTimeFormat      = "12-hour clock (am/pm) (09:30 pm)";
+    private string selectedGeofence        = "Meters";
+    private bool isSaving = false;
+
+    // Notification settings
+    private NotificationSettingsVm liveNotif  = new();
+    private NotificationSettingsVm editNotif  = new();
+    private string notifSaveError   = string.Empty;
+
+    private static readonly int[] minuteOptions = { 5, 10, 15, 20, 30 };
+
+    // ── Face Data state ────────────────────────────────────────────────────
+    private bool   hasFaceData      = false;
+    private string? enrollPhotoUrl  = null;
+    private bool   faceDataLoading  = true;
+    private bool   showFaceCamera   = false;
+    private bool   isCapturingFace  = false;
+    private bool   isDeletingFace   = false;
+    private bool   isLoadingModels  = false;   // true while face-api CDN models are downloading
+    private int    enrollProgressPct = 0;
+    private bool   showEnrolledPhoto = false;
+    private string faceMessage      = string.Empty;
+    private string faceMessageClass = "alert-info";
+    private string faceMessageIcon  = "bi-info-circle";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!SessionService.IsLoggedIn) { NavManager.NavigateTo("/login"); return; }
+
+        profile = await ProfileService.GetProfileAsync(SessionService.Id);
+        if (profile == null)
+        {
+            profile = new ProfileViewModel
+            {
+                Id       = SessionService.Id,
+                FullName = SessionService.FullName ?? string.Empty,
+                Email    = SessionService.Email    ?? string.Empty,
+                Role     = SessionService.Role     ?? string.Empty
+            };
+        }
+        InitEditFields();
+
+        var loaded = await NotifService.GetAsync(SessionService.Id);
+        if (loaded != null) liveNotif = loaded;
+        editNotif    = liveNotif.Clone();
+
+        // Load face data status
+        await LoadFaceDataStatus();
+    }
+
+    // ── Face Data methods ──────────────────────────────────────────────────
+
+    private async Task LoadFaceDataStatus()
+    {
+        faceDataLoading = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("API");
+            var res  = await http.GetAsync($"api/employees/{SessionService.Id}/face-descriptor");
+            if (res.IsSuccessStatusCode)
+            {
+                var json = await res.Content.ReadFromJsonAsync<FaceDescriptorResponse>();
+                hasFaceData    = json?.HasFaceData ?? false;
+                enrollPhotoUrl = json?.EnrollPhotoUrl;
+            }
+        }
+        catch { /* silently fail — UI shows not enrolled */ }
+        finally
+        {
+            faceDataLoading = false;
+        }
+    }
+
+    private DotNetObjectReference<AccountSettings>? _faceDetectionRef;
+
+    private async Task StartFaceEnrollment()
+    {
+        faceMessage       = string.Empty;
+        enrollProgressPct = 0;
+        StateHasChanged();
+
+        // ── Wait for face-api models to finish downloading (preload started at page load) ──
+        var modelsReady = await JS.InvokeAsync<bool>("areFaceModelsLoaded");
+        if (!modelsReady)
+        {
+            isLoadingModels  = true;
+            faceMessage      = "Loading face recognition models, please wait...";
+            faceMessageClass = "alert-info";
+            faceMessageIcon  = "bi-hourglass-split";
+            StateHasChanged();
+
+            // Poll until models are ready (they're already downloading in background)
+            for (int i = 0; i < 30; i++)   // max ~30s wait
+            {
+                await Task.Delay(1000);
+                modelsReady = await JS.InvokeAsync<bool>("areFaceModelsLoaded");
+                if (modelsReady) break;
+            }
+
+            isLoadingModels = false;
+
+            if (!modelsReady)
+            {
+                faceMessage      = "Face recognition models could not be loaded. Please check your internet connection and try again.";
+                faceMessageClass = "alert-danger";
+                faceMessageIcon  = "bi-exclamation-triangle-fill";
+                StateHasChanged();
+                return;
+            }
+        }
+
+        showFaceCamera    = true;
+        StateHasChanged();
+
+        await Task.Delay(150); // allow DOM to render video + canvas elements
+
+        var cameraStarted = await JS.InvokeAsync<bool>("startCamera", "faceEnrollVideo");
+        if (!cameraStarted)
+        {
+            faceMessage      = "Could not access the camera. Please allow camera permission and try again.";
+            faceMessageClass = "alert-danger";
+            faceMessageIcon  = "bi-exclamation-triangle-fill";
+            showFaceCamera   = false;
+            StateHasChanged();
+            return;
+        }
+
+        faceMessage      = "Look at the camera — hold still...";
+        faceMessageClass = "alert-info";
+        faceMessageIcon  = "bi-camera";
+        StateHasChanged();
+
+        // Start live detection loop — auto-captures when face is held steady
+        _faceDetectionRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("startLiveFaceDetection", "faceEnrollVideo", "faceEnrollCanvas", _faceDetectionRef, 5);
+    }
+
+    [JSInvokable]
+    public async Task OnFaceCaptured(string descriptorJson, string enrollPhotoBase64 = "")
+    {
+        // Stop camera + detection immediately — do NOT await heavy work inside JSInvokable
+        // as it runs on the SignalR thread and long awaits cause "Attempting to reconnect".
+        try { await JS.InvokeVoidAsync("stopLiveFaceDetection", "faceEnrollCanvas"); } catch { }
+        try { await JS.InvokeVoidAsync("stopCamera", "faceEnrollVideo"); } catch { }
+        _faceDetectionRef?.Dispose();
+        _faceDetectionRef = null;
+
+        isCapturingFace   = true;
+        showFaceCamera    = false;
+        enrollProgressPct = 100;
+        faceMessage       = "Saving face data...";
+        faceMessageClass  = "alert-info";
+        faceMessageIcon   = "bi-hourglass-split";
+        await InvokeAsync(StateHasChanged);
+
+        // Capture photo is passed in — null it out if empty so the API stores null cleanly
+        string? photoToSend = string.IsNullOrWhiteSpace(enrollPhotoBase64) ? null : enrollPhotoBase64;
+
+        // Offload the HTTP save to a background task so SignalR is not blocked
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var http    = HttpClientFactory.CreateClient("API");
+                var payload = new { Descriptor = descriptorJson, EnrollPhoto = photoToSend };
+                var res     = await http.PostAsJsonAsync($"api/employees/{SessionService.Id}/face-descriptor", payload);
+
+                await InvokeAsync(async () =>
+                {
+                    if (res.IsSuccessStatusCode)
+                    {
+                        var body = await res.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                        enrollPhotoUrl    = body.TryGetProperty("enrollPhotoUrl", out var ep) ? ep.GetString() : null;
+                        hasFaceData       = true;
+                        enrollProgressPct = 0;
+                        isCapturingFace   = false;
+                        faceMessage       = "✓ Face data enrolled successfully!";
+                        faceMessageClass  = "alert-success";
+                        faceMessageIcon   = "bi-check-circle-fill";
+                    }
+                    else
+                    {
+                        isCapturingFace   = false;
+                        enrollProgressPct = 0;
+                        showFaceCamera    = false;
+                        faceMessage       = "Failed to save face data. Please try again.";
+                        faceMessageClass  = "alert-danger";
+                        faceMessageIcon   = "bi-exclamation-circle-fill";
+                    }
+                    StateHasChanged();
+                });
+            }
+            catch
+            {
+                await InvokeAsync(() =>
+                {
+                    isCapturingFace   = false;
+                    enrollProgressPct = 0;
+                    faceMessage       = "An error occurred. Please try again.";
+                    faceMessageClass  = "alert-danger";
+                    faceMessageIcon   = "bi-exclamation-circle-fill";
+                    StateHasChanged();
+                    return Task.CompletedTask;
+                });
+            }
+        });
+    }
+
+
+    [JSInvokable]
+    public async Task OnEnrollProgress(int pct)
+    {
+        enrollProgressPct = pct;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelFaceCamera()
+    {
+        showFaceCamera    = false;
+        enrollProgressPct = 0;
+        faceMessage       = string.Empty;
+        await JS.InvokeVoidAsync("stopLiveFaceDetection", "faceEnrollCanvas");
+        await JS.InvokeVoidAsync("stopCamera", "faceEnrollVideo");
+        _faceDetectionRef?.Dispose();
+        _faceDetectionRef = null;
+    }
+
+    private async Task DeleteFaceData()
+    {
+        isDeletingFace = true;
+        faceMessage    = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var http = HttpClientFactory.CreateClient("API");
+            var res  = await http.DeleteAsync($"api/employees/{SessionService.Id}/face-descriptor");
+
+            if (res.IsSuccessStatusCode)
+            {
+                hasFaceData      = false;
+                enrollPhotoUrl   = null;
+                faceMessage      = "Face data deleted successfully.";
+                faceMessageClass = "alert-success";
+                faceMessageIcon  = "bi-check-circle-fill";
+            }
+            else
+            {
+                faceMessage      = "Failed to delete face data. Please try again.";
+                faceMessageClass = "alert-danger";
+                faceMessageIcon  = "bi-exclamation-circle-fill";
+            }
+        }
+        catch
+        {
+            faceMessage      = "An error occurred. Please try again.";
+            faceMessageClass = "alert-danger";
+            faceMessageIcon  = "bi-exclamation-circle-fill";
+        }
+
+        isDeletingFace = false;
+        StateHasChanged();
+    }
+
+    // Helper record for deserializing the face-descriptor API response
+    private record FaceDescriptorResponse(bool HasFaceData, string? Descriptor, string? EnrollPhotoUrl);
+
+    // ── Existing methods (unchanged) ───────────────────────────────────────
+
+    private void InitEditFields()
+    {
+        editFullName      = profile?.FullName     ?? string.Empty;
+        editPreferredName = profile?.FullName     ?? string.Empty;
+        editPhone         = profile?.MobileNumber ?? string.Empty;
+    }
+
+    private string GetInitial()
+    {
+        var name = profile?.FullName ?? SessionService.FullName ?? "U";
+        return string.IsNullOrEmpty(name) ? "U" : name[0].ToString().ToUpper();
+    }
+
+    private void ToggleEdit(string section)
+    {
+        editSection = editSection == section ? string.Empty : section;
+        InitEditFields();
+        if (section == "notifications" || section == "subscriptions")
+        {
+            editNotif        = liveNotif.Clone();
+            notifSaveError   = string.Empty;
+        }
+    }
+
+    private void CancelEdit()
+    {
+        editSection = string.Empty;
+        InitEditFields();
+        editNotif = liveNotif.Clone();
+    }
+
+    private void CancelNotifEdit()
+    {
+        editSection      = string.Empty;
+        editNotif        = liveNotif.Clone();
+        notifSaveError   = string.Empty;
+    }
+
+    private async Task SaveDetails()
+    {
+        isSaving = true;
+        var req = new UpdateProfileRequest { FullName = editFullName, MobileNumber = profile?.MobileNumber, DateOfBirth = profile?.DateOfBirth, ProfileImageUrl = profile?.ProfileImageUrl };
+        var result = await ProfileService.UpdateProfileAsync(SessionService.Id, req);
+        if (result != null)
+        {
+            profile = result;
+            editSection = string.Empty;
+            await SessionService.UpdateFullNameAsync(editFullName);
+        }
+        isSaving = false;
+    }
+
+    private async Task SaveSecurity()
+    {
+        isSaving = true;
+        var req = new UpdateProfileRequest { FullName = profile?.FullName ?? string.Empty, MobileNumber = editPhone, DateOfBirth = profile?.DateOfBirth, ProfileImageUrl = profile?.ProfileImageUrl };
+        var result = await ProfileService.UpdateProfileAsync(SessionService.Id, req);
+        if (result != null) { profile = result; editSection = string.Empty; }
+        isSaving = false;
+    }
+
+    private async Task SaveNotifications()
+    {
+        notifSaveError = string.Empty;        StateHasChanged();
+        var (ok, err) = await NotifService.SaveAsync(SessionService.Id, editNotif);
+        if (ok)
+        {
+            liveNotif = editNotif.Clone();
+            editSection = string.Empty;
+            await Task.Delay(2000);
+        }
+        else { notifSaveError = err ?? "Save failed. Please try again."; }
+        StateHasChanged();
+    }
+
+    private async Task SaveSubscriptions()
+    {
+        notifSaveError = string.Empty;        StateHasChanged();
+        var (ok, err) = await NotifService.SaveAsync(SessionService.Id, editNotif);
+        if (ok)
+        {
+            liveNotif = editNotif.Clone();
+            editSection = string.Empty;
+            await Task.Delay(2000);
+        }
+        else { notifSaveError = err ?? "Save failed. Please try again."; }
+        StateHasChanged();
+    }
+
+    // Change Password
+    private bool   showChangePasswordModal = false;
+#pragma warning disable CS0414
+    private bool   showSuccessToast        = false;
+    private bool   toastFading             = false;
+#pragma warning restore CS0414
+    private string cpCurrentPassword = string.Empty;
+    private string cpNewPassword     = string.Empty;
+    private string cpConfirmPassword = string.Empty;
+    private string cpCurrentType = "password";
+    private string cpNewType     = "password";
+    private string cpConfirmType = "password";
+    private string cpError           = string.Empty;
+    private bool   cpPasswordChanged = false;
+    private string cpSuccess         = string.Empty;
+    private bool   cpSaving          = false;
+
+    private bool cpCurrentFilled => !string.IsNullOrWhiteSpace(cpCurrentPassword);
+    private bool cpMismatch => !string.IsNullOrEmpty(cpConfirmPassword) && cpNewPassword != cpConfirmPassword;
+    private bool cpMatch    => !string.IsNullOrEmpty(cpConfirmPassword) && cpNewPassword == cpConfirmPassword && cpNewPassword.Length >= 6;
+    private bool cpCanSubmit => !string.IsNullOrWhiteSpace(cpCurrentPassword) && !string.IsNullOrWhiteSpace(cpNewPassword)
+                             && !string.IsNullOrWhiteSpace(cpConfirmPassword) && cpNewPassword == cpConfirmPassword && cpNewPassword.Length >= 6;
+
+    private void OpenChangePasswordModal()
+    {
+        cpCurrentPassword = cpNewPassword = cpConfirmPassword = string.Empty;
+        cpCurrentType = cpNewType = cpConfirmType = "password";
+        cpError = cpSuccess = string.Empty;
+        cpPasswordChanged = false; cpSaving = false;
+        showChangePasswordModal = true;
+    }
+    private void CloseChangePasswordModal() => showChangePasswordModal = false;
+
+    private async Task HandleChangePassword()
+    {
+        cpError = cpSuccess = string.Empty; cpPasswordChanged = false;
+        if (cpNewPassword.Length < 6)          { cpError = "New password must be at least 6 characters."; return; }
+        if (cpNewPassword != cpConfirmPassword) { cpError = "Passwords do not match."; return; }
+        cpSaving = true; StateHasChanged();
+        var email = profile?.Email ?? SessionService.Email ?? string.Empty;
+        var (success, error) = await AuthService.ChangePasswordAsync(email, cpCurrentPassword, cpNewPassword);
+        cpSaving = false;
+        if (success)
+        {
+            cpPasswordChanged = true; cpError = string.Empty; StateHasChanged();
+            await Task.Delay(1800);
+            CloseChangePasswordModal();
+            showSuccessToast = true; toastFading = false; StateHasChanged();
+            await Task.Delay(3000); toastFading = true; StateHasChanged();
+            await Task.Delay(400); showSuccessToast = false;
+        }
+        else { cpError = error ?? "Failed to change password. Please try again."; }
+        StateHasChanged();
+    }
+
+    private void ToggleReportsEmail()   { if (editSection == "notifications") editNotif.ReportsChannelEmail   = !editNotif.ReportsChannelEmail; }
+    private void ToggleRemindersEmail() { if (editSection == "notifications") editNotif.RemindersChannelEmail = !editNotif.RemindersChannelEmail; }
+    private void ToggleReportsPush()    { if (editSection == "notifications") editNotif.ReportsChannelPush    = !editNotif.ReportsChannelPush; }
+    private void ToggleRemindersPush()  { if (editSection == "notifications") editNotif.RemindersChannelPush  = !editNotif.RemindersChannelPush; }
+
+    private void ToggleReportsWhatsApp()
+    {
+        if (editSection != "notifications") return;
+        if (!editNotif.ReportsChannelWhatsApp && string.IsNullOrWhiteSpace(profile?.MobileNumber)) editNotif.ReportsChannelWhatsApp = true;
+        else editNotif.ReportsChannelWhatsApp = !editNotif.ReportsChannelWhatsApp;
+    }
+    private void ToggleReportsSms()
+    {
+        if (editSection != "notifications") return;
+        if (!editNotif.ReportsChannelSms && string.IsNullOrWhiteSpace(profile?.MobileNumber)) editNotif.ReportsChannelSms = true;
+        else editNotif.ReportsChannelSms = !editNotif.ReportsChannelSms;
+    }
+    private void ToggleRemindersWhatsApp()
+    {
+        if (editSection != "notifications") return;
+        if (!editNotif.RemindersChannelWhatsApp && string.IsNullOrWhiteSpace(profile?.MobileNumber)) editNotif.RemindersChannelWhatsApp = true;
+        else editNotif.RemindersChannelWhatsApp = !editNotif.RemindersChannelWhatsApp;
+    }
+    private void ToggleRemindersSms()
+    {
+        if (editSection != "notifications") return;
+        if (!editNotif.RemindersChannelSms && string.IsNullOrWhiteSpace(profile?.MobileNumber)) editNotif.RemindersChannelSms = true;
+        else editNotif.RemindersChannelSms = !editNotif.RemindersChannelSms;
+    }
+
+    private void ToggleCpCurrent() => cpCurrentType = cpCurrentType == "password" ? "text" : "password";
+    private void ToggleCpNew()     => cpNewType     = cpNewType     == "password" ? "text" : "password";
+    private void ToggleCpConfirm() => cpConfirmType = cpConfirmType == "password" ? "text" : "password";
+
+    private static string NcBtnOn(bool active)       => active ? "nc-channel-btn--on" : string.Empty;
+    private static string NsItemActive(bool active)  => active ? "ns-item--active"    : string.Empty;
+    private bool IsNotEditingNotifications()          => editSection != "notifications";
+    private bool IsNotEditingSubscriptions()          => editSection != "subscriptions";
+    private static string CpEyeIcon(string inputType)=> inputType == "password" ? "bi bi-eye" : "bi bi-eye-slash";
+    private string CpInputLockedClass()               => !cpCurrentFilled ? "cp-input cp-input-locked" : "cp-input";
+    private string CpConfirmInputClass()
+    {
+        if (!cpCurrentFilled) return "cp-input cp-input-locked";
+        if (cpMismatch)       return "cp-input cp-input-error";
+        if (cpMatch)          return "cp-input cp-input-success";
+        return "cp-input";
+    }
+    private string CpConfirmBtnClass() => cpCanSubmit ? "cp-btn cp-btn-confirm" : "cp-btn cp-btn-confirm cp-btn-disabled";
+
+    private async Task DismissToast()
+    {
+        toastFading = true; StateHasChanged();
+        await Task.Delay(400); showSuccessToast = false; StateHasChanged();
+    }
+
+    // Push notification (Firebase)
+    private string pushStatusMsg        = string.Empty;
+    private DotNetObjectReference<AccountSettings>? _dotNetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("FirebasePush.init", _dotNetRef);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnFcmTokenReceived(string token)
+    {
+        if (SessionService.Id <= 0) return;
+        try
+        {
+            var http    = HttpClientFactory.CreateClient("API");
+            var body    = System.Text.Json.JsonSerializer.Serialize(new { token });
+            var content = new System.Net.Http.StringContent(body, System.Text.Encoding.UTF8, "application/json");
+            var response = await http.PutAsync($"api/employees/{SessionService.Id}/fcm-token", content);
+            if (response.IsSuccessStatusCode)
+            {
+                pushStatusMsg = "Push notifications enabled on this device! ✅";
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch { /* silently ignore token save failures */ }
+    }
+
+    [JSInvokable] public Task OnPushPermissionDenied() { return InvokeAsync(StateHasChanged); }
+    [JSInvokable] public Task OnPushReceived(string title, string body) => Task.CompletedTask;
+
+    public void Dispose() => _dotNetRef?.Dispose();
+}
+
+<style>
+    /* ── Face enrolled card ── */
+    /* ═══════════════════════════════════════════════════════════════
+       FACE ENROLLMENT UI  — Professional redesign
+       ═══════════════════════════════════════════════════════════════ */
+
+    /* ── Enrolled status card ── */
+    .face-enrolled-card {
+        background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+        border: 1.5px solid #86efac;
+        border-radius: 14px;
+        padding: 16px;
+        display: flex; flex-direction: column; gap: 10px;
+    }
+
+    /* ── Face photo lightbox ── */
+    .face-lightbox-backdrop {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.78);
+        z-index: 9999;
+        display: flex; align-items: center; justify-content: center;
+        animation: fl-in .15s ease;
+    }
+    @@keyframes fl-in { from { opacity: 0; } to { opacity: 1; } }
+    .face-lightbox {
+        background: #fff; border-radius: 18px;
+        width: 90%; max-width: 460px;
+        box-shadow: 0 28px 60px rgba(0,0,0,0.38);
+        overflow: hidden;
+        animation: fl-slide .18s ease;
+    }
+    @@keyframes fl-slide {
+        from { transform: translateY(18px); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+    }
+    .face-lightbox-header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 14px 18px; border-bottom: 1px solid #f3f4f6; font-size: 15px;
+        font-weight: 600;
+    }
+    .face-lightbox-body {
+        padding: 20px; text-align: center; background: #111;
+    }
+    .face-lightbox-footer {
+        padding: 12px 18px; border-top: 1px solid #f3f4f6; text-align: center;
+        font-size: 12px; color: #9ca3af;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       FACE ENROLLMENT CAMERA UI  — polished
+       ═══════════════════════════════════════════════════════════════ */
+    .face-enroll-wrap {
+        max-width: 380px;
+        margin: 0 auto;
+    }
+
+    /* ── Status chip above video ── */
+    .face-status-chip {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 5px 14px; border-radius: 20px;
+        font-size: 12px; font-weight: 700;
+        margin-bottom: 10px;
+        letter-spacing: .2px;
+        transition: all .2s;
+    }
+    .face-chip--idle     { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
+    .face-chip--scanning { background: linear-gradient(135deg,#eff6ff,#dbeafe); color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .face-chip--success  { background: linear-gradient(135deg,#f0fdf4,#dcfce7); color: #15803d; border: 1px solid #86efac; }
+
+    .face-chip-dot {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: currentColor; display: inline-block; flex-shrink: 0;
+    }
+    .face-chip-dot--pulse { animation: chipPulse 1s ease-in-out infinite; }
+    @@keyframes chipPulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50%       { opacity: .35; transform: scale(.65); }
+    }
+
+    /* ── Video container ── */
+    .face-video-container {
+        position: relative; width: 100%; border-radius: 16px;
+        overflow: hidden; background: #0f172a;
+        box-shadow: 0 6px 28px rgba(0,0,0,.22);
+        border: 2.5px solid #1e293b;
+        transition: border-color .3s, box-shadow .3s;
+    }
+    .face-video-el {
+        display: block; width: 100%; border-radius: 14px;
+    }
+    .face-canvas-overlay {
+        position: absolute; top: 0; left: 0;
+        width: 100%; height: 100%; pointer-events: none;
+    }
+
+    /* Percentage badge */
+    .face-pct-badge {
+        position: absolute; top: 10px; right: 12px;
+        background: rgba(0,0,0,.58);
+        color: #fff; font-size: 12px; font-weight: 800;
+        padding: 3px 10px; border-radius: 20px;
+        backdrop-filter: blur(6px);
+        letter-spacing: .5px;
+    }
+
+    /* ── Progress bar ── */
+    .face-progress-track {
+        height: 5px; background: #e5e7eb;
+        border-radius: 5px; margin-top: 10px; overflow: hidden;
+    }
+    .face-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #3b82f6 0%, #10b981 60%, #22c55e 100%);
+        border-radius: 5px; transition: width .22s ease;
+    }
+
+    /* ── Footer row ── */
+    .face-enroll-footer {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-top: 10px;
+    }
+    .face-hint { font-size: 12px; color: #6b7280; }
+
+    /* ── Cancel button ── */
+    .face-cancel-btn {
+        border: 1.5px solid #e5e7eb; background: #fff;
+        color: #374151; font-size: 12px; font-weight: 600;
+        padding: 5px 16px; border-radius: 8px; cursor: pointer;
+        font-family: inherit; transition: border-color .15s, background .15s;
+    }
+    .face-cancel-btn:hover { border-color: #9ca3af; background: #f9fafb; }
+    .face-cancel-btn:disabled { opacity: .5; cursor: not-allowed; }
+</style>

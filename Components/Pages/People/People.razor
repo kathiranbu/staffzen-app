@@ -1,0 +1,899 @@
+@page "/settings/people"
+@using APM.StaffZen.Blazor.ViewModels
+@using APM.StaffZen.Blazor.Components.Shared
+@using System.Net.Http.Json
+@inject IHttpClientFactory ClientFactory
+@inject NavigationManager NavigationManager
+@inject SessionService SessionService
+
+<BasePage Title="Members">
+    
+    <div class="members-page">
+        
+        <!-- Tabs Section -->
+        <div class="members-tabs">
+            <div class="tab active">Members</div>
+            <div class="tab" @onclick='() => NavigationManager.NavigateTo("/settings/groups")'>Groups</div>
+        </div>
+
+        <!-- Filters and Actions Bar -->
+        <div class="members-toolbar">
+            <div class="toolbar-left">
+                <!-- Search - Full Width Row -->
+                <div class="search-box">
+                    <i class="bi bi-search"></i>
+                    <input type="text" placeholder="Search..." @bind="searchText" @bind:event="oninput" />
+                </div>
+
+                <!-- Filters Row -->
+                <div class="toolbar-filters-row">
+                    <!-- Roles Dropdown -->
+                    <div class="filter-dropdown">
+                        <select class="filter-select" @bind="selectedRole">
+                            <option value="">All Roles</option>
+                            <option value="Admin">Admin</option>
+                            <option value="User">User</option>
+                        </select>
+                    </div>
+
+                    <!-- Status Dropdown -->
+                    <div class="filter-dropdown">
+                        <select class="filter-select" @bind="selectedStatus">
+                            <option value="">All Status</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Pending">Pending</option>
+                        </select>
+                    </div>
+
+                    <!-- Groups Dropdown -->
+                    <div class="filter-dropdown">
+                        <select class="filter-select" @bind="selectedGroup">
+                            <option value="">All Groups</option>
+                            @foreach (var group in availableGroups)
+                            {
+                                <option value="@group.Name">@group.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(selectedRole) || !string.IsNullOrEmpty(selectedStatus) || !string.IsNullOrEmpty(selectedGroup))
+                    {
+                        <button class="clear-filters-btn" @onclick="ClearFilters">
+                            <i class="bi bi-x"></i>
+                            Clear filters
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="toolbar-right">
+                <button class="add-members-btn" @onclick="OpenAddMembersModal">Add Members</button>
+                <button class="remove-members-btn" @onclick="RemoveSelectedMembers" disabled="@(!HasSelectedMembers)">Remove Members</button>
+                @if (HasPendingMembers)
+                {
+                    <button class="invite-all-btn" @onclick="InviteAllPendingMembers">Invite All Again</button>
+                }
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        @if (isLoading)
+        {
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading employees...</p>
+            </div>
+        }
+        else if (errorMessage != null)
+        {
+            <div class="error-state">
+                <i class="bi bi-exclamation-circle"></i>
+                <p>@errorMessage</p>
+                <button class="retry-btn" @onclick="HandleRetry">Retry</button>
+            </div>
+        }
+        else
+        {
+            <!-- Members Table -->
+            <div class="members-table-container">
+                <table class="members-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" class="checkbox" @onchange="ToggleSelectAll" checked="@allSelected" />
+                            </th>
+                            <th style="width: 280px;">@FilteredMembers.Count member@(FilteredMembers.Count != 1 ? "s" : "")</th>
+                            <th style="width: 280px;">Email</th>
+                            <th style="width: 150px;">Group</th>
+                            <th style="width: 150px;">Status</th>
+                            <th style="width: 200px;">Last active</th>
+                            <th style="width: 50px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (FilteredMembers.Any())
+                        {
+                            @foreach (var member in FilteredMembers)
+                            {
+                                <tr>
+                                    <td style="width: 40px;">
+                                        <input type="checkbox" class="checkbox" 
+                                               checked="@selectedMembers.Contains(member)" 
+                                               @onchange="@(() => ToggleMemberSelection(member))" />
+                                    </td>
+                                    <td style="width: 280px;">
+                                        <div class="member-info member-info--clickable" @onclick="@(() => OpenProfile(member))">
+                                            <div class="member-avatar">@member.Initials</div>
+                                            <div class="member-details">
+                                                <div class="member-name">@member.Name</div>
+                                                <div class="member-role">@member.Role</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="width: 280px;" class="member-email">@member.Email</td>
+                                    <td style="width: 150px;" class="member-group">
+                                        @(member.Group == "-" || string.IsNullOrEmpty(member.Group) ? "—" : member.Group)
+                                    </td>
+                                    <td style="width: 150px;" class="member-status">
+                                        <div class="status-container">
+                                            <span class="status-badge @(member.IsActive ? "status-completed" : "status-pending")">
+                                                @(member.IsActive ? "Completed" : "Pending")
+                                            </span>
+                                            @if (!member.IsActive)
+                                            {
+                                                <button class="invite-again-icon" @onclick="@(() => InviteAgain(member))" title="Invite Again">
+                                                    <i class="bi bi-arrow-clockwise"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td style="width: 200px;" class="member-activity">@member.LastActive</td>
+                                    <td style="width: 50px;">
+                                        <button class="action-btn" @onclick="@(() => OpenProfile(member))" title="View Profile">
+                                            <i class="bi bi-three-dots-vertical"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                        else
+                        {
+                            <tr>
+                                <td colspan="7" class="no-members">
+                                    @if (string.IsNullOrWhiteSpace(searchText))
+                                    {
+                                        <p>No members found. Click "Add Members" to get started.</p>
+                                    }
+                                    else
+                                    {
+                                        <p>No members match your search.</p>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <!-- Archived Members Section -->
+        <div class="archived-section">
+            <i class="bi bi-archive"></i>
+            <span>Archived Members</span>
+        </div>
+
+    </div>
+
+    <!-- Add Members Modal -->
+    <AddMembersModal IsVisible="showAddMembersModal" 
+                     OnClose="CloseAddMembersModal" 
+                     OnSave="HandleSaveMembers" />
+
+    <!-- View Profile Panel -->
+    <ViewProfilePanel IsVisible="showProfilePanel"
+                      EmployeeId="profileEmployeeId"
+                      Groups="profileGroups"
+                      OnClose="CloseProfile"
+                      OnMemberUpdated="HandleMemberUpdated"
+                      OnMemberArchived="HandleMemberArchived" />
+
+    <!-- Success/Error Notifications -->
+    @if (showSuccessNotification)
+    {
+        <div class="notification success-notification">
+            <i class="bi bi-check-circle-fill"></i>
+            <span>@successMessage</span>
+            <button @onclick="HideSuccessNotification">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
+    }
+
+    @if (showErrorNotification)
+    {
+        <div class="notification error-notification">
+            <i class="bi bi-exclamation-circle-fill"></i>
+            <span>@errorNotificationMessage</span>
+            <button @onclick="HideErrorNotification">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
+    }
+
+</BasePage>
+
+@code {
+    private string searchText = "";
+    private string selectedRole = "";
+    private string selectedStatus = "";
+    private string selectedGroup = "";
+    private bool showAddMembersModal = false;
+    private bool isLoading = true;
+    private string? errorMessage = null;
+    private bool showSuccessNotification = false;
+    private string successMessage = "";
+    private bool showErrorNotification = false;
+    private string errorNotificationMessage = "";
+    private HashSet<MemberVm> selectedMembers = new HashSet<MemberVm>();
+    private bool allSelected = false;
+
+    // Profile panel state
+    private bool showProfilePanel = false;
+    private int? profileEmployeeId = null;
+    private List<ViewProfilePanel.GroupOption> profileGroups = new();
+
+    private void OpenProfile(MemberVm member)
+    {
+        profileEmployeeId = member.Id;
+        profileGroups = availableGroups.Select(g => new ViewProfilePanel.GroupOption { Id = g.Id, Name = g.Name }).ToList();
+        showProfilePanel = true;
+    }
+
+    private void CloseProfile()
+    {
+        showProfilePanel = false;
+        profileEmployeeId = null;
+    }
+
+    private async Task HandleMemberUpdated()
+    {
+        await LoadEmployees();
+    }
+
+    private async Task HandleMemberArchived()
+    {
+        showProfilePanel = false;
+        profileEmployeeId = null;
+        await LoadEmployees();
+    }
+
+    private List<MemberVm> members = new List<MemberVm>();
+    private List<GroupDto> availableGroups = new List<GroupDto>();
+
+    private bool HasSelectedMembers => selectedMembers.Any();
+    private bool HasPendingMembers => FilteredMembers.Any(m => !m.IsActive);
+
+    private List<MemberVm> FilteredMembers
+    {
+        get
+        {
+            var filtered = members.AsEnumerable();
+
+            // Search filter
+            if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                var search = searchText.ToLower();
+                filtered = filtered.Where(m =>
+                    m.Name.ToLower().Contains(search) ||
+                    m.Email.ToLower().Contains(search) ||
+                    m.Role.ToLower().Contains(search)
+                );
+            }
+
+            // Role filter
+            if (!string.IsNullOrWhiteSpace(selectedRole))
+            {
+                filtered = filtered.Where(m => m.Role == selectedRole);
+            }
+
+            // Status filter
+            if (!string.IsNullOrWhiteSpace(selectedStatus))
+            {
+                if (selectedStatus == "Completed")
+                {
+                    filtered = filtered.Where(m => m.IsActive);
+                }
+                else if (selectedStatus == "Pending")
+                {
+                    filtered = filtered.Where(m => !m.IsActive);
+                }
+            }
+
+            // Group filter
+            if (!string.IsNullOrWhiteSpace(selectedGroup))
+            {
+                filtered = filtered.Where(m => m.Group == selectedGroup);
+            }
+
+            return filtered.ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGroups();
+        await LoadEmployees();
+    }
+
+    private async Task LoadGroups()
+    {
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var response = await client.GetAsync("api/groups");
+            if (response.IsSuccessStatusCode)
+            {
+                availableGroups = await response.Content.ReadFromJsonAsync<List<GroupDto>>() ?? new List<GroupDto>();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading groups: {ex.Message}");
+        }
+    }
+
+    private void ClearFilters()
+    {
+        selectedRole = "";
+        selectedStatus = "";
+        selectedGroup = "";
+    }
+
+    private async Task LoadEmployees()
+    {
+        isLoading = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            // Always filter by active organization
+            var orgId = SessionService.ActiveOrganizationId;
+            var url = orgId.HasValue
+                ? $"api/employees?organizationId={orgId.Value}"
+                : "api/employees";
+
+            var response = await client.GetAsync(url);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var employees = await response.Content.ReadFromJsonAsync<List<EmployeeDto>>() ?? new List<EmployeeDto>();
+                
+                // Convert to MemberVm to match existing UI
+                members = employees.Select(e => new MemberVm
+                {
+                    Id = e.Id,
+                    Initials = GetInitials(e.FullName),
+                    Name = e.FullName,
+                    Role = e.Role,
+                    Email = e.Email,
+                    Group = e.GroupName ?? "-",
+                    GroupId = e.GroupId,
+                    IsActive = e.IsActive,
+                    LastActive = e.IsActive ? "Active" : "Invited - Pending"
+                }).ToList();
+            }
+            else
+            {
+                errorMessage = "Failed to load employees. Please try again.";
+            }
+        }
+        catch (HttpRequestException)
+        {
+            errorMessage = "Unable to connect to server. Please check your connection.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "An unexpected error occurred.";
+            Console.WriteLine($"Error loading employees: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleRetry()
+    {
+        await LoadEmployees();
+    }
+
+    private void OpenAddMembersModal()
+    {
+        showAddMembersModal = true;
+    }
+
+    private void CloseAddMembersModal()
+    {
+        showAddMembersModal = false;
+    }
+
+    private void HideSuccessNotification()
+    {
+        showSuccessNotification = false;
+    }
+
+    private void HideErrorNotification()
+    {
+        showErrorNotification = false;
+    }
+
+    private async Task HandleSaveMembers(List<AddMembersModal.NewMember> newMembers)
+    {
+        if (!newMembers.Any())
+        {
+            CloseAddMembersModal();
+            return;
+        }
+
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            int successCount = 0;
+            int errorCount = 0;
+            var errorMessages = new List<string>();
+
+            // Send each member through the invite endpoint to trigger email
+            foreach (var newMember in newMembers)
+            {
+                if (!string.IsNullOrWhiteSpace(newMember.FullName) && !string.IsNullOrWhiteSpace(newMember.Email))
+                {
+                    if (!SessionService.ActiveOrganizationId.HasValue)
+                    {
+                        errorCount++;
+                        errorMessages.Add($"{newMember.Email}: No organization selected. Please select an organization first.");
+                        continue;
+                    }
+
+                    var inviteRequest = new InviteDto
+                    {
+                        FullName         = newMember.FullName,
+                        Email            = newMember.Email,
+                        CountryCode      = newMember.CountryCode ?? "+91",
+                        PhoneNumber      = newMember.PhoneNumber ?? "",
+                        Role             = string.IsNullOrWhiteSpace(newMember.Role) ? "Employee" : newMember.Role,
+                        GroupId          = newMember.GroupId,
+                        OrganizationName = SessionService.OrganizationName ?? "",
+                        OrganizationId   = SessionService.ActiveOrganizationId!.Value,
+                        OrgRole          = string.IsNullOrWhiteSpace(newMember.Role) ? "Employee" : newMember.Role
+                    };
+
+                    var response = await client.PostAsJsonAsync("api/invite", inviteRequest);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        successCount++;
+                    }
+                    else
+                    {
+                        errorCount++;
+                        var errorContent = await response.Content.ReadAsStringAsync();
+                        
+                        // Check if it's a duplicate member error
+                        if (errorContent.Contains("already a member") || errorContent.Contains("already exists"))
+                        {
+                            errorMessages.Add($"{newMember.Email}: Already a member of this organization");
+                        }
+                        else
+                        {
+                            errorMessages.Add($"{newMember.Email}: Failed to invite");
+                        }
+                        
+                        Console.WriteLine($"Failed to invite {newMember.Email}: {errorContent}");
+                    }
+                }
+            }
+
+            if (successCount > 0)
+            {
+                successMessage = $"Successfully invited {successCount} member(s). Emails sent!";
+                
+                if (errorCount > 0)
+                {
+                    successMessage += $" {errorCount} failed.";
+                }
+
+                showSuccessNotification = true;
+                
+                // Auto-hide after 5 seconds
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(5000);
+                    showSuccessNotification = false;
+                    await InvokeAsync(StateHasChanged);
+                });
+
+                // Reload employees
+                await LoadEmployees();
+            }
+            else
+            {
+                // All failed - show specific errors
+                if (errorMessages.Any())
+                {
+                    errorNotificationMessage = string.Join("; ", errorMessages);
+                }
+                else
+                {
+                    errorNotificationMessage = "Failed to invite members. Please try again.";
+                }
+                showErrorNotification = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorNotificationMessage = "Error inviting members. Please try again.";
+            showErrorNotification = true;
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+
+        CloseAddMembersModal();
+    }
+
+    private string GetInitials(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+            return "?";
+
+        var parts = fullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        
+        if (parts.Length == 1)
+            return parts[0].Substring(0, 1).ToUpper();
+        
+        return (parts[0].Substring(0, 1) + parts[parts.Length - 1].Substring(0, 1)).ToUpper();
+    }
+
+    private void ToggleMemberSelection(MemberVm member)
+    {
+        if (selectedMembers.Contains(member))
+        {
+            selectedMembers.Remove(member);
+        }
+        else
+        {
+            selectedMembers.Add(member);
+        }
+        
+        // Update select all checkbox state
+        allSelected = FilteredMembers.Any() && FilteredMembers.All(m => selectedMembers.Contains(m));
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        if (e.Value is bool isChecked)
+        {
+            allSelected = isChecked;
+            
+            if (isChecked)
+            {
+                foreach (var member in FilteredMembers)
+                {
+                    selectedMembers.Add(member);
+                }
+            }
+            else
+            {
+                selectedMembers.Clear();
+            }
+        }
+    }
+
+    private async Task RemoveSelectedMembers()
+    {
+        if (!selectedMembers.Any())
+            return;
+
+        var memberCount = selectedMembers.Count;
+        
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            int successCount = 0;
+            int errorCount = 0;
+            var membersToRemove = selectedMembers.ToList();
+
+            Console.WriteLine($"Starting deletion of {memberCount} members");
+
+            // Call API to remove each member from this organization only
+            var orgId = SessionService.ActiveOrganizationId;
+            if (!orgId.HasValue)
+            {
+                errorNotificationMessage = "No active organization selected.";
+                showErrorNotification = true;
+                return;
+            }
+
+            foreach (var member in membersToRemove)
+            {
+                try
+                {
+                    Console.WriteLine($"Attempting to remove member: {member.Name} (ID: {member.Id}) from org {orgId.Value}");
+                    var response = await client.DeleteAsync($"api/organizations/{orgId.Value}/members/{member.Id}");
+                    
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"Response status: {response.StatusCode}, Content: {responseContent}");
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        successCount++;
+                        members.Remove(member);
+                        Console.WriteLine($"Successfully deleted member: {member.Name}");
+                    }
+                    else
+                    {
+                        errorCount++;
+                        Console.WriteLine($"Failed to delete member {member.Name} (ID: {member.Id}). Status: {response.StatusCode}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errorCount++;
+                    Console.WriteLine($"Error deleting member {member.Name}: {ex.Message}");
+                    Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                }
+            }
+
+            selectedMembers.Clear();
+            allSelected = false;
+
+            Console.WriteLine($"Deletion complete. Success: {successCount}, Errors: {errorCount}");
+
+            if (successCount > 0)
+            {
+                successMessage = $"Successfully removed {successCount} member(s).";
+                if (errorCount > 0)
+                {
+                    successMessage += $" {errorCount} failed.";
+                }
+                showSuccessNotification = true;
+                
+                // Auto-hide after 5 seconds
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(5000);
+                    showSuccessNotification = false;
+                    await InvokeAsync(StateHasChanged);
+                });
+
+                // Reload employees to ensure sync with database
+                Console.WriteLine("Reloading employees from database...");
+                await LoadEmployees();
+            }
+            else
+            {
+                errorNotificationMessage = "Failed to remove members. Please try again.";
+                showErrorNotification = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorNotificationMessage = "Error removing members. Please try again.";
+            showErrorNotification = true;
+            Console.WriteLine($"Error in RemoveSelectedMembers: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+        }
+    }
+
+    private async Task InviteAgain(MemberVm member)
+    {
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+
+            if (!SessionService.ActiveOrganizationId.HasValue)
+            {
+                errorNotificationMessage = "No organization selected. Please select an organization first.";
+                showErrorNotification = true;
+                return;
+            }
+
+            var inviteRequest = new InviteDto
+            {
+                FullName         = member.Name,
+                Email            = member.Email,
+                Role             = member.Role,
+                OrganizationName = SessionService.OrganizationName ?? "",
+                OrganizationId   = SessionService.ActiveOrganizationId!.Value,
+                OrgRole          = member.Role
+            };
+
+            var response = await client.PostAsJsonAsync("api/invite", inviteRequest);
+
+            if (response.IsSuccessStatusCode)
+            {
+                successMessage = $"Invitation sent to {member.Name}";
+                showSuccessNotification = true;
+                
+                // Auto-hide after 3 seconds
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(3000);
+                    showSuccessNotification = false;
+                    await InvokeAsync(StateHasChanged);
+                });
+            }
+            else
+            {
+                errorNotificationMessage = $"Failed to send invitation to {member.Name}";
+                showErrorNotification = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorNotificationMessage = "Error sending invitation. Please try again.";
+            showErrorNotification = true;
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task InviteAllPendingMembers()
+    {
+        var pendingMembers = FilteredMembers.Where(m => !m.IsActive).ToList();
+        
+        if (!pendingMembers.Any())
+            return;
+
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            int successCount = 0;
+            int errorCount = 0;
+
+            if (!SessionService.ActiveOrganizationId.HasValue)
+            {
+                errorNotificationMessage = "No organization selected. Please select an organization first.";
+                showErrorNotification = true;
+                return;
+            }
+
+            foreach (var member in pendingMembers)
+            {
+                var inviteRequest = new InviteDto
+                {
+                    FullName         = member.Name,
+                    Email            = member.Email,
+                    Role             = member.Role,
+                    OrganizationName = SessionService.OrganizationName ?? "",
+                    OrganizationId   = SessionService.ActiveOrganizationId!.Value,
+                    OrgRole          = member.Role
+                };
+
+                var response = await client.PostAsJsonAsync("api/invite", inviteRequest);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    successCount++;
+                }
+                else
+                {
+                    errorCount++;
+                }
+            }
+
+            if (successCount > 0)
+            {
+                successMessage = $"Successfully sent {successCount} invitation(s).";
+                if (errorCount > 0)
+                {
+                    successMessage += $" {errorCount} failed.";
+                }
+                showSuccessNotification = true;
+                
+                // Auto-hide after 5 seconds
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(5000);
+                    showSuccessNotification = false;
+                    await InvokeAsync(StateHasChanged);
+                });
+            }
+            else
+            {
+                errorNotificationMessage = "Failed to send invitations. Please try again.";
+                showErrorNotification = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorNotificationMessage = "Error sending invitations. Please try again.";
+            showErrorNotification = true;
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task UpdateMemberGroup(MemberVm member, string? groupIdStr)
+    {
+        int? newGroupId = string.IsNullOrEmpty(groupIdStr) ? null : int.Parse(groupIdStr);
+
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var response = await client.PatchAsJsonAsync($"api/employees/{member.Id}/group", new { groupId = newGroupId });
+
+            if (response.IsSuccessStatusCode)
+            {
+                member.GroupId = newGroupId;
+                member.Group = newGroupId.HasValue
+                    ? availableGroups.FirstOrDefault(g => g.Id == newGroupId)?.Name ?? "-"
+                    : "-";
+                StateHasChanged();
+            }
+            else
+            {
+                errorNotificationMessage = "Failed to update group. Please try again.";
+                showErrorNotification = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorNotificationMessage = "Error updating group.";
+            showErrorNotification = true;
+            Console.WriteLine($"Error updating group: {ex.Message}");
+        }
+    }
+
+    // DTOs for API communication
+    public class GroupDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? Description { get; set; }
+        public int MemberCount { get; set; }
+    }
+
+    // DTOs for API communication
+    public class EmployeeDto
+    {
+        public int Id { get; set; }
+        public string FullName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Role { get; set; } = "";
+        public string? MobileNumber { get; set; }
+        public string? CountryCode { get; set; }
+        public string? ProfileImageUrl { get; set; }
+        public bool IsActive { get; set; }
+        public int? GroupId { get; set; }
+        public string? GroupName { get; set; }
+    }
+
+    // Existing MemberVm for UI compatibility
+    // Typed DTO for invite API calls — avoids JSON binding errors with anonymous objects
+    public class InviteDto
+    {
+        public string  FullName         { get; set; } = "";
+        public string  Email            { get; set; } = "";
+        public string  CountryCode      { get; set; } = "+91";
+        public string  PhoneNumber      { get; set; } = "";
+        public string  Role             { get; set; } = "Employee";
+        public int?    GroupId          { get; set; }
+        public string  OrganizationName { get; set; } = "";
+        public int     OrganizationId   { get; set; }
+        public string  OrgRole          { get; set; } = "Employee";
+    }
+
+    public class MemberVm
+    {
+        public int Id { get; set; }
+        public string Initials { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Role { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Group { get; set; } = "";
+        public int? GroupId { get; set; }
+        public bool IsActive { get; set; } = false;
+        public string LastActive { get; set; } = "";
+    }
+}

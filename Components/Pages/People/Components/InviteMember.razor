@@ -1,0 +1,77 @@
+﻿@page "/invite-member"
+
+@using APM.StaffZen.Blazor.Services
+@inject IHttpClientFactory ClientFactory
+@inject SessionService SessionService
+
+<h3>Invite Employee</h3>
+
+@if (!SessionService.ActiveOrganizationId.HasValue)
+{
+    <div class="alert alert-warning">
+        No organization selected. Please <a href="/organization/switcher">select an organization</a> first.
+    </div>
+}
+else
+{
+    <div class="mb-3">
+        <label>Full Name</label>
+        <input class="form-control" @bind="fullName" />
+    </div>
+
+    <div class="mb-3">
+        <label>Email</label>
+        <input class="form-control" @bind="email" />
+    </div>
+
+    <div class="mb-3">
+        <label>Role</label>
+        <select class="form-control" @bind="role">
+            <option>Employee</option>
+            <option>Team Lead</option>
+            <option>HR</option>
+            <option>Manager</option>
+            <option>Admin</option>
+        </select>
+    </div>
+
+    <button class="btn btn-primary" @onclick="SendInvite">
+        Send Invite
+    </button>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <p class="mt-3">@message</p>
+    }
+}
+
+@code {
+    string fullName = "";
+    string email = "";
+    string role = "Employee";
+    string message = "";
+
+    async Task SendInvite()
+    {
+        if (!SessionService.ActiveOrganizationId.HasValue)
+        {
+            message = "❌ No organization selected.";
+            return;
+        }
+
+        var client = ClientFactory.CreateClient("API");
+
+        var response = await client.PostAsJsonAsync("api/invite", new
+        {
+            FullName       = fullName,
+            Email          = email,
+            Role           = role,
+            OrgRole        = role,
+            OrganizationId = SessionService.ActiveOrganizationId!.Value
+        });
+
+        message = response.IsSuccessStatusCode
+            ? "✅ Invite sent successfully"
+            : "❌ Failed to send invite";
+    }
+}

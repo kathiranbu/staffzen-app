@@ -1,0 +1,826 @@
+@page "/onboarding"
+@inject NavigationManager Nav
+@inject IHttpClientFactory ClientFactory
+@using Microsoft.AspNetCore.WebUtilities
+@layout EmptyLayout
+
+<div class="onboarding-container">
+    
+    <!-- Left Side - Illustration -->
+    <div class="onboarding-left">
+        <div class="logo">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <rect width="32" height="32" rx="8" fill="#FF6B35"/>
+                <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="18" font-weight="bold">J</text>
+            </svg>
+            <span class="logo-text">Jibble</span>
+        </div>
+        
+        <div class="illustration">
+            <svg viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Decorative circles -->
+                <circle cx="100" cy="80" r="15" fill="#E8F4FF" opacity="0.5"/>
+                <circle cx="320" cy="120" r="20" fill="#FFE8E8" opacity="0.5"/>
+                
+                <!-- Plant pot -->
+                <ellipse cx="80" cy="350" rx="30" ry="10" fill="#D4E4ED"/>
+                <rect x="60" y="320" width="40" height="30" rx="5" fill="#E8F4FF"/>
+                <path d="M70 310 Q75 280 80 310" stroke="#4CAF50" stroke-width="3" fill="none"/>
+                <path d="M75 310 Q80 285 85 310" stroke="#66BB6A" stroke-width="3" fill="none"/>
+                <path d="M80 310 Q85 275 90 310" stroke="#4CAF50" stroke-width="3" fill="none"/>
+                
+                <!-- Person 1 sitting with laptop -->
+                <ellipse cx="160" cy="320" rx="50" ry="15" fill="#FFF0F5" opacity="0.5"/>
+                <rect x="140" y="250" width="40" height="70" rx="20" fill="#FF6B9D"/>
+                <circle cx="160" cy="230" r="25" fill="#FFE0B2"/>
+                <rect x="145" y="280" width="30" height="40" rx="8" fill="#FF8FB3"/>
+                <rect x="130" y="290" width="60" height="40" rx="5" fill="#4A90E2"/>
+                <rect x="135" y="295" width="50" height="30" rx="3" fill="#E3F2FD"/>
+                
+                <!-- Person 2 sitting with phone -->
+                <ellipse cx="260" cy="330" rx="45" ry="12" fill="#FFE8E8" opacity="0.5"/>
+                <rect x="245" y="260" width="35" height="70" rx="18" fill="#FF9800"/>
+                <circle cx="260" cy="240" r="22" fill="#FFCC80"/>
+                <rect x="250" y="285" width="20" height="45" rx="6" fill="#FFB74D"/>
+                <rect x="238" y="305" width="15" height="25" rx="2" fill="#3F51B5"/>
+                <circle cx="245" cy="315" r="3" fill="#FFF"/>
+                
+                <!-- Chat bubble -->
+                <rect x="280" y="180" width="80" height="50" rx="12" fill="#FF6B35"/>
+                <circle cx="305" cy="205" r="8" fill="white"/>
+                <text x="315" y="210" fill="white" font-size="20" font-weight="bold">J</text>
+                
+                <!-- Floating icons -->
+                <circle cx="350" cy="250" r="20" fill="#4A90E2"/>
+                <path d="M345 250 L350 255 L360 240" stroke="white" stroke-width="2" fill="none"/>
+            </svg>
+        </div>
+    </div>
+
+    <!-- Right Side - Form -->
+    <div class="onboarding-right">
+        @if (!isValid && !isLoading)
+        {
+            <div class="error-state">
+                <div class="error-icon">⚠️</div>
+                <h2>Invalid or Expired Invitation</h2>
+                <p>This invitation link is no longer valid. Please contact your administrator for a new invitation.</p>
+                <button class="btn-back" @onclick="@(() => Nav.NavigateTo("/"))">Back to Home</button>
+            </div>
+        }
+        else if (isLoading)
+        {
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Validating invitation...</p>
+            </div>
+        }
+        else
+        {
+            @if (isExistingUser)
+            {
+                <!-- ── Existing user: just confirm joining the new org ── -->
+                <div class="form-container">
+                    <h1>Hi @fullName 👋</h1>
+                    <p class="subtitle">You've been invited to join <strong>@(string.IsNullOrEmpty(orgName) ? "a new organization" : orgName)</strong>.</p>
+                    <p class="subtitle" style="margin-top:4px;color:#888;">You're already on StaffZen — just confirm below to accept the invite.</p>
+
+                    <div class="join-info-box">
+                        <div class="join-info-row">
+                            <span class="join-info-label">Email</span>
+                            <span class="join-info-value">@email</span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(orgName))
+                        {
+                            <div class="join-info-row">
+                                <span class="join-info-label">Organization</span>
+                                <span class="join-info-value">@orgName</span>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Error Message -->
+                    @if (!string.IsNullOrEmpty(submitError))
+                    {
+                        <div class="submit-error">
+                            <i class="bi bi-exclamation-circle-fill"></i>
+                            @submitError
+                        </div>
+                    }
+
+                    <button class="btn-submit" style="margin-top:24px;" @onclick="Submit" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-small"></span>
+                            <span>Joining...</span>
+                        }
+                        else
+                        {
+                            <span>Accept & Join Organization</span>
+                        }
+                    </button>
+
+                    <div class="already-account" style="margin-top:16px;">
+                        Wrong account? <a href="/login">Login with a different email</a>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- ── New user: full signup form ── -->
+                <div class="form-container">
+                    <h1>Hi @fullName,</h1>
+                    <p class="subtitle">Join your team at <strong>APM-StaffZen</strong> to put in your best hours at work.</p>
+
+                    <form class="onboarding-form" @onsubmit="Submit">
+                        
+                        <!-- Full Name -->
+                        <div class="form-group">
+                            <label>Full name</label>
+                            <input type="text" 
+                                   class="form-input" 
+                                   placeholder="Full name"
+                                   @bind="fullName"
+                                   required />
+                        </div>
+
+                        <!-- Email (read-only) -->
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" 
+                                   class="form-input" 
+                                   value="@email"
+                                   readonly 
+                                   disabled />
+                        </div>
+
+                        <!-- Phone Number -->
+                        <div class="form-group">
+                            <label>Phone number</label>
+                            <div class="phone-input-group">
+                                <select class="country-code" @bind="countryCode">
+                                    <option value="+91">🇮🇳 +91</option>
+                                    <option value="+1">🇺🇸 +1</option>
+                                    <option value="+44">🇬🇧 +44</option>
+                                    <option value="+61">🇦🇺 +61</option>
+                                    <option value="+971">🇦🇪 +971</option>
+                                </select>
+                                <input type="tel" 
+                                       class="form-input phone-number" 
+                                       placeholder="Phone number"
+                                       @bind="mobile"
+                                       required />
+                            </div>
+                        </div>
+
+                        <!-- Password -->
+                        <div class="form-group">
+                            <label>Set up password</label>
+                            <div class="password-input-wrapper">
+                                <input type="@(showPassword ? "text" : "password")" 
+                                       class="form-input" 
+                                       placeholder="Set up password"
+                                       @bind="password"
+                                       required 
+                                       minlength="6" />
+                                <button type="button" 
+                                        class="password-toggle" 
+                                        @onclick="@(() => showPassword = !showPassword)">
+                                    <i class="bi @(showPassword ? "bi-eye-slash" : "bi-eye")"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Checkboxes -->
+                        <div class="form-group checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" @bind="acceptMarketing" />
+                                <span>I agree to receive offers, tips and product updates sent by Jibble. Unsubscribe anytime.</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" @bind="acceptTerms" required />
+                                <span>I agree to Jibble's <a href="#" target="_blank">Terms of Service</a> & <a href="#" target="_blank">Privacy Policy</a>.</span>
+                            </label>
+                        </div>
+
+                        <!-- Error Message -->
+                        @if (!string.IsNullOrEmpty(submitError))
+                        {
+                            <div class="submit-error">
+                                <i class="bi bi-exclamation-circle-fill"></i>
+                                @submitError
+                            </div>
+                        }
+
+                        <!-- Submit Button -->
+                        <button type="submit" 
+                                class="btn-submit" 
+                                disabled="@isSubmitting">
+                            @if (isSubmitting)
+                            {
+                                <span class="spinner-small"></span>
+                                <span>Joining...</span>
+                            }
+                            else
+                            {
+                                <span>Join APM-StaffZen</span>
+                            }
+                        </button>
+
+                    </form>
+
+                    <!-- Already have account -->
+                    <div class="already-account">
+                        Already have an account? <a href="/login">Login here</a>
+                    </div>
+
+                    <!-- Language Selector -->
+                    <div class="language-selector">
+                        <select>
+                            <option value="en">English</option>
+                            <option value="es">Spanish</option>
+                            <option value="fr">French</option>
+                        </select>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+</div>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+.onboarding-container {
+    display: flex;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+/* Left Side - Illustration */
+.onboarding-left {
+    flex: 1;
+    background: linear-gradient(135deg, #FFF5F7 0%, #FFF9FB 100%);
+    display: flex;
+    flex-direction: column;
+    padding: 40px;
+    position: relative;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 60px;
+}
+
+.logo-text {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1a1a1a;
+}
+
+.illustration {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.illustration svg {
+    width: 100%;
+    height: auto;
+}
+
+/* Right Side - Form */
+.onboarding-right {
+    flex: 1;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    overflow-y: auto;
+}
+
+.form-container {
+    width: 100%;
+    max-width: 450px;
+}
+
+.form-container h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 8px;
+}
+
+.subtitle {
+    font-size: 15px;
+    color: #666;
+    margin-bottom: 24px;
+    line-height: 1.5;
+}
+
+.subtitle strong {
+    color: #1a1a1a;
+    font-weight: 600;
+}
+
+/* Form Styles */
+.onboarding-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-group label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #1a1a1a;
+}
+
+.form-input {
+    width: 100%;
+    padding: 11px 14px;
+    font-size: 15px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    outline: none;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.form-input:focus {
+    border-color: #FF6B35;
+    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
+}
+
+.form-input:disabled {
+    background: #f5f5f5;
+    color: #999;
+    cursor: not-allowed;
+}
+
+.form-input::placeholder {
+    color: #999;
+}
+
+/* Phone Input */
+.phone-input-group {
+    display: flex;
+    gap: 12px;
+}
+
+.country-code {
+    width: 130px;
+    padding: 12px;
+    font-size: 16px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    outline: none;
+    cursor: pointer;
+    background: white;
+}
+
+.country-code:focus {
+    border-color: #FF6B35;
+}
+
+.phone-number {
+    flex: 1;
+}
+
+/* Password Input */
+.password-input-wrapper {
+    position: relative;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.password-toggle:hover {
+    color: #666;
+}
+
+/* Checkboxes */
+.checkbox-group {
+    margin-top: 4px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    color: #666;
+    cursor: pointer;
+    line-height: 1.4;
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin-top: 2px;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.checkbox-label a {
+    color: #FF6B35;
+    text-decoration: none;
+}
+
+.checkbox-label a:hover {
+    text-decoration: underline;
+}
+
+/* Submit Button */
+.btn-submit {
+    width: 100%;
+    padding: 12px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    color: white;
+    background: #d0d0d0;
+    border: none;
+    border-radius: 8px;
+    cursor: not-allowed;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.btn-submit:not(:disabled) {
+    background: linear-gradient(135deg, #FF6B35 0%, #FF8F5C 100%);
+    cursor: pointer;
+}
+
+.btn-submit:not(:disabled):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+}
+
+.btn-submit:disabled {
+    opacity: 0.6;
+}
+
+/* Spinner */
+.spinner-small {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Already Account */
+.already-account {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 13px;
+    color: #666;
+}
+
+.already-account a {
+    color: #FF6B35;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.already-account a:hover {
+    text-decoration: underline;
+}
+
+/* Language Selector */
+.language-selector {
+    margin-top: 24px;
+    text-align: center;
+}
+
+.language-selector select {
+    padding: 7px 14px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    background: white;
+}
+
+/* Loading State */
+.loading-state {
+    text-align: center;
+    padding: 60px 40px;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid #f0f0f0;
+    border-top-color: #FF6B35;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 20px;
+}
+
+.loading-state p {
+    color: #666;
+    font-size: 16px;
+}
+
+/* Error State */
+.error-state {
+    text-align: center;
+    padding: 60px 40px;
+}
+
+.error-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+}
+
+.error-state h2 {
+    font-size: 24px;
+    color: #1a1a1a;
+    margin-bottom: 12px;
+}
+
+.error-state p {
+    color: #666;
+    font-size: 16px;
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+.btn-back {
+    padding: 12px 32px;
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+    background: #FF6B35;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.btn-back:hover {
+    background: #ff5722;
+}
+
+/* Join info box (existing user flow) */
+.join-info-box {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin: 20px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.join-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+}
+
+.join-info-label {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.join-info-value {
+    color: #111827;
+    font-weight: 600;
+}
+
+/* Submit Error */
+.submit-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+    border-radius: 8px;
+    color: #991b1b;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+/* Responsive */
+@@media (max-width: 968px) {
+    .onboarding-left {
+        display: none;
+    }
+
+    .onboarding-right {
+        flex: 1;
+    }
+}
+
+@@media (max-width: 640px) {
+    .onboarding-right {
+        padding: 20px;
+    }
+
+    .form-container h1 {
+        font-size: 24px;
+    }
+
+    .phone-input-group {
+        flex-direction: column;
+    }
+
+    .country-code {
+        width: 100%;
+    }
+}
+</style>
+
+@code {
+    private string token = string.Empty;
+    private string fullName = string.Empty;
+    private string email = string.Empty;
+    private string countryCode = "+91";
+    private string mobile = string.Empty;
+    private string password = string.Empty;
+    private bool acceptMarketing = false;
+    private bool acceptTerms = false;
+    private bool showPassword = false;
+    private bool isValid = false;
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private string submitError = string.Empty;
+    private bool isExistingUser = false;
+    private string orgName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("token", out var tokenValue))
+        {
+            token = tokenValue.ToString();
+        }
+
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var response = await client.GetAsync($"api/invite/validate?token={token}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var inviteData = await response.Content.ReadFromJsonAsync<InviteValidationResponse>();
+                email = inviteData.Email;
+                
+                // Auto-fill name from invite data (or use email prefix as fallback)
+                fullName = !string.IsNullOrEmpty(inviteData.FullName) 
+                    ? inviteData.FullName 
+                    : inviteData.Email.Split('@')[0];
+                
+                // Auto-fill phone number from invite data
+                if (!string.IsNullOrEmpty(inviteData.MobileNumber))
+                {
+                    mobile = inviteData.MobileNumber;
+                }
+                
+                // Auto-fill country code from invite data
+                if (!string.IsNullOrEmpty(inviteData.CountryCode))
+                {
+                    countryCode = inviteData.CountryCode;
+                }
+                
+                isExistingUser  = inviteData.IsExistingUser;
+                orgName         = inviteData.OrgName ?? "";
+                isValid = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error validating invite: {ex.Message}");
+            isValid = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task Submit()
+    {
+        // Existing users (cross-org invite) don't see the terms checkbox — skip that check
+        if (!isExistingUser && !acceptTerms)
+        {
+            submitError = "Please accept the Terms of Service to continue.";
+            return;
+        }
+
+        isSubmitting = true;
+        submitError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+
+            // Step 1: Complete onboarding (activate employee + org membership)
+            var onboardingResponse = await client.PostAsJsonAsync("api/invite/complete", new
+            {
+                Token = token,
+                FullName = fullName,
+                DateOfBirth = DateTime.Now.AddYears(-25),
+                MobileNumber = mobile,
+                ProfileImageBase64 = ""
+            });
+
+            if (!onboardingResponse.IsSuccessStatusCode)
+            {
+                var body = await onboardingResponse.Content.ReadAsStringAsync();
+                submitError = $"Failed to complete onboarding: {body}";
+                Console.WriteLine($"Onboarding error: {body}");
+                return;
+            }
+
+            // Step 2: Set password — only for brand-new users
+            // Existing users (cross-org invite) already have a password
+            if (!isExistingUser)
+            {
+                var passwordResponse = await client.PostAsJsonAsync("api/invite/set-password", new
+                {
+                    Token = token,
+                    Password = password
+                });
+
+                if (!passwordResponse.IsSuccessStatusCode)
+                {
+                    var body = await passwordResponse.Content.ReadAsStringAsync();
+                    submitError = $"Account created but failed to set password: {body}";
+                    Console.WriteLine($"Set-password error: {body}");
+                    return;
+                }
+            }
+
+            // Success — go to login
+            Nav.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            submitError = "An unexpected error occurred. Please try again.";
+            Console.WriteLine($"Error submitting onboarding: {ex.Message}");
+        }
+        finally
+        {
+            isSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    public class InviteValidationResponse
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string MobileNumber { get; set; } = string.Empty;
+        public string CountryCode { get; set; } = string.Empty;
+        public string OrgName { get; set; } = string.Empty;
+        public bool IsExistingUser { get; set; }
+    }
+}

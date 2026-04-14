@@ -1,0 +1,178 @@
+@* Signup form: full name, email/phone tab, password, checkboxes, create account button *@
+
+<!-- ===== SIGNUP VIEW ===== -->
+<h1 class="text-center fw-bolder mb-4" style="font-size:36px; letter-spacing:-1.5px; color:#111; line-height:1.1;">
+    Create a new account
+</h1>
+
+<SignupSocialButtons OnGoogleSignup="OnGoogleSignup" />
+
+<!-- OR divider -->
+<div class="position-relative text-center my-4">
+    <hr class="m-0" style="border-color:#e5e7eb;" />
+    <span class="position-absolute top-50 start-50 translate-middle bg-white px-3"
+          style="font-size:13px; color:#aaa;">or</span>
+</div>
+
+<!-- Full name — floating label -->
+<div class="mb-3 login-field">
+    <input class="form-control login-input"
+           placeholder=" "
+           value="@SignupFullName"
+           @oninput="e => SignupFullNameChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+    <label>Full name</label>
+</div>
+
+<!-- Email / Phone tab toggle -->
+<div class="signup-tab-toggle mb-3 d-flex rounded-2 overflow-hidden border">
+    <button class="signup-tab flex-fill py-2 border-0 fw-semibold @(SignupTab == "email" ? "signup-tab-active" : "bg-white text-dark")"
+            style="font-size:14px;" @onclick='() => SignupTabChanged.InvokeAsync("email")'>Email</button>
+    <button class="signup-tab flex-fill py-2 border-0 fw-semibold @(SignupTab == "phone" ? "signup-tab-active" : "bg-white text-dark")"
+            style="font-size:14px;" @onclick='() => SignupTabChanged.InvokeAsync("phone")'>Phone Number</button>
+</div>
+
+<!-- Email or Phone — floating label -->
+<div class="mb-3 login-field">
+    @if (SignupTab == "email")
+    {
+        <input class="form-control login-input"
+               placeholder=" "
+               value="@SignupEmail"
+               @oninput="e => SignupEmailChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+        <label>Email</label>
+    }
+    else
+    {
+        <input class="form-control login-input"
+               placeholder=" "
+               value="@SignupPhone"
+               @oninput="e => SignupPhoneChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+        <label>Phone Number</label>
+    }
+</div>
+
+<!-- Password — floating label -->
+<div class="mb-3 position-relative login-field">
+    <input type="@SignupPasswordType"
+           class="form-control login-input"
+           placeholder=" "
+           style="padding-right:52px;"
+           value="@SignupPassword"
+           @oninput="e => SignupPasswordChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+    <label>Password</label>
+    <span class="position-absolute end-0 translate-middle-y me-3 eye-toggle"
+          style="top:50%;"
+          @onclick="ToggleSignupPassword">
+        @if (SignupPasswordType == "password")
+        {
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+        }
+        else
+        {
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+            </svg>
+        }
+    </span>
+</div>
+
+<!-- Checkboxes -->
+<div class="mb-3">
+    <div class="d-flex align-items-start gap-2 mb-2">
+        <input type="checkbox" id="chkOffers" class="signup-checkbox mt-1"
+               checked="@SignupAgreeOffers"
+               @onchange="e => SignupAgreeOffersChanged.InvokeAsync((bool)(e.Value ?? false))" />
+        <label for="chkOffers" style="font-size:13px; color:#444; cursor:pointer;">
+            I agree to receive offers, tips and product updates sent by StaffZen. Unsubscribe anytime.
+        </label>
+    </div>
+    <div class="d-flex align-items-start gap-2">
+        <input type="checkbox" id="chkTerms" class="signup-checkbox mt-1"
+               checked="@SignupAgreeTerms"
+               @onchange="e => SignupAgreeTermsChanged.InvokeAsync((bool)(e.Value ?? false))" />
+        <label for="chkTerms" style="font-size:13px; color:#444; cursor:pointer;">
+            I agree to StaffZen's
+            <a href="#" class="signup-link">Terms of Service</a> &amp;
+            <a href="#" class="signup-link">Privacy Policy</a>.
+        </label>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(SignupError))
+{
+    <p class="text-danger mb-2" style="font-size:12px;">@SignupError</p>
+}
+
+@if (GoogleSignupLoading)
+{
+    <p class="text-muted text-center mb-2" style="font-size:12px;">⏳ Signing up with Google...</p>
+}
+
+<!-- Create Account button — orange when all fields filled -->
+<button class="w-100 py-3 border-0 fw-semibold login-btn @(IsSignupFormFilled && !SignupLoading ? "login-btn-active" : "")"
+        style="font-size:15px;"
+        @onclick="OnSignup"
+        disabled="@(SignupLoading || GoogleSignupLoading)">
+    @(SignupLoading ? "Creating account..." : "Create Account")
+</button>
+
+<hr class="my-4" style="border-color:#efefef;" />
+
+<p class="text-center mb-4" style="font-size:14px; color:#555; font-weight:500;">
+    Already have an account?&nbsp;
+    <span class="fw-bold" style="color:#ff6600; cursor:pointer;" @onclick="OnShowLogin">Login here</span>
+</p>
+
+<div class="d-flex justify-content-center">
+    <div class="lang-selector">
+        <span style="font-weight:600;">English</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2.5">
+            <polyline points="6 9 12 15 18 9" />
+        </svg>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string SignupFullName { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SignupFullNameChanged { get; set; }
+
+    [Parameter] public string SignupTab { get; set; } = "email";
+    [Parameter] public EventCallback<string> SignupTabChanged { get; set; }
+
+    [Parameter] public string SignupEmail { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SignupEmailChanged { get; set; }
+
+    [Parameter] public string SignupPhone { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SignupPhoneChanged { get; set; }
+
+    [Parameter] public string SignupPassword { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SignupPasswordChanged { get; set; }
+
+    [Parameter] public bool SignupAgreeOffers { get; set; } = true;
+    [Parameter] public EventCallback<bool> SignupAgreeOffersChanged { get; set; }
+
+    [Parameter] public bool SignupAgreeTerms { get; set; }
+    [Parameter] public EventCallback<bool> SignupAgreeTermsChanged { get; set; }
+
+    [Parameter] public string SignupError { get; set; } = string.Empty;
+    [Parameter] public bool SignupLoading { get; set; }
+    [Parameter] public bool GoogleSignupLoading { get; set; }
+
+    [Parameter] public EventCallback OnSignup { get; set; }
+    [Parameter] public EventCallback OnGoogleSignup { get; set; }
+    [Parameter] public EventCallback OnShowLogin { get; set; }
+
+    bool IsSignupFormFilled =>
+        !string.IsNullOrWhiteSpace(SignupFullName) &&
+        (SignupTab == "email" ? !string.IsNullOrWhiteSpace(SignupEmail) : !string.IsNullOrWhiteSpace(SignupPhone)) &&
+        !string.IsNullOrWhiteSpace(SignupPassword) &&
+        SignupAgreeTerms;
+
+    string SignupPasswordType = "password";
+    void ToggleSignupPassword() => SignupPasswordType = SignupPasswordType == "password" ? "text" : "password";
+}

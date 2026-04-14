@@ -1,0 +1,2150 @@
+@page "/settings/time-tracking"
+@rendermode RenderMode.InteractiveServer
+@inject SessionService SessionService
+@inject IHttpClientFactory Http
+@using System.Net.Http.Json
+@using System.Text.Json
+@using System.Text.Json.Nodes
+
+<BasePage Title="Policies">
+
+    <div class="tt-page">
+
+        @* ── Tab bar ── *@
+        <div class="tt-tabbar">
+            <button class="tt-tab @(activeTab == "policies" ? "tt-tab--active" : "")"
+                    @onclick='() => activeTab = "policies"'>Policies</button>
+            <button class="tt-tab @(activeTab == "approvals" ? "tt-tab--active" : "")"
+                    @onclick='() => activeTab = "approvals"'>Approvals</button>
+            <button class="tt-tab @(activeTab == "rounding" ? "tt-tab--active" : "")"
+                    @onclick='() => activeTab = "rounding"'>Time Rounding</button>
+        </div>
+
+        @* ══════════════════════════════════════════
+           POLICIES TAB
+        ══════════════════════════════════════════ *@
+        @if (activeTab == "policies")
+        {
+            <div class="tt-content">
+
+                <p class="tt-subtitle">
+                    These time tracking rules are applied as defaults to everyone in the organization, unless stated otherwise.
+                    You can override these settings for each group in Group Settings.
+                </p>
+
+                @* ── 1. DEVICE RESTRICTIONS ── *@
+                <div class="tt-card @(editSection == "devices" ? "tt-card--editing" : "")">
+                    <div class="tt-card-hdr">
+                        <span class="tt-card-title">DEVICE RESTRICTIONS <i class="bi bi-info-circle tt-info-icon"></i></span>
+                        @if (editSection == "devices")
+                        {
+                            <span class="tt-edit-icon tt-edit-icon--active"><i class="bi bi-pencil"></i></span>
+                        }
+                        else
+                        {
+                            <button class="tt-edit-icon" @onclick='() => StartEdit("devices")'><i class="bi bi-pencil"></i></button>
+                        }
+                    </div>
+                    <p class="tt-card-sub">Select the platforms your team members and managers are allowed to clock in and out from.</p>
+
+                    <div class="tt-device-grid">
+                        <div class="tt-device-card @(dev_mobile ? "tt-device-card--on" : "")"
+                             @onclick='() => { if(editSection=="devices") dev_mobile = !dev_mobile; }'>
+                            @if (dev_mobile) { <span class="tt-device-check"><i class="bi bi-check-circle-fill"></i></span> }
+                            <div class="tt-device-icon">
+                                <svg width="42" height="56" viewBox="0 0 42 56" fill="none">
+                                    <rect x="4" y="1" width="34" height="54" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+                                    <rect x="8" y="8" width="26" height="36" rx="2" fill="#f0f4ff"/>
+                                    <rect x="14" y="6" width="14" height="2" rx="1" fill="#d1d5db"/>
+                                    <circle cx="21" cy="49" r="2.5" fill="#d1d5db"/>
+                                    <rect x="10" y="22" width="22" height="14" rx="2" fill="#6366f1" opacity=".15"/>
+                                    <path d="M15 26l4 4 8-6" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <span class="tt-device-label">Mobile Apps</span>
+                        </div>
+                        <div class="tt-device-card @(dev_kiosk ? "tt-device-card--on" : "")"
+                             @onclick='() => { if(editSection=="devices") dev_kiosk = !dev_kiosk; }'>
+                            @if (dev_kiosk) { <span class="tt-device-check"><i class="bi bi-check-circle-fill"></i></span> }
+                            <div class="tt-device-icon">
+                                <svg width="60" height="50" viewBox="0 0 60 50" fill="none">
+                                    <rect x="4" y="2" width="52" height="36" rx="4" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+                                    <rect x="8" y="6" width="44" height="28" rx="2" fill="#f0f4ff"/>
+                                    <rect x="22" y="38" width="16" height="6" rx="1" fill="#e5e7eb"/>
+                                    <rect x="16" y="44" width="28" height="3" rx="1.5" fill="#d1d5db"/>
+                                    <path d="M22 16l5 5 11-8" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <span class="tt-device-label">Shared Kiosk</span>
+                        </div>
+                        <div class="tt-device-card @(dev_web ? "tt-device-card--on" : "")"
+                             @onclick='() => { if(editSection=="devices") dev_web = !dev_web; }'>
+                            @if (dev_web) { <span class="tt-device-check"><i class="bi bi-check-circle-fill"></i></span> }
+                            <div class="tt-device-icon">
+                                <svg width="60" height="50" viewBox="0 0 60 50" fill="none">
+                                    <rect x="4" y="4" width="52" height="34" rx="4" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+                                    <rect x="4" y="4" width="52" height="8" rx="4" fill="#f3f4f6"/>
+                                    <circle cx="12" cy="8" r="2" fill="#f97316"/>
+                                    <circle cx="20" cy="8" r="2" fill="#fbbf24"/>
+                                    <circle cx="28" cy="8" r="2" fill="#4ade80"/>
+                                    <rect x="8" y="16" width="28" height="3" rx="1.5" fill="#e0e7ff"/>
+                                    <rect x="8" y="22" width="20" height="3" rx="1.5" fill="#e0e7ff"/>
+                                    <rect x="38" y="14" width="14" height="18" rx="2" fill="#ff7a00" opacity=".2"/>
+                                    <path d="M42 22l3 3 5-5" stroke="#ff7a00" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <rect x="18" y="38" width="24" height="5" rx="1" fill="#e5e7eb"/>
+                                    <rect x="10" y="43" width="40" height="3" rx="1.5" fill="#d1d5db"/>
+                                </svg>
+                            </div>
+                            <span class="tt-device-label">Web Browser</span>
+                        </div>
+                        <div class="tt-device-card @(dev_desktop ? "tt-device-card--on" : "")"
+                             @onclick='() => { if(editSection=="devices") dev_desktop = !dev_desktop; }'>
+                            @if (dev_desktop) { <span class="tt-device-check"><i class="bi bi-check-circle-fill"></i></span> }
+                            <div class="tt-device-icon">
+                                <svg width="64" height="52" viewBox="0 0 64 52" fill="none">
+                                    <rect x="2" y="2" width="60" height="38" rx="4" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+                                    <rect x="6" y="6" width="52" height="30" rx="2" fill="#f0f4ff"/>
+                                    <rect x="22" y="40" width="20" height="6" rx="1" fill="#e5e7eb"/>
+                                    <rect x="16" y="46" width="32" height="3" rx="1.5" fill="#d1d5db"/>
+                                    <rect x="12" y="14" width="20" height="12" rx="2" fill="#e0e7ff"/>
+                                    <rect x="34" y="14" width="18" height="5" rx="1.5" fill="#dbeafe"/>
+                                    <rect x="34" y="21" width="12" height="5" rx="1.5" fill="#dbeafe"/>
+                                </svg>
+                            </div>
+                            <span class="tt-device-label">Desktop Apps</span>
+                        </div>
+                    </div>
+
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="dev_offline"
+                               disabled="@(editSection != "devices")" />
+                        <span>Allow members to clock in and out on mobile while offline</span>
+                        <i class="bi bi-info-circle tt-info-icon"></i>
+                    </label>
+
+                    @if (editSection == "devices")
+                    {
+                        <div class="tt-card-actions">
+                            <button class="tt-btn-cancel" @onclick="CancelEdit">Cancel</button>
+                            <button class="tt-btn-save" @onclick='async () => await SaveSection("devices")'>Save</button>
+                        </div>
+                    }
+                </div>
+
+                @* ── 2. TIME TRACKING RULES ── *@
+                <div class="tt-card @(editSection == "rules" ? "tt-card--editing" : "")">
+                    <div class="tt-card-hdr">
+                        <span class="tt-card-title">TIME TRACKING RULES <i class="bi bi-info-circle tt-info-icon"></i></span>
+                        @if (editSection == "rules")
+                        {
+                            <span class="tt-edit-icon tt-edit-icon--active"><i class="bi bi-pencil"></i></span>
+                        }
+                        else
+                        {
+                            <button class="tt-edit-icon" @onclick='() => StartEdit("rules")'><i class="bi bi-pencil"></i></button>
+                        }
+                    </div>
+                    <p class="tt-card-sub">
+                        Require members to track time with additional verification methods in <strong>Personal Mode</strong>.
+                        Restrictions for Kiosk Mode can be configured in Kiosk Settings on shared devices.
+                    </p>
+
+                    @* Verification *@
+                    <div class="tt-section-hdr"><i class="bi bi-person-check tt-section-icon"></i> VERIFICATION</div>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox"
+                               checked="@r_faceRec"
+                               disabled="@(editSection != "rules")"
+                               @onchange="OnFaceRecChanged" />
+                        <span>Require verification by Face Recognition</span>
+                        <i class="bi bi-info-circle tt-info-icon"></i>
+                    </label>
+
+                    @* Sub-rows: shown indented under Face Recognition, locked when r_faceRec is ON *@
+                    <div class="tt-verif-sub-group @(r_faceRec ? "tt-verif-sub-group--active" : "")">
+                        @* Selfie sub-checkbox — auto-checked & locked when face rec ON *@
+                        <label class="tt-check-row tt-check-row--sub">
+                            <input type="checkbox" class="tt-checkbox"
+                                   checked="@(r_selfie || r_faceRec)"
+                                   disabled="@(editSection != "rules" || r_faceRec)"
+                                   @onchange="e => { if (!r_faceRec) r_selfie = (bool)(e.Value ?? false); }" />
+                            <span>Require selfies when clocking in and out</span>
+                            <i class="bi bi-info-circle tt-info-icon"></i>
+                        </label>
+
+                        @* UnusualBehavior dropdown — only shown when Face Recognition is enabled *@
+                        @if (r_faceRec)
+                        {
+                            <div class="tt-check-row tt-check-row--sub tt-unusual-row">
+                                <span class="tt-unusual-label">Unusual behavior will be</span>
+                                <select class="tt-unusual-select"
+                                        disabled="@(editSection != "rules")"
+                                        @bind="r_unusualBehavior">
+                                    <option value="Blocked">Blocked</option>
+                                    <option value="Flagged">Flagged</option>
+                                    <option value="Allowed">Allowed</option>
+                                </select>
+                                <i class="bi bi-info-circle tt-info-icon"></i>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="tt-rule-divider"></div>
+
+                    @* Location *@
+                    <div class="tt-section-hdr"><i class="bi bi-geo-alt tt-section-icon"></i> LOCATION</div>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="r_liveLocation"
+                               disabled="@(editSection != "rules")" />
+                        <span>Enable live location tracking</span>
+                        <span class="tt-badge tt-badge--ultimate">ULTIMATE</span>
+                        <i class="bi bi-info-circle tt-info-icon"></i>
+                    </label>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="r_requireLocation"
+                               disabled="@(editSection != "rules")" />
+                        <span>Require location with time entries</span>
+                        <i class="bi bi-info-circle tt-info-icon"></i>
+                    </label>
+                    <label class="tt-check-row tt-check-row--sub">
+                        <input type="checkbox" class="tt-checkbox" @bind="r_geofencing"
+                               disabled="@(editSection != "rules" || !r_requireLocation)" />
+                        <span>Enable geofencing</span>
+                        <i class="bi bi-info-circle tt-info-icon"></i>
+                    </label>
+
+                    <div class="tt-rule-divider"></div>
+
+                    @* Geofence Automation *@
+                    <div class="tt-section-hdr"><i class="bi bi-arrow-repeat tt-section-icon"></i> GEOFENCE AUTOMATION <i class="bi bi-info-circle tt-info-icon"></i></div>
+                    <p class="tt-card-sub" style="margin-top:4px;">Only geofences with a minimum radius of 300m are supported. <a href="/settings/locations" class="tt-link">Change location radius</a></p>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="r_autoClockIn"
+                               disabled="@(editSection != "rules")" />
+                        <span>Automatically clock in on entry</span>
+                    </label>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="r_autoClockOut"
+                               disabled="@(editSection != "rules")" />
+                        <span>Automatically clock out on exit</span>
+                    </label>
+
+                    @if (r_autoClockIn || r_autoClockOut)
+                    {
+                        <div class="tt-exclude-days">
+                            <div class="tt-exclude-label">Choose days to exclude from this rule</div>
+                            <label class="tt-check-row tt-check-row--sub">
+                                <input type="checkbox" class="tt-checkbox" @bind="r_excludeRestDays"
+                                       disabled="@(editSection != "rules")" />
+                                <span>Rest days</span>
+                            </label>
+                            <label class="tt-check-row tt-check-row--sub">
+                                <input type="checkbox" class="tt-checkbox" @bind="r_excludeHolidays"
+                                       disabled="@(editSection != "rules")" />
+                                <span>Public holidays</span>
+                            </label>
+                            <label class="tt-check-row tt-check-row--sub">
+                                <input type="checkbox" class="tt-checkbox" @bind="r_excludeTimeOffs"
+                                       disabled="@(editSection != "rules")" />
+                                <span>Approved time offs</span>
+                            </label>
+                        </div>
+                    }
+
+                    <div class="tt-rule-divider"></div>
+
+                    @* Time Entries *@
+                    <div class="tt-section-hdr"><i class="bi bi-clock-history tt-section-icon"></i> TIME ENTRIES</div>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="r_requireActivity"
+                               disabled="@(editSection != "rules")" />
+                        <span>Require activity when clocking in</span>
+                        <span class="tt-badge tt-badge--premium">PREMIUM</span>
+                        <i class="bi bi-info-circle tt-info-icon"></i>
+                    </label>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="r_requireProject"
+                               disabled="@(editSection != "rules")" />
+                        <span>Require project when clocking in</span>
+                        <span class="tt-badge tt-badge--premium">PREMIUM</span>
+                        <i class="bi bi-info-circle tt-info-icon"></i>
+                    </label>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="r_editEntries"
+                               disabled="@(editSection != "rules")" />
+                        <span>Allow members to edit their time entries</span>
+                        <i class="bi bi-info-circle tt-info-icon"></i>
+                    </label>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="r_editLocation"
+                               disabled="@(editSection != "rules")" />
+                        <span>Allow members to edit location of their time entries</span>
+                        <i class="bi bi-info-circle tt-info-icon"></i>
+                    </label>
+
+                    @if (editSection == "rules")
+                    {
+                        <div class="tt-card-actions">
+                            <button class="tt-btn-cancel" @onclick="CancelEdit">Cancel</button>
+                            <button class="tt-btn-save" @onclick='async () => await SaveSection("rules")'>Save</button>
+                        </div>
+                    }
+                </div>
+
+                @* ── 3. SCREENSHOTS ── *@
+                <div class="tt-card @(editSection == "screenshots" ? "tt-card--editing" : "")">
+                    <div class="tt-card-hdr">
+                        <span class="tt-card-title">SCREENSHOTS <i class="bi bi-info-circle tt-info-icon"></i></span>
+                        @if (editSection == "screenshots")
+                        {
+                            <span class="tt-edit-icon tt-edit-icon--active"><i class="bi bi-pencil"></i></span>
+                        }
+                        else
+                        {
+                            <button class="tt-edit-icon" @onclick='() => StartEdit("screenshots")'><i class="bi bi-pencil"></i></button>
+                        }
+                    </div>
+                    <p class="tt-card-sub">
+                        Screenshots are taken when members are clocked in with the desktop app running and viewable in their timesheets.
+                        <a href="#" class="tt-link">Learn more about viewing screenshots <i class="bi bi-box-arrow-up-right" style="font-size:10px;"></i></a>
+                    </p>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="s_requireScreenshot"
+                               disabled="@(editSection != "screenshots")" />
+                        <span>Require screenshot capturing</span>
+                        <i class="bi bi-info-circle tt-info-icon"></i>
+                    </label>
+                    @if (editSection == "screenshots")
+                    {
+                        <div class="tt-card-actions">
+                            <button class="tt-btn-cancel" @onclick="CancelEdit">Cancel</button>
+                            <button class="tt-btn-save" @onclick='async () => await SaveSection("screenshots")'>Save</button>
+                        </div>
+                    }
+                </div>
+
+                @* ── 4. DEVICE LOCK ── *@
+                <div class="tt-card @(editSection == "devicelock" ? "tt-card--editing" : "")">
+                    <div class="tt-card-hdr">
+                        <span class="tt-card-title">DEVICE LOCK <i class="bi bi-info-circle tt-info-icon"></i></span>
+                        @if (editSection == "devicelock")
+                        {
+                            <span class="tt-edit-icon tt-edit-icon--active"><i class="bi bi-pencil"></i></span>
+                        }
+                        else
+                        {
+                            <button class="tt-edit-icon" @onclick='() => StartEdit("devicelock")'><i class="bi bi-pencil"></i></button>
+                        }
+                    </div>
+                    <p class="tt-card-sub">To prevent a user from clocking in from a different device, enable this setting to eliminate fraudulent clocking in and out.</p>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="dl_enabled"
+                               disabled="@(editSection != "devicelock")" />
+                        <span>Enable device lock for members</span>
+                    </label>
+                    <div class="tt-info-box">
+                        <i class="bi bi-info-circle tt-info-box-icon"></i>
+                        <span>Device lock can be used together with Face Spoofing Prevention to eliminate fraudulent clocking in and out.</span>
+                    </div>
+                    @if (editSection == "devicelock")
+                    {
+                        <div class="tt-card-actions">
+                            <button class="tt-btn-cancel" @onclick="CancelEdit">Cancel</button>
+                            <button class="tt-btn-save" @onclick='async () => await SaveSection("devicelock")'>Save</button>
+                        </div>
+                    }
+                </div>
+
+                @* ── 5. WORK SCHEDULE RESTRICTIONS ── *@
+                <div class="tt-card @(editSection == "schedule" ? "tt-card--editing" : "")">
+                    <div class="tt-card-hdr">
+                        <span class="tt-card-title">WORK SCHEDULE RESTRICTIONS <i class="bi bi-info-circle tt-info-icon"></i></span>
+                        @if (editSection == "schedule")
+                        {
+                            <span class="tt-edit-icon tt-edit-icon--active"><i class="bi bi-pencil"></i></span>
+                        }
+                        else
+                        {
+                            <button class="tt-edit-icon" @onclick='() => StartEdit("schedule")'><i class="bi bi-pencil"></i></button>
+                        }
+                    </div>
+                    <p class="tt-card-sub">Restrict the extent to which members are allowed to clock in or out before or after their fixed work schedule time.</p>
+
+                    @if (editSection == "schedule")
+                    {
+                        <div class="tt-warn-box">
+                            <i class="bi bi-exclamation-triangle tt-warn-icon"></i>
+                            <span>If enabled, members will <strong>NOT</strong> be able to clock in or out outside of their scheduled hours any more.</span>
+                        </div>
+                    }
+
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="ws_earlyIn"
+                               disabled="@(editSection != "schedule")" />
+                        <span>Allow <strong>early clock in</strong> up to</span>
+                        <select class="tt-minutes-select" disabled="@(editSection != "schedule")" @bind="ws_earlyInMins">
+                            @foreach (var m in minuteOptions)
+                            { <option value="@m">@m</option> }
+                        </select>
+                        <span>= minutes before start time</span>
+                    </label>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="ws_lateIn"
+                               disabled="@(editSection != "schedule")" />
+                        <span>Allow <strong>late clock in</strong> up to</span>
+                        <select class="tt-minutes-select" disabled="@(editSection != "schedule")" @bind="ws_lateInMins">
+                            @foreach (var m in minuteOptions)
+                            { <option value="@m">@m</option> }
+                        </select>
+                        <span>= minutes after start time</span>
+                    </label>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="ws_earlyOut"
+                               disabled="@(editSection != "schedule")" />
+                        <span>Allow <strong>early clock out</strong> up to</span>
+                        <select class="tt-minutes-select" disabled="@(editSection != "schedule")" @bind="ws_earlyOutMins">
+                            @foreach (var m in minuteOptions)
+                            { <option value="@m">@m</option> }
+                        </select>
+                        <span>= minutes before end time</span>
+                    </label>
+
+                    @if (editSection == "schedule")
+                    {
+                        <div class="tt-card-actions">
+                            <button class="tt-btn-cancel" @onclick="CancelEdit">Cancel</button>
+                            <button class="tt-btn-save" @onclick='async () => await SaveSection("schedule")'>Save</button>
+                        </div>
+                    }
+                </div>
+
+                @* ── 6. REMINDERS ── *@
+                <div class="tt-card @(editSection == "reminders" ? "tt-card--editing" : "")">
+                    <div class="tt-card-hdr">
+                        <span class="tt-card-title">REMINDERS <i class="bi bi-info-circle tt-info-icon"></i></span>
+                        @if (editSection == "reminders")
+                        {
+                            <span class="tt-edit-icon tt-edit-icon--active"><i class="bi bi-pencil"></i></span>
+                        }
+                        else
+                        {
+                            <button class="tt-edit-icon" @onclick='() => StartEdit("reminders")'><i class="bi bi-pencil"></i></button>
+                        }
+                    </div>
+
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="rem_clockIn"
+                               disabled="@(editSection != "reminders")" />
+                        <span>Send clock in reminder</span>
+                        <select class="tt-minutes-select" disabled="@(editSection != "reminders")" @bind="rem_clockInMins">
+                            @foreach (var m in minuteOptions)
+                            { <option value="@m">@m</option> }
+                        </select>
+                        <span>= minutes <strong>before and after</strong> the scheduled start time</span>
+                    </label>
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="rem_clockOut"
+                               disabled="@(editSection != "reminders")" />
+                        <span>Send clock out reminder</span>
+                        <select class="tt-minutes-select" disabled="@(editSection != "reminders")" @bind="rem_clockOutMins">
+                            @foreach (var m in minuteOptions)
+                            { <option value="@m">@m</option> }
+                        </select>
+                        <span>= minutes <strong>before and after</strong> the scheduled end time</span>
+                    </label>
+
+                    @if (editSection == "reminders")
+                    {
+                        <div class="tt-card-actions">
+                            <button class="tt-btn-cancel" @onclick="CancelEdit">Cancel</button>
+                            <button class="tt-btn-save" @onclick='async () => await SaveSection("reminders")'>Save</button>
+                        </div>
+                    }
+                </div>
+
+                @* ── 7. AUTOMATIC CLOCK OUT ── *@
+                <div class="tt-card @(editSection == "autoclockout" ? "tt-card--editing" : "")">
+                    <div class="tt-card-hdr">
+                        <span class="tt-card-title">AUTOMATIC CLOCK OUT <i class="bi bi-info-circle tt-info-icon"></i></span>
+                        @if (editSection == "autoclockout")
+                        {
+                            <span class="tt-edit-icon tt-edit-icon--active"><i class="bi bi-pencil"></i></span>
+                        }
+                        else
+                        {
+                            <button class="tt-edit-icon" @onclick='() => StartEdit("autoclockout")'><i class="bi bi-pencil"></i></button>
+                        }
+                    </div>
+
+                    <label class="tt-check-row">
+                        <input type="checkbox" class="tt-checkbox" @bind="aco_enabled"
+                               disabled="@(editSection != "autoclockout")" />
+                        <span>Allow members to set automatic clock out</span>
+                    </label>
+
+                    @if (aco_enabled)
+                    {
+                        <div class="tt-aco-sub">
+                            <span class="tt-aco-label">Set automatic clock out for all members...</span>
+
+                            @* ── After scheduled end time ── *@
+                            <div class="tt-aco-row" style="align-items:flex-start;flex-direction:column;gap:6px;">
+                                <div style="display:flex;align-items:center;gap:10px;">
+                                    <label class="tt-check-row" style="gap:10px;margin:0;">
+                                        <input type="checkbox" class="tt-checkbox" @bind="aco_afterDuration"
+                                               disabled="@(editSection != "autoclockout")" />
+                                        <span><strong>After</strong></span>
+                                    </label>
+                                    <div class="tt-aco-time-box">
+                                        <input type="number" class="tt-aco-num" min="0" max="23" @bind="aco_afterH"
+                                               disabled="@(editSection != "autoclockout" || !aco_afterDuration)" />
+                                        <span class="tt-aco-sep">h</span>
+                                        <input type="number" class="tt-aco-num" min="0" max="59" @bind="aco_afterM"
+                                               disabled="@(editSection != "autoclockout" || !aco_afterDuration)" />
+                                        <span class="tt-aco-sep">m</span>
+                                    </div>
+                                    <span style="color:var(--text-secondary);font-size:0.82rem;">after scheduled end time</span>
+                                </div>
+                                @if (aco_afterDuration)
+                                {
+                                    <div class="tt-aco-hint">
+                                        <i class="bi bi-info-circle"></i>
+                                        Employees will be automatically clocked out
+                                        @if (aco_afterH == 0 && aco_afterM == 0)
+                                        {
+                                            <span> exactly at their scheduled end time</span>
+                                        }
+                                        else
+                                        {
+                                            <span> <strong>@aco_afterH h @aco_afterM m</strong> after their shift ends</span>
+                                        }
+                                        (based on their assigned Work Schedule for that day).
+                                        Anyone already clocked out will not be affected.
+                                    </div>
+                                }
+                            </div>
+
+                            @* ── At fixed time ── *@
+                            <div class="tt-aco-row">
+                                <label class="tt-check-row" style="gap:10px;margin:0;">
+                                    <input type="checkbox" class="tt-checkbox" @bind="aco_atTime"
+                                           disabled="@(editSection != "autoclockout")" />
+                                    <span><strong>At</strong></span>
+                                </label>
+                                <input type="time" class="tt-aco-time-input" @bind="aco_atTimeVal"
+                                       disabled="@(editSection != "autoclockout" || !aco_atTime)" />
+                                <span style="color:var(--text-secondary);font-size:0.82rem;">fixed time (all members)</span>
+                            </div>
+                        </div>
+                    }
+
+                    @if (editSection == "autoclockout")
+                    {
+                        @if (_acoSaveError != null)
+                        {
+                            <div class="tt-warn-box" style="margin-top:10px;">
+                                <i class="bi bi-exclamation-triangle-fill tt-warn-icon"></i>
+                                <span>Save failed: @_acoSaveError — your settings were <strong>not</strong> stored. Check the API is running and try again.</span>
+                            </div>
+                        }
+                        <div class="tt-card-actions">
+                            <button class="tt-btn-cancel" @onclick="CancelEdit">Cancel</button>
+                            <button class="tt-btn-save" @onclick='async () => await SaveSection("autoclockout")'>Save</button>
+                        </div>
+                    }
+                </div>
+
+            </div>
+        }
+
+        @* ══════════════════════════════════════════
+           APPROVALS TAB
+        ══════════════════════════════════════════ *@
+        else if (activeTab == "approvals")
+        {
+            <div class="tt-content">
+                <div class="tt-empty-tab">
+                    <i class="bi bi-check2-circle" style="font-size:48px;color:#d1d5db;"></i>
+                    <p style="color:#9ca3af;font-size:14px;margin-top:12px;">Approvals configuration coming soon.</p>
+                </div>
+            </div>
+        }
+
+        @* ══════════════════════════════════════════
+           TIME ROUNDING TAB
+        ══════════════════════════════════════════ *@
+        else if (activeTab == "rounding")
+        {
+            <div class="tt-content">
+                <div class="tt-card" style="padding-bottom:28px;">
+
+                    <div class="tt-rounding-title">TIME ROUNDING</div>
+                    <p class="tt-card-sub" style="margin-bottom:18px;">
+                        Time rounding automatically adjusts time entries to set increments, simplifying payroll and ensuring consistent reporting.
+                    </p>
+
+                    <div class="tt-legal-box">
+                        <i class="bi bi-info-circle tt-legal-icon"></i>
+                        <span>Local and federal labor laws on time rounding may vary. Enabling this feature is at your discretion and should be reviewed for compliance with your legal requirements.</span>
+                    </div>
+
+                    @* Clock Ins *@
+                    <div class="tt-rounding-section">
+                        <div class="tt-rounding-hdr">
+                            <div>
+                                <div class="tt-rounding-name">Clock ins</div>
+                                <div class="tt-rounding-desc">Automatically rounds employee clock-ins, helping standardize shift starts and improve payroll accuracy.</div>
+                            </div>
+                        </div>
+                        @foreach (var rule in roundingClockIns)
+                        {
+                            var r = rule;
+                            <div class="tt-rounding-rule-row">
+                                <span class="tt-rounding-rule-text">Round to nearest @r.Minutes minutes — @r.Direction</span>
+                                <button class="tt-rounding-del" @onclick="() => roundingClockIns.Remove(r)"><i class="bi bi-trash3"></i></button>
+                            </div>
+                        }
+                        <button class="tt-add-rule-btn" @onclick='() => OpenRoundingPanel("clockin")'>
+                            <i class="bi bi-plus-lg"></i> Add rule
+                        </button>
+                    </div>
+
+                    <div class="tt-rounding-divider"></div>
+
+                    @* Clock Outs *@
+                    <div class="tt-rounding-section">
+                        <div class="tt-rounding-hdr">
+                            <div>
+                                <div class="tt-rounding-name">Clock outs</div>
+                                <div class="tt-rounding-desc">Applies rounding to clock-outs to ensure consistent end-of-day records and streamline payroll calculations.</div>
+                            </div>
+                        </div>
+                        @foreach (var rule in roundingClockOuts)
+                        {
+                            var r = rule;
+                            <div class="tt-rounding-rule-row">
+                                <span class="tt-rounding-rule-text">Round to nearest @r.Minutes minutes — @r.Direction</span>
+                                <button class="tt-rounding-del" @onclick="() => roundingClockOuts.Remove(r)"><i class="bi bi-trash3"></i></button>
+                            </div>
+                        }
+                        <button class="tt-add-rule-btn" @onclick='() => OpenRoundingPanel("clockout")'>
+                            <i class="bi bi-plus-lg"></i> Add rule
+                        </button>
+                    </div>
+
+                    <div class="tt-rounding-divider"></div>
+
+                    @* Breaks *@
+                    <div class="tt-rounding-section">
+                        <div class="tt-rounding-hdr">
+                            <div>
+                                <div class="tt-rounding-name">Breaks</div>
+                                <div class="tt-rounding-desc">Ensures consistent records by adjusting both start and end of breaks.</div>
+                            </div>
+                        </div>
+                        @foreach (var rule in roundingBreaks)
+                        {
+                            var r = rule;
+                            <div class="tt-rounding-rule-row">
+                                <span class="tt-rounding-rule-text">Round to nearest @r.Minutes minutes — @r.Direction</span>
+                                <button class="tt-rounding-del" @onclick="() => roundingBreaks.Remove(r)"><i class="bi bi-trash3"></i></button>
+                            </div>
+                        }
+                        <button class="tt-add-rule-btn" @onclick='() => OpenRoundingPanel("break")'>
+                            <i class="bi bi-plus-lg"></i> Add rule
+                        </button>
+                    </div>
+
+                </div>
+
+                @* Archived Rules *@
+                <button class="tt-archived-btn">
+                    <i class="bi bi-archive tt-archived-icon"></i>
+                    Archived Rules
+                </button>
+
+            </div>
+        }
+
+    </div>
+
+    @* ══════════════════════════════════════════════════════
+       ADD ROUNDING RULE PANEL  (right-side slide-in)
+    ══════════════════════════════════════════════════════ *@
+    @if (rp_open)
+    {
+        <div class="rp-backdrop" @onclick="CloseRoundingPanel"></div>
+        <div class="rp-panel" @onclick:stopPropagation="true">
+
+            @* Header *@
+            <div class="rp-header">
+                <span class="rp-title">@RoundingPanelTitle</span>
+                <button class="rp-close" @onclick="CloseRoundingPanel"><i class="bi bi-x-lg"></i></button>
+            </div>
+
+            @* Body *@
+            <div class="rp-body">
+
+                @* Rounding method *@
+                <div class="rp-field-label">Rounding method</div>
+                <div class="rp-method-toggle">
+                    <button class="rp-method-btn @(rp_method == "nearest" ? "rp-method-btn--active" : "")"
+                            @onclick='() => rp_method = "nearest"'>To nearest</button>
+                    <button class="rp-method-btn @(rp_method == "upto" ? "rp-method-btn--active" : "")"
+                            @onclick='() => rp_method = "upto"'>Up to</button>
+                    <button class="rp-method-btn @(rp_method == "downto" ? "rp-method-btn--active" : "")"
+                            @onclick='() => rp_method = "downto"'>Down to</button>
+                </div>
+
+                @* Rounding interval — custom dropdown *@
+                <div class="rp-field-label" style="margin-top:24px;">Rounding interval</div>
+                <div class="rp-dd-wrap" @onclick:stopPropagation="true">
+                    <button class="rp-dd-trigger @(rp_intervalOpen ? "rp-dd-trigger--open" : "")"
+                            @onclick="() => rp_intervalOpen = !rp_intervalOpen">
+                        <span>@rp_intervalLabel</span>
+                        <i class="bi bi-chevron-@(rp_intervalOpen ? "up" : "down") rp-dd-chevron"></i>
+                    </button>
+                    @if (rp_intervalOpen)
+                    {
+                        <div class="rp-dd-menu">
+                            @foreach (var opt in intervalOptions)
+                            {
+                                var o = opt;
+                                bool sel = rp_intervalMins == o;
+                                <div class="rp-dd-item @(sel ? "rp-dd-item--sel" : "")"
+                                     @onclick="() => { rp_intervalMins = o; rp_intervalOpen = false; }">
+                                    <span>@o minutes</span>
+                                    @if (sel) { <i class="bi bi-check rp-dd-check"></i> }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                @* Date range *@
+                <div class="rp-field-label" style="margin-top:24px;">Date range</div>
+                <div class="rp-date-row">
+                    @* Start date field *@
+                    <div class="rp-date-field @(rp_startCalOpen ? "rp-date-field--open" : "")"
+                         @onclick:stopPropagation="true"
+                         @onclick="() => { rp_startCalOpen = !rp_startCalOpen; rp_endCalOpen = false; }">
+                        <span class="rp-date-val">@rp_startDate.ToString("yyyy-MM-dd")</span>
+                        <i class="bi bi-calendar3 rp-date-icon"></i>
+                    </div>
+
+                    <span class="rp-date-to">to</span>
+
+                    @* End date field *@
+                    <div class="rp-date-field rp-date-field--placeholder @(rp_endCalOpen ? "rp-date-field--open" : "")"
+                         @onclick:stopPropagation="true"
+                         @onclick="() => { rp_endCalOpen = !rp_endCalOpen; rp_startCalOpen = false; }">
+                        @if (rp_endDate.HasValue)
+                        {
+                            <span class="rp-date-val">@rp_endDate.Value.ToString("yyyy-MM-dd")</span>
+                        }
+                        else
+                        {
+                            <span class="rp-date-placeholder">End date (optional)</span>
+                        }
+                        <i class="bi bi-calendar3 rp-date-icon"></i>
+                    </div>
+                </div>
+
+                @* Start date calendar *@
+                @if (rp_startCalOpen)
+                {
+                    <div class="rp-calendar" @onclick:stopPropagation="true">
+                        <div class="rp-cal-nav">
+                            <button class="rp-cal-nav-btn" @onclick="() => rp_calDate = rp_calDate.AddMonths(-1)"><i class="bi bi-chevron-left"></i></button>
+                            <span class="rp-cal-month">@rp_calDate.ToString("MMMM")</span>
+                            <button class="rp-cal-nav-btn" @onclick="() => rp_calDate = rp_calDate.AddMonths(1)"><i class="bi bi-chevron-right"></i></button>
+                        </div>
+                        <div class="rp-cal-grid">
+                            @foreach (var d in new[]{"Mon","Tue","Wed","Thu","Fri","Sat","Sun"})
+                            { <span class="rp-cal-dow">@d</span> }
+                            @{
+                                var first = new DateTime(rp_calDate.Year, rp_calDate.Month, 1);
+                                int offset = ((int)first.DayOfWeek + 6) % 7;
+                                int days = DateTime.DaysInMonth(rp_calDate.Year, rp_calDate.Month);
+                                for (int b = 0; b < offset; b++) { <span></span> }
+                                for (int d = 1; d <= days; d++)
+                                {
+                                    var cd = new DateTime(rp_calDate.Year, rp_calDate.Month, d);
+                                    var capCd = cd;
+                                    bool isSel = cd.Date == rp_startDate.Date;
+                                    bool isToday = cd.Date == DateTime.Today;
+                                    <span class="rp-cal-day @(isSel ? "rp-cal-day--sel" : "") @(isToday && !isSel ? "rp-cal-day--today" : "")"
+                                          @onclick="() => { rp_startDate = capCd; rp_startCalOpen = false; }">@d</span>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+
+                @* End date calendar *@
+                @if (rp_endCalOpen)
+                {
+                    <div class="rp-calendar" @onclick:stopPropagation="true">
+                        <div class="rp-cal-nav">
+                            <button class="rp-cal-nav-btn" @onclick="() => rp_calDate = rp_calDate.AddMonths(-1)"><i class="bi bi-chevron-left"></i></button>
+                            <span class="rp-cal-month">@rp_calDate.ToString("MMMM")</span>
+                            <button class="rp-cal-nav-btn" @onclick="() => rp_calDate = rp_calDate.AddMonths(1)"><i class="bi bi-chevron-right"></i></button>
+                        </div>
+                        <div class="rp-cal-grid">
+                            @foreach (var d in new[]{"Mon","Tue","Wed","Thu","Fri","Sat","Sun"})
+                            { <span class="rp-cal-dow">@d</span> }
+                            @{
+                                var first2 = new DateTime(rp_calDate.Year, rp_calDate.Month, 1);
+                                int offset2 = ((int)first2.DayOfWeek + 6) % 7;
+                                int days2 = DateTime.DaysInMonth(rp_calDate.Year, rp_calDate.Month);
+                                for (int b = 0; b < offset2; b++) { <span></span> }
+                                for (int d = 1; d <= days2; d++)
+                                {
+                                    var cd2 = new DateTime(rp_calDate.Year, rp_calDate.Month, d);
+                                    var capCd2 = cd2;
+                                    bool isSel2 = rp_endDate.HasValue && cd2.Date == rp_endDate.Value.Date;
+                                    bool isToday2 = cd2.Date == DateTime.Today;
+                                    <span class="rp-cal-day @(isSel2 ? "rp-cal-day--sel" : "") @(isToday2 && !isSel2 ? "rp-cal-day--today" : "")"
+                                          @onclick="() => { rp_endDate = capCd2; rp_endCalOpen = false; }">@d</span>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+
+            </div>
+
+            @* Footer *@
+            <div class="rp-footer">
+                <button class="rp-cancel-btn" @onclick="CloseRoundingPanel">Cancel</button>
+                <button class="rp-save-btn" @onclick="SaveRoundingRule">Save</button>
+            </div>
+
+        </div>
+    }
+
+</BasePage>
+
+@code {
+    // ── Tab ───────────────────────────────────────────────────────────
+    private string activeTab    = "policies";
+    private string editSection  = "";   // which card is currently being edited
+    private string? _acoSaveError = null;  // non-null = last autoclockout save failed
+
+    // ── Device Restrictions ───────────────────────────────────────────
+    private bool dev_mobile   = true;
+    private bool dev_kiosk    = true;
+    private bool dev_web      = true;
+    private bool dev_desktop  = false;
+    private bool dev_offline  = true;
+
+    // ── Time Tracking Rules ───────────────────────────────────────────
+    private bool   r_faceRec          = false;
+    private bool   r_selfie           = false;
+    private string r_unusualBehavior  = "Blocked"; // "Blocked" | "Flagged" | "Allowed"
+
+    // Cascade: checking Face Recognition auto-checks Selfie + shows UnusualBehavior
+    private void OnFaceRecChanged(ChangeEventArgs e)
+    {
+        r_faceRec = (bool)(e.Value ?? false);
+        if (r_faceRec)
+        {
+            r_selfie = true;  // auto-checked when face rec is on
+        }
+        else
+        {
+            // Unchecking face rec resets selfie — it was force-enabled by face rec
+            // and should return to unchecked (user can re-enable it independently)
+            r_selfie = false;
+        }
+    }
+    private bool r_liveLocation     = false;
+    private bool r_requireLocation  = false;
+    private bool r_geofencing       = false;
+    private bool r_autoClockIn      = false;
+    private bool r_autoClockOut     = false;
+    private bool r_excludeRestDays  = false;
+    private bool r_excludeHolidays  = false;
+    private bool r_excludeTimeOffs  = false;
+    private bool r_requireActivity  = false;
+    private bool r_requireProject   = false;
+    private bool r_editEntries      = true;
+    private bool r_editLocation     = true;
+
+    // ── Screenshots ───────────────────────────────────────────────────
+    private bool s_requireScreenshot = false;
+
+    // ── Device Lock ───────────────────────────────────────────────────
+    private bool dl_enabled = false;
+
+    // ── Work Schedule Restrictions ────────────────────────────────────
+    private bool ws_earlyIn     = false;
+    private int  ws_earlyInMins = 5;
+    private bool ws_lateIn      = false;
+    private int  ws_lateInMins  = 5;
+    private bool ws_earlyOut    = false;
+    private int  ws_earlyOutMins = 5;
+    private int[] minuteOptions = new[] { 5, 10, 15, 20, 30, 45, 60 };
+
+    // ── Reminders ─────────────────────────────────────────────────────
+    private bool rem_clockIn     = false;
+    private int  rem_clockInMins = 5;
+    private bool rem_clockOut    = false;
+    private int  rem_clockOutMins = 5;
+
+    // ── Automatic Clock Out ───────────────────────────────────────────
+    private bool     aco_enabled    = false;
+    private bool     aco_afterDuration = false;
+    private int      aco_afterH     = 8;
+    private int      aco_afterM     = 0;
+    private bool     aco_atTime     = false;
+    private TimeOnly aco_atTimeVal  = new TimeOnly(23, 0);
+
+    // ── Time Rounding ─────────────────────────────────────────────────
+    private class RoundingRule
+    {
+        public int    Minutes   = 5;
+        public string Direction = "nearest";
+        public DateTime StartDate = DateTime.Today;
+        public DateTime? EndDate  = null;
+    }
+    private List<RoundingRule> roundingClockIns  = new();
+    private List<RoundingRule> roundingClockOuts = new();
+    private List<RoundingRule> roundingBreaks    = new();
+
+    // ── Rounding panel state ─────────────────────────────────────────
+    private bool      rp_open          = false;
+    private string    rp_section       = "";    // "clockin" | "clockout" | "break"
+    private string    rp_method        = "nearest";
+    private int       rp_intervalMins  = 5;
+    private bool      rp_intervalOpen  = false;
+    private DateTime  rp_startDate     = DateTime.Today;
+    private DateTime? rp_endDate       = null;
+    private bool      rp_startCalOpen  = false;
+    private bool      rp_endCalOpen    = false;
+    private DateTime  rp_calDate       = DateTime.Today;
+    private int[]     intervalOptions  = new[] { 5, 6, 15, 30 };
+
+    private string rp_intervalLabel => rp_intervalMins + " minutes";
+
+    private string RoundingPanelTitle => rp_section switch
+    {
+        "clockout" => "Add Clock Out Rounding Rule",
+        "break"    => "Add Break Rounding Rule",
+        _          => "Add Clock In Rounding Rule"
+    };
+
+    private void OpenRoundingPanel(string section)
+    {
+        rp_section      = section;
+        rp_method       = "nearest";
+        rp_intervalMins = 5;
+        rp_startDate    = DateTime.Today;
+        rp_endDate      = null;
+        rp_intervalOpen = false;
+        rp_startCalOpen = false;
+        rp_endCalOpen   = false;
+        rp_calDate      = DateTime.Today;
+        rp_open         = true;
+    }
+
+    private void CloseRoundingPanel()
+    {
+        rp_open         = false;
+        rp_intervalOpen = false;
+        rp_startCalOpen = false;
+        rp_endCalOpen   = false;
+    }
+
+    private void SaveRoundingRule()
+    {
+        var rule = new RoundingRule
+        {
+            Minutes   = rp_intervalMins,
+            Direction = rp_method,
+            StartDate = rp_startDate,
+            EndDate   = rp_endDate
+        };
+        var list = rp_section switch
+        {
+            "clockout" => roundingClockOuts,
+            "break"    => roundingBreaks,
+            _          => roundingClockIns
+        };
+        list.Add(rule);
+        CloseRoundingPanel();
+    }
+
+    // ── Edit helpers ──────────────────────────────────────────────────
+    private void StartEdit(string section) { editSection = section; _acoSaveError = null; }
+    private void CancelEdit()              { editSection = ""; _acoSaveError = null; }
+
+    // Track the active work-schedule id so we can PUT to the right endpoint
+    private int _activeScheduleId = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = Http.CreateClient("API");
+
+        // ── Load verification policy from the default work schedule ───────
+        try
+        {
+            var schedules = await client.GetFromJsonAsync<List<WorkScheduleSummary>>("api/WorkSchedules");
+            var def = schedules?.FirstOrDefault(s => s.IsDefault) ?? schedules?.FirstOrDefault();
+            if (def != null)
+            {
+                _activeScheduleId  = def.Id;
+                r_faceRec          = def.RequireFaceVerification;
+                r_selfie           = def.RequireSelfie;
+                r_unusualBehavior  = def.UnusualBehavior ?? "Blocked";
+            }
+        }
+        catch { /* API not ready — leave defaults */ }
+
+        // ── Load automatic clock-out policy ───────────────────────────────
+        try
+        {
+            var orgId = SessionService.OrganizationId;
+            if (orgId.HasValue && orgId.Value > 0)
+            {
+                var policy = await client.GetFromJsonAsync<AcoPolicy>(
+                    $"api/organizations/{orgId.Value}/time-tracking-policy");
+                if (policy != null)
+                {
+                    aco_enabled    = policy.AutoClockOutEnabled;
+                    aco_afterDuration = policy.AutoClockOutAfterDuration;
+                    aco_afterH     = policy.AutoClockOutAfterHours;
+                    aco_afterM     = policy.AutoClockOutAfterMins;
+                    aco_atTime     = policy.AutoClockOutAtTime;
+                    if (TimeOnly.TryParse(policy.AutoClockOutTime, out var t))
+                        aco_atTimeVal = t;
+                }
+            }
+        }
+        catch { /* non-fatal — leave defaults */ }
+    }
+
+    // Minimal DTO for deserialising the time-tracking-policy response
+    private class AcoPolicy
+    {
+        public bool   AutoClockOutEnabled       { get; set; }
+        public bool   AutoClockOutAfterDuration { get; set; }
+        public int    AutoClockOutAfterHours    { get; set; } = 8;
+        public int    AutoClockOutAfterMins     { get; set; } = 0;
+        public bool   AutoClockOutAtTime        { get; set; }
+        public string AutoClockOutTime          { get; set; } = "23:00";
+    }
+
+    private class WorkScheduleSummary
+    {
+        public int    Id                      { get; set; }
+        public bool   IsDefault               { get; set; }
+        public bool   RequireFaceVerification { get; set; }
+        public bool   RequireSelfie           { get; set; }
+        public string? UnusualBehavior        { get; set; }
+    }
+
+    private async Task SaveSection(string section)
+    {
+        if (section == "rules" && _activeScheduleId > 0)
+        {
+            try
+            {
+                var client = Http.CreateClient("API");
+                // Fetch the current schedule so we only patch the verification fields
+                var existing = await client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+                    $"api/WorkSchedules/{_activeScheduleId}");
+
+                // Build a minimal patch: deserialise the existing schedule and override
+                // only the three verification fields we own on this page.
+                var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(
+                    existing.GetRawText()) ?? new();
+
+                // Override verification fields
+                var patchDoc = new System.Text.Json.Nodes.JsonObject();
+                foreach (var kv in dict)
+                    patchDoc[kv.Key] = System.Text.Json.Nodes.JsonNode.Parse(kv.Value.GetRawText());
+                patchDoc["requireFaceVerification"] = r_faceRec;
+                patchDoc["requireSelfie"]           = r_selfie;
+                patchDoc["unusualBehavior"]         = r_unusualBehavior;
+
+                var content = new StringContent(
+                    patchDoc.ToJsonString(),
+                    System.Text.Encoding.UTF8,
+                    "application/json");
+                await client.PutAsync($"api/WorkSchedules/{_activeScheduleId}", content);
+            }
+            catch { /* non-fatal — UI state already updated */ }
+        }
+        else if (section == "autoclockout")
+        {
+            _acoSaveError = null;
+            try
+            {
+                var orgId = SessionService.OrganizationId;
+                if (orgId.HasValue && orgId.Value > 0)
+                {
+                    var client  = Http.CreateClient("API");
+                    var payload = new
+                    {
+                        autoClockOutEnabled       = aco_enabled,
+                        autoClockOutAfterDuration = aco_afterDuration,
+                        autoClockOutAfterHours    = aco_afterH,
+                        autoClockOutAfterMins     = aco_afterM,
+                        autoClockOutAtTime        = aco_atTime,
+                        autoClockOutTime          = aco_atTimeVal.ToString("HH:mm")
+                    };
+                    var resp = await client.PutAsJsonAsync(
+                        $"api/organizations/{orgId.Value}/time-tracking-policy", payload);
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        var body = await resp.Content.ReadAsStringAsync();
+                        _acoSaveError = $"HTTP {(int)resp.StatusCode} — {body}";
+                        return;  // don't close the edit card so the error stays visible
+                    }
+                }
+                else
+                {
+                    _acoSaveError = "No organization selected. Please reload the page.";
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                _acoSaveError = ex.Message;
+                return;  // keep edit card open so user sees the error
+            }
+        }
+
+        editSection = "";
+    }
+}
+
+<style>
+    /* ═══════════════════════════════════════════════════════════
+       TIME TRACKING PAGE  (tt-)
+    ═══════════════════════════════════════════════════════════ */
+
+    .tt-page {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        background: #f6f7fb;
+        overflow: hidden;
+    }
+
+    /* ── Tab bar ── */
+    .tt-tabbar {
+        display: flex;
+        align-items: flex-end;
+        gap: 0;
+        padding: 0 28px;
+        background: #fff;
+        border-bottom: 1.5px solid #ebebeb;
+        flex-shrink: 0;
+        height: 52px;
+    }
+
+    .tt-tab {
+        padding: 0 20px;
+        height: 100%;
+        border: none;
+        background: transparent;
+        font-size: 14px;
+        font-weight: 500;
+        color: #9ca3af;
+        cursor: pointer;
+        border-bottom: 2.5px solid transparent;
+        margin-bottom: -1.5px;
+        font-family: inherit;
+        transition: color .15s;
+    }
+
+    .tt-tab:hover { color: #374151; }
+
+    .tt-tab--active {
+        color: #ff7a00 !important;
+        border-bottom-color: #ff7a00 !important;
+        font-weight: 700;
+    }
+
+    /* ── Scrollable content area ── */
+    .tt-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 24px 32px 48px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        scrollbar-width: thin;
+    }
+
+    /* Constrain cards to ~750px matching Jibble layout */
+    .tt-content > * {
+        max-width: 900px;
+        width: 100%;
+    }
+
+    .tt-subtitle {
+        font-size: 13px;
+        color: #6b7280;
+        margin: 0 0 4px;
+        line-height: 1.55;
+        max-width: 900px;
+    }
+
+    /* ── Cards ── */
+    .tt-card {
+        background: #fff;
+        border: 1px solid #e8eaed;
+        border-radius: 10px;
+        padding: 26px 28px 22px;
+        transition: border-color .2s, box-shadow .2s;
+    }
+
+    .tt-card--editing {
+        border-color: #ff7a00;
+        box-shadow: 0 0 0 3px rgba(255,122,0,.07);
+    }
+
+    .tt-card--muted {
+        background: #fafafa;
+    }
+
+    /* Card header row */
+    .tt-card-hdr {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+
+    .tt-card-title {
+        font-size: 13px;
+        font-weight: 800;
+        color: #111827;
+        letter-spacing: .4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .tt-card-sub {
+        font-size: 13px;
+        color: #6b7280;
+        margin: 0 0 14px;
+        line-height: 1.55;
+    }
+
+    /* Edit pencil button */
+    .tt-edit-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        border: 1.5px solid #e8eaed;
+        background: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 13px;
+        color: #9ca3af;
+        flex-shrink: 0;
+        transition: border-color .15s, color .15s;
+    }
+
+    .tt-edit-icon:hover { border-color: #ff7a00; color: #ff7a00; }
+
+    .tt-edit-icon--active {
+        border-color: #ff7a00;
+        color: #ff7a00;
+        background: #fff7ed;
+    }
+
+    .tt-edit-icon--disabled {
+        opacity: .4;
+        cursor: not-allowed;
+    }
+
+    .tt-info-icon {
+        font-size: 12px;
+        color: #9ca3af;
+        cursor: help;
+    }
+
+    /* ── Device grid ── */
+    .tt-device-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .tt-device-card {
+        border: 1.5px solid #e8eaed;
+        border-radius: 8px;
+        padding: 16px 10px 14px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        position: relative;
+        background: #fff;
+        transition: border-color .15s, background .15s;
+        user-select: none;
+    }
+
+    .tt-device-card--on {
+        border-color: #ff7a00;
+        background: #fff8f2;
+    }
+
+    .tt-device-check {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        color: #ff7a00;
+        font-size: 14px;
+        line-height: 1;
+    }
+
+    .tt-device-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 56px;
+    }
+
+    .tt-device-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #374151;
+        text-align: center;
+    }
+
+    /* ── Verification sub-group (indented rows under Face Recognition) ── */
+    .tt-verif-sub-group {
+        border-left: 2px solid #e5e7eb;
+        margin-left: 7px;
+        padding-left: 14px;
+        transition: border-color .2s;
+    }
+
+    .tt-verif-sub-group--active {
+        border-left-color: #ff7a00;
+    }
+
+    /* ── Checkbox rows ── */
+    .tt-check-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 0;
+        font-size: 13px;
+        color: #374151;
+        cursor: pointer;
+        flex-wrap: wrap;
+    }
+
+    .tt-check-row--sub {
+        padding-left: 22px;
+    }
+
+    .tt-check-row--muted {
+        color: #9ca3af;
+        cursor: not-allowed;
+    }
+
+    /* Unusual behavior dropdown row */
+    .tt-unusual-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 0 8px 22px;
+        font-size: 13px;
+        color: #374151;
+        cursor: default;
+    }
+
+    .tt-unusual-label {
+        white-space: nowrap;
+        font-size: 13px;
+        color: #374151;
+    }
+
+    .tt-unusual-select {
+        padding: 6px 12px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 13px;
+        color: #374151;
+        background: #fff;
+        font-family: inherit;
+        cursor: pointer;
+        transition: border-color .15s;
+        min-width: 170px;
+    }
+
+    .tt-unusual-select:focus { outline: none; border-color: #ff7a00; }
+    .tt-unusual-select:disabled { background: #f9fafb; color: #9ca3af; cursor: not-allowed; }
+
+    .tt-checkbox {
+        width: 16px;
+        height: 16px;
+        accent-color: #ff7a00;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
+    .tt-checkbox:disabled { cursor: not-allowed; }
+
+    /* ── Section headers inside cards ── */
+    .tt-section-hdr {
+        font-size: 11px;
+        font-weight: 800;
+        color: #374151;
+        letter-spacing: .6px;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 14px 0 6px;
+    }
+
+    .tt-section-icon { font-size: 14px; color: #6b7280; }
+
+    .tt-rule-divider {
+        height: 1px;
+        background: #f3f4f6;
+        margin: 14px 0 4px;
+    }
+
+    /* ── Badges ── */
+    .tt-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: .4px;
+    }
+
+    .tt-badge--premium {
+        background: #fff7ed;
+        color: #ff7a00;
+        border: 1px solid #fed7aa;
+    }
+
+    .tt-badge--ultimate {
+        background: #f5f3ff;
+        color: #7c3aed;
+        border: 1px solid #ddd6fe;
+    }
+
+    /* ── Info box (blue tint) ── */
+    .tt-info-box {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 7px;
+        padding: 10px 14px;
+        margin-top: 12px;
+        font-size: 13px;
+        color: #374151;
+        line-height: 1.5;
+    }
+
+    .tt-info-box-icon { color: #0284c7; font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+
+    /* ── Warning box (yellow tint) ── */
+    .tt-warn-box {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 7px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+        font-size: 13px;
+        color: #92400e;
+        line-height: 1.5;
+    }
+
+    .tt-warn-icon { color: #d97706; font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+
+    /* ── Minutes dropdown ── */
+    .tt-minutes-select {
+        height: 28px;
+        padding: 0 6px;
+        border: 1.5px solid #e8eaed;
+        border-radius: 5px;
+        font-size: 13px;
+        font-family: inherit;
+        color: #374151;
+        background: #fff;
+        cursor: pointer;
+        outline: none;
+        min-width: 52px;
+    }
+
+    .tt-minutes-select:disabled {
+        background: #f3f4f6;
+        cursor: not-allowed;
+        color: #9ca3af;
+    }
+
+    /* ── Automatic clock out sub-section ── */
+    .tt-aco-sub {
+        margin-left: 24px;
+        margin-top: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .tt-aco-label {
+        font-size: 13px;
+        color: #6b7280;
+        font-style: italic;
+    }
+
+    .tt-aco-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .tt-aco-time-box {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        border: 1.5px solid #e8eaed;
+        border-radius: 6px;
+        padding: 4px 10px;
+        background: #fff;
+    }
+
+    .tt-aco-num {
+        width: 40px;
+        border: none;
+        outline: none;
+        font-size: 14px;
+        font-weight: 600;
+        color: #111827;
+        text-align: center;
+        font-family: inherit;
+        background: transparent;
+    }
+
+    .tt-aco-sep { font-size: 16px; font-weight: 700; color: #374151; }
+
+    .tt-aco-time-input {
+        border: 1.5px solid #e8eaed;
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 14px;
+        font-family: inherit;
+        color: #374151;
+        outline: none;
+    }
+
+    .tt-aco-time-input:disabled {
+        background: #f3f4f6;
+        color: #9ca3af;
+        cursor: not-allowed;
+    }
+
+    .tt-aco-hint {
+        background: #f0f7ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 0.82rem;
+        color: #1e40af;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        line-height: 1.5;
+        max-width: 520px;
+    }
+    .tt-aco-hint i { flex-shrink: 0; margin-top: 2px; }
+
+    /* ── Card action row (Cancel / Save) ── */
+    .tt-card-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        padding-top: 18px;
+        margin-top: 10px;
+        border-top: 1px solid #f3f4f6;
+    }
+
+    .tt-btn-cancel {
+        padding: 8px 20px;
+        border: 1.5px solid #e8eaed;
+        border-radius: 7px;
+        background: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        color: #374151;
+        cursor: pointer;
+        font-family: inherit;
+        transition: border-color .15s;
+    }
+
+    .tt-btn-cancel:hover { border-color: #9ca3af; }
+
+    .tt-btn-save {
+        padding: 8px 24px;
+        border: none;
+        border-radius: 7px;
+        background: #ff7a00;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background .15s;
+    }
+
+    .tt-btn-save:hover { background: #e66c00; }
+
+    /* ── Links ── */
+    .tt-link {
+        color: #ff7a00;
+        text-decoration: none;
+        font-size: 13px;
+    }
+
+    .tt-link:hover { text-decoration: underline; }
+
+    /* ── Exclude days sub-section ── */
+    .tt-exclude-days {
+        margin-left: 24px;
+        margin-top: 4px;
+        padding: 10px 14px;
+        background: #f9fafb;
+        border-radius: 8px;
+        border: 1px solid #f3f4f6;
+    }
+    .tt-exclude-label {
+        font-size: 12px;
+        color: #6b7280;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+
+    /* ── Empty tab ── */
+    .tt-empty-tab {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 80px 24px;
+        text-align: center;
+    }
+
+    /* ══════════════════════════════════════════
+       TIME ROUNDING TAB
+    ══════════════════════════════════════════ */
+
+    .tt-rounding-title {
+        font-size: 14px;
+        font-weight: 800;
+        color: #111827;
+        letter-spacing: .4px;
+        margin-bottom: 8px;
+    }
+
+    .tt-legal-box {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 8px;
+        padding: 14px 18px;
+        margin-bottom: 28px;
+        font-size: 13px;
+        color: #92400e;
+        line-height: 1.6;
+    }
+
+    .tt-legal-icon {
+        color: #d97706;
+        font-size: 15px;
+        flex-shrink: 0;
+        margin-top: 1px;
+    }
+
+    .tt-rounding-section {
+        padding: 20px 0 10px;
+    }
+
+    .tt-rounding-hdr {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 10px;
+    }
+
+    .tt-rounding-name {
+        font-size: 15px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .tt-rounding-desc {
+        font-size: 13px;
+        color: #6b7280;
+        margin-top: 3px;
+        line-height: 1.5;
+    }
+
+    .tt-rounding-divider {
+        height: 1px;
+        background: #e8eaed;
+        margin: 4px 0;
+    }
+
+    .tt-rounding-rule-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid #f3f4f6;
+    }
+
+    .tt-rounding-rule-text {
+        font-size: 13px;
+        color: #374151;
+    }
+
+    .tt-rounding-del {
+        width: 28px;
+        height: 28px;
+        border: 1.5px solid #e8eaed;
+        border-radius: 6px;
+        background: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 12px;
+        color: #9ca3af;
+        transition: border-color .15s, color .15s;
+    }
+
+    .tt-rounding-del:hover { border-color: #ef4444; color: #ef4444; }
+
+    .tt-add-rule-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 12px;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: #ff7a00;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        font-family: inherit;
+        transition: color .15s;
+    }
+
+    .tt-add-rule-btn:hover { color: #e66c00; }
+
+    .tt-archived-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border: 1.5px solid #e8eaed;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 13px;
+        font-weight: 500;
+        color: #6b7280;
+        cursor: pointer;
+        font-family: inherit;
+        transition: border-color .15s, color .15s;
+        align-self: flex-start;
+    }
+
+    .tt-archived-btn:hover { border-color: #9ca3af; color: #374151; }
+    .tt-archived-icon { font-size: 15px; }
+
+    /* ═══════════════════════════════════════════════════════════
+       ADD ROUNDING RULE PANEL  (rp-)
+    ═══════════════════════════════════════════════════════════ */
+
+    /* Backdrop — dims everything behind the panel */
+    .rp-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1100;
+        background: rgba(0, 0, 0, 0.35);
+        cursor: default;
+    }
+
+    /* Slide-in panel from the right */
+    .rp-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 420px;
+        z-index: 1200;
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+        box-shadow: -4px 0 32px rgba(0, 0, 0, 0.14);
+        animation: rp-slide-in .22s cubic-bezier(.4, 0, .2, 1);
+    }
+
+    @@keyframes rp-slide-in {
+        from { transform: translateX(100%); opacity: 0; }
+        to   { transform: translateX(0);   opacity: 1; }
+    }
+
+    /* ── Header ── */
+    .rp-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 24px 28px 20px;
+        border-bottom: 1px solid #f3f4f6;
+        flex-shrink: 0;
+    }
+
+    .rp-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .rp-close {
+        width: 30px;
+        height: 30px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-size: 16px;
+        color: #6b7280;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        transition: color .15s;
+    }
+
+    .rp-close:hover { color: #111827; }
+
+    /* ── Body ── */
+    .rp-body {
+        flex: 1;
+        padding: 28px 28px 16px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+
+    /* Field label */
+    .rp-field-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 10px;
+    }
+
+    /* ── Rounding method 3-button toggle ── */
+    .rp-method-toggle {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        border: 1.5px solid #e8eaed;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .rp-method-btn {
+        padding: 12px 8px;
+        border: none;
+        background: #fff;
+        font-size: 14px;
+        font-weight: 500;
+        color: #374151;
+        cursor: pointer;
+        font-family: inherit;
+        border-right: 1.5px solid #e8eaed;
+        transition: background .15s, color .15s;
+    }
+
+    .rp-method-btn:last-child { border-right: none; }
+
+    .rp-method-btn:hover:not(.rp-method-btn--active) {
+        background: #f9fafb;
+    }
+
+    .rp-method-btn--active {
+        background: #fff7ed;
+        color: #ff7a00;
+        font-weight: 700;
+        border-color: #ff7a00;
+        box-shadow: inset 0 0 0 1.5px #ff7a00;
+    }
+
+    /* ── Rounding interval custom dropdown ── */
+    .rp-dd-wrap {
+        position: relative;
+    }
+
+    .rp-dd-trigger {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 13px 16px;
+        border: 1.5px solid #e8eaed;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 14px;
+        font-weight: 500;
+        color: #111827;
+        cursor: pointer;
+        font-family: inherit;
+        transition: border-color .15s;
+        text-align: left;
+    }
+
+    .rp-dd-trigger:hover { border-color: #d1d5db; }
+
+    .rp-dd-trigger--open {
+        border-color: #ff7a00;
+        box-shadow: 0 0 0 3px rgba(255,122,0,.08);
+    }
+
+    .rp-dd-chevron {
+        font-size: 11px;
+        color: #6b7280;
+    }
+
+    .rp-dd-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        background: #fff;
+        border: 1.5px solid #e8eaed;
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.10);
+        z-index: 10;
+        overflow: hidden;
+    }
+
+    .rp-dd-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 13px 16px;
+        font-size: 14px;
+        color: #374151;
+        cursor: pointer;
+        transition: background .1s;
+    }
+
+    .rp-dd-item:hover { background: #f9fafb; }
+
+    .rp-dd-item--sel {
+        background: #fff7ed;
+        color: #ff7a00;
+        font-weight: 600;
+    }
+
+    .rp-dd-check {
+        color: #ff7a00;
+        font-size: 15px;
+        font-weight: 700;
+    }
+
+    /* ── Date range row ── */
+    .rp-date-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .rp-date-field {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 11px 14px;
+        border: 1.5px solid #e8eaed;
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+        transition: border-color .15s;
+    }
+
+    .rp-date-field:hover { border-color: #d1d5db; }
+
+    .rp-date-field--open {
+        border-color: #ff7a00;
+        box-shadow: 0 0 0 3px rgba(255,122,0,.08);
+    }
+
+    .rp-date-field--placeholder .rp-date-placeholder {
+        color: #9ca3af;
+    }
+
+    .rp-date-val {
+        font-size: 14px;
+        color: #111827;
+        font-weight: 500;
+    }
+
+    .rp-date-placeholder {
+        font-size: 14px;
+        color: #9ca3af;
+    }
+
+    .rp-date-icon {
+        font-size: 14px;
+        color: #9ca3af;
+        flex-shrink: 0;
+    }
+
+    .rp-date-to {
+        font-size: 13px;
+        color: #6b7280;
+        flex-shrink: 0;
+    }
+
+    /* ── Inline calendar ── */
+    .rp-calendar {
+        margin-top: 6px;
+        background: #fff;
+        border: 1.5px solid #e8eaed;
+        border-radius: 8px;
+        padding: 10px 10px 8px;
+        box-shadow: 0 4px 14px rgba(0,0,0,.10);
+    }
+
+    .rp-cal-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+
+    .rp-cal-nav-btn {
+        width: 22px;
+        height: 22px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        border-radius: 6px;
+        font-size: 12px;
+        color: #6b7280;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background .12s;
+    }
+
+    .rp-cal-nav-btn:hover { background: #f3f4f6; color: #111827; }
+
+    .rp-cal-month {
+        font-size: 12px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .rp-cal-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 1px;
+    }
+
+    .rp-cal-dow {
+        text-align: center;
+        font-size: 10px;
+        font-weight: 600;
+        color: #9ca3af;
+        padding: 2px 0 4px;
+    }
+
+    .rp-cal-day {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 26px;
+        border-radius: 50%;
+        font-size: 11px;
+        font-weight: 400;
+        color: #374151;
+        cursor: pointer;
+        transition: background .12s;
+    }
+
+    .rp-cal-day:hover { background: #f3f4f6; }
+
+    .rp-cal-day--today {
+        color: #ff7a00;
+        font-weight: 700;
+    }
+
+    .rp-cal-day--sel {
+        background: #ff7a00 !important;
+        color: #fff !important;
+        font-weight: 700;
+    }
+
+    /* ── Footer ── */
+    .rp-footer {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+        padding: 18px 28px;
+        border-top: 1px solid #f3f4f6;
+        flex-shrink: 0;
+        background: #fff;
+    }
+
+    .rp-cancel-btn {
+        padding: 10px 24px;
+        border: none;
+        background: transparent;
+        font-size: 14px;
+        font-weight: 600;
+        color: #ff7a00;
+        cursor: pointer;
+        font-family: inherit;
+        transition: opacity .15s;
+    }
+
+    .rp-cancel-btn:hover { opacity: .75; }
+
+    .rp-save-btn {
+        padding: 10px 32px;
+        border: none;
+        border-radius: 8px;
+        background: #ff7a00;
+        color: #fff;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background .15s;
+    }
+
+    .rp-save-btn:hover { background: #e66c00; }
+
+</style>

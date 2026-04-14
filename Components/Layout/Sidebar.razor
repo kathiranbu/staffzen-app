@@ -1,0 +1,399 @@
+@inject NavigationManager NavManager
+@inject SessionService SessionService
+@inject IHttpClientFactory HttpClientFactory
+@implements IDisposable
+@using System.Net.Http.Json
+
+@* Click overlay to close user menu popup when clicking outside *@
+@if (showUserMenu)
+{
+    <div class="overlay-dismiss" @onclick="CloseMenu"></div>
+}
+
+<div class="sidebar @(isCollapsed ? "collapsed" : "") @(isMobileOpen ? "mobile-open" : "")">
+    <!-- Logo -->
+    <div class="sidebar-logo">
+        <div class="logo">
+            <i class="bi bi-stopwatch-fill logo-icon"></i>
+            <span class="logo-text">ApmStaffZen</span>
+        </div>
+    </div>
+
+    <!-- Scrollable Navigation Menu -->
+    <nav class="sidebar-nav">
+
+        @* Admin-only: Get Started *@
+        @if (!IsUserRole)
+        {
+            <a class="nav-link nav-item @(IsActive("/get-started") ? "active" : "")" href="/get-started" title="Get Started" @onclick="CloseMobileSidebar">
+                <i class="bi bi-circle nav-icon"></i>
+                <span class="nav-text">Get Started</span>
+                <span class="nav-badge">0/5</span>
+            </a>
+        }
+
+        <!-- Dashboard -->
+        <a class="nav-link nav-item @(IsActive("/dashboard") ? "active" : "")" href="/dashboard" title="Dashboard" @onclick="CloseMobileSidebar">
+            <i class="bi bi-grid nav-icon"></i>
+            <span class="nav-text">Dashboard</span>
+        </a>
+
+        <!-- Timesheets -->
+        <a class="nav-link nav-item @(IsActive("/timesheets") ? "active" : "")" href="/timesheets" title="Timesheets" @onclick="CloseMobileSidebar">
+            <i class="bi bi-clock nav-icon"></i>
+            <span class="nav-text">Timesheets</span>
+        </a>
+
+        @* Admin-only: Approval *@
+        @if (!IsUserRole)
+        {
+            <a class="nav-link nav-item @(IsActive("/approval") ? "active" : "")" href="/approval" title="Approval" @onclick="CloseMobileSidebar">
+                <i class="bi bi-check2-circle nav-icon"></i>
+                <span class="nav-text">Approval</span>
+            </a>
+        }
+
+        @* Admin-only: Live Locations *@
+        @if (!IsUserRole)
+        {
+            <a class="nav-link nav-item @(IsActive("/live-locations") ? "active" : "")" href="/live-locations" title="Live Locations" @onclick="CloseMobileSidebar">
+                <i class="bi bi-geo-alt nav-icon"></i>
+                <span class="nav-text">Live Locations</span>
+            </a>
+        }
+
+        <!-- Time Off -->
+        <a class="nav-link nav-item @(IsActive("/time-off") ? "active" : "")" href="/time-off" title="Time Off" @onclick="CloseMobileSidebar">
+            <i class="bi bi-briefcase nav-icon"></i>
+            <span class="nav-text">Time Off</span>
+        </a>
+
+        <!-- My Attendance (all users) -->
+        <a class="nav-link nav-item @(IsActive("/my-attendance") ? "active" : "")" href="/my-attendance" title="My Attendance" @onclick="CloseMobileSidebar">
+            <i class="bi bi-calendar-check nav-icon"></i>
+            <span class="nav-text">My Attendance</span>
+        </a>
+
+        @* Admin-only: Reports *@
+        @if (!IsUserRole)
+        {
+            <a class="nav-link nav-item @(IsActive("/reports") ? "active" : "")" href="/reports" title="Reports" @onclick="CloseMobileSidebar">
+                <i class="bi bi-file-earmark-text nav-icon"></i>
+                <span class="nav-text">Reports</span>
+            </a>
+        }
+
+        @* Admin-only: Attendance Dashboard *@
+        @if (!IsUserRole)
+        {
+            <a class="nav-link nav-item @(IsActive("/attendance") ? "active" : "")" href="/attendance/dashboard" title="Attendance Dashboard" @onclick="CloseMobileSidebar">
+                <i class="bi bi-bar-chart-line nav-icon"></i>
+                <span class="nav-text">Attendance</span>
+                @if (_unmarkedCount > 0)
+                {
+                    <span class="nav-badge nav-badge--alert">@_unmarkedCount</span>
+                }
+            </a>
+        }
+
+        @* User role: Settings with Work Schedules only *@
+        @if (IsUserRole)
+        {
+            <div class="nav-item settings-menu @(settingsExpanded ? "expanded" : "")" title="Settings">
+                <div class="nav-link" @onclick="ToggleSettings">
+                    <i class="bi bi-chevron-@(settingsExpanded ? "up" : "down") nav-icon"></i>
+                    <span class="nav-text">Settings</span>
+                </div>
+                @if (settingsExpanded)
+                {
+                    <div class="settings-submenu">
+                        <a class="submenu-item @(IsActive("/settings/work-schedules") ? "active" : "")" href="/settings/work-schedules" @onclick="CloseMobileSidebar">
+                            <i class="bi bi-calendar-week"></i>
+                            <span>Work Schedules</span>
+                        </a>
+                    </div>
+                }
+            </div>
+        }
+
+        @* Admin-only: Full Settings menu *@
+        @if (!IsUserRole)
+        {
+        <!-- Settings - Expandable -->
+        <div class="nav-item settings-menu @(settingsExpanded ? "expanded" : "")" title="Settings">
+            <div class="nav-link" @onclick="ToggleSettings">
+                <i class="bi bi-chevron-@(settingsExpanded ? "up" : "down") nav-icon"></i>
+                <span class="nav-text">Settings</span>
+            </div>
+
+            <!-- Settings Submenu -->
+            @if (settingsExpanded)
+            {
+                <div class="settings-submenu">
+                    <a class="submenu-item @(IsActive("/settings/people") ? "active" : "")" href="/settings/people" @onclick="CloseMobileSidebar">
+                        <i class="bi bi-people"></i>
+                        <span>People</span>
+                    </a>
+                    <a class="submenu-item @(IsActive("/settings/time-tracking") ? "active" : "")" href="/settings/time-tracking" @onclick="CloseMobileSidebar">
+                        <i class="bi bi-clock-history"></i>
+                        <span>Time Tracking</span>
+                    </a>
+                    <a class="submenu-item @(IsActive("/settings/work-schedules") ? "active" : "")" href="/settings/work-schedules" @onclick="CloseMobileSidebar">
+                        <i class="bi bi-calendar-week"></i>
+                        <span>Work Schedules</span>
+                    </a>
+                    <a class="submenu-item @(IsActive("/settings/time-off-holidays") ? "active" : "")" href="/settings/time-off-holidays" @onclick="CloseMobileSidebar">
+                        <i class="bi bi-briefcase"></i>
+                        <span>Time Off &amp; Holidays</span>
+                    </a>
+                    <a class="submenu-item @(IsActive("/settings/locations") ? "active" : "")" href="/settings/locations" @onclick="CloseMobileSidebar">
+                        <i class="bi bi-geo-alt"></i>
+                        <span>Locations</span>
+                    </a>
+                    <a class="submenu-item @(IsActive("/organization/settings") ? "active" : "")" href="/organization/settings" @onclick="CloseMobileSidebar">
+                        <i class="bi bi-gear"></i>
+                        <span>Organization</span>
+                    </a>
+                    <a class="submenu-item @(IsActive("/settings/integrations") ? "active" : "")" href="/settings/integrations" @onclick="CloseMobileSidebar">
+                        <i class="bi bi-link-45deg"></i>
+                        <span>Integrations</span>
+                    </a>
+                </div>
+            }
+        </div>
+        } @* end admin-only Settings *@
+
+    </nav>
+
+    <!-- Fixed Footer Section (Always at Bottom) -->
+    <div class="sidebar-footer">
+
+        <!-- Get the app (hidden when collapsed) -->
+        <div class="footer-item footer-collapsed-hide">
+            <i class="bi bi-download footer-icon"></i>
+            <span class="footer-text">Get the app</span>
+        </div>
+
+        <!-- Upgrade Banner (hidden when collapsed) -->
+        <div class="upgrade-banner footer-collapsed-hide">
+            <div class="upgrade-icon">
+                <i class="bi bi-stopwatch"></i>
+            </div>
+            <div class="upgrade-content">
+                <div class="upgrade-title">Upgrade for free</div>
+                <div class="upgrade-subtitle">10 days left to try any plan</div>
+            </div>
+        </div>
+
+        <!-- User Profile - Clickable to show menu -->
+        <div class="user-profile-wrapper">
+            <!-- User Menu Popup -->
+            @if (showUserMenu)
+            {
+                <div class="user-menu-popup">
+                    @if (SessionService.ActiveOrganizationId.HasValue)
+                    {
+                        <div class="user-menu-org-header">
+                            <div class="user-menu-org-avatar">@(SessionService.ActiveOrganizationName?[0].ToString().ToUpper() ?? "O")</div>
+                            <div class="user-menu-org-info">
+                                <div class="user-menu-org-name">@SessionService.ActiveOrganizationName</div>
+                                <div class="user-menu-org-role">@SessionService.ActiveOrgRole</div>
+                            </div>
+                        </div>
+                        <div class="user-menu-divider"></div>
+                    }
+                    <div class="user-menu-item" @onclick="GoToManageOrganization">
+                        <div class="user-menu-icon"><i class="bi bi-building-gear"></i></div>
+                        <span>Manage organization</span>
+                    </div>
+                    <div class="user-menu-divider"></div>
+                    <div class="user-menu-item" @onclick="GoToAccountSettings">
+                        <div class="user-menu-icon"><i class="bi bi-person"></i></div>
+                        <span>Your account settings</span>
+                    </div>
+                    <div class="user-menu-item sign-out-item" @onclick="SignOut">
+                        <div class="user-menu-icon"><i class="bi bi-box-arrow-right"></i></div>
+                        <span>Sign out</span>
+                    </div>
+                </div>
+            }
+
+            <div class="user-profile @(showUserMenu ? "active-profile" : "")" @onclick="ToggleUserMenu">
+                <div class="user-avatar">@GetInitial()</div>
+                <div class="user-info">
+                    <div class="user-name">@(SessionService.FullName ?? "User")</div>
+                    <div class="user-role">@(SessionService.OrganizationName ?? "APM-StaffZen")</div>
+                </div>
+                <i class="bi bi-chevron-right user-arrow"></i>
+            </div>
+        </div>
+
+        <!-- Collapse Button - Desktop Only -->
+        <div class="collapse-btn desktop-only" @onclick="ToggleCollapse">
+            <i class="bi bi-chevron-@(isCollapsed ? "double-right" : "left")"></i>
+            <span class="collapse-text">COLLAPSE</span>
+        </div>
+
+    </div>
+</div>
+
+<!-- Mobile Overlay -->
+<div class="sidebar-overlay @(isMobileOpen ? "active" : "")" @onclick="ToggleMobileSidebar"></div>
+
+@code {
+    [CascadingParameter]
+    public AppLayout? Layout { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OnMobileToggle { get; set; }
+
+    private bool isCollapsed = false;
+    private bool isMobileOpen = false;
+    private bool settingsExpanded = false;
+    private bool showUserMenu = false;
+    private int  _unmarkedCount = 0;
+
+    // Use the role within the ACTIVE org — falls back to global role only when no org is selected
+    private bool IsUserRole =>
+        string.Equals(SessionService.ActiveOrgRole ?? SessionService.Role, "user", StringComparison.OrdinalIgnoreCase);
+
+    protected override void OnInitialized()
+    {
+        // Re-render whenever session is restored or org is switched
+        SessionService.OnSessionReady  += HandleSessionReady;
+        SessionService.OnOrgSwitched   += HandleOrgSwitched;
+        SessionService.OnProfileChanged += HandleProfileChanged;
+    }
+
+    private async Task HandleSessionReady()
+    {
+        await LoadUnmarkedCountAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleProfileChanged()
+    {
+        // Name changed in account settings — re-render sidebar immediately
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleOrgSwitched()
+    {
+        // Re-render menu items so admin/user access reflects the newly selected org
+        await LoadUnmarkedCountAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadUnmarkedCountAsync()
+    {
+        try
+        {
+            if (IsUserRole) { _unmarkedCount = 0; return; }
+            var orgId = SessionService.OrganizationId;
+            if (!orgId.HasValue || orgId.Value <= 0) return;
+
+            var client = HttpClientFactory.CreateClient("API");
+            var today  = DateTime.Today.ToString("yyyy-MM-dd");
+            var result = await client.GetFromJsonAsync<UnmarkedCountResult>(
+                $"api/attendance-corrections/dashboard?organizationId={orgId.Value}&date={today}&statusFilter=Unmarked");
+            _unmarkedCount = result?.Summary?.Unmarked ?? 0;
+        }
+        catch { _unmarkedCount = 0; }
+    }
+
+    private class UnmarkedCountResult
+    {
+        public UnmarkedSummary? Summary { get; set; }
+    }
+
+    private class UnmarkedSummary
+    {
+        public int Unmarked { get; set; }
+    }
+
+    public void Dispose()
+    {
+        SessionService.OnSessionReady  -= HandleSessionReady;
+        SessionService.OnOrgSwitched   -= HandleOrgSwitched;
+        SessionService.OnProfileChanged -= HandleProfileChanged;
+    }
+
+    private string GetInitial()
+    {
+        var name = SessionService.FullName ?? "U";
+        return string.IsNullOrEmpty(name) ? "U" : name[0].ToString().ToUpper();
+    }
+
+    private void ToggleCollapse()
+    {
+        isCollapsed = !isCollapsed;
+        if (isCollapsed)
+        {
+            settingsExpanded = false;
+        }
+        showUserMenu = false;
+        Layout?.SetSidebarState(isCollapsed);
+    }
+
+    public void ToggleMobileSidebar()
+    {
+        isMobileOpen = !isMobileOpen;
+        StateHasChanged();
+    }
+
+    private void CloseMobileSidebar()
+    {
+        if (isMobileOpen)
+        {
+            isMobileOpen = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleSettings()
+    {
+        settingsExpanded = !settingsExpanded;
+    }
+
+    private void ToggleUserMenu()
+    {
+        showUserMenu = !showUserMenu;
+    }
+
+    private void CloseMenu()
+    {
+        showUserMenu = false;
+    }
+
+    private void GoToManageOrganization()
+    {
+        showUserMenu = false;
+        NavManager.NavigateTo("/organization/switcher");
+    }
+
+    private void GoToAccountSettings()
+    {
+        showUserMenu = false;
+        NavManager.NavigateTo("/account-settings");
+    }
+
+    private async Task SignOut()
+    {
+        showUserMenu = false;
+        await SessionService.ClearSessionAsync();
+        NavManager.NavigateTo("/login", forceLoad: true);
+    }
+
+    private bool IsActive(string path)
+    {
+        var currentPath = NavManager.ToBaseRelativePath(NavManager.Uri);
+
+        if (path == "/" && string.IsNullOrEmpty(currentPath))
+            return true;
+
+        if (path != "/" && currentPath.StartsWith(path.TrimStart('/')))
+            return true;
+
+        return false;
+    }
+}

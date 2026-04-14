@@ -1,0 +1,308 @@
+@namespace APM.StaffZen.Blazor.Components.Pages.Dashboard.Components
+
+<div class="projects-card">
+    <div class="card-header">
+        <h5 class="card-title">PROJECTS</h5>
+        <a href="/projects" class="card-link">
+            Go to projects
+            <i class="bi bi-box-arrow-up-right"></i>
+        </a>
+    </div>
+    
+    <div class="card-body">
+        <div class="row g-3 g-md-4">
+            <div class="col-12 col-sm-5 col-md-4 col-lg-5 col-xl-4">
+                <div class="chart-section mx-auto">
+                    <svg viewBox="0 0 200 200" class="donut-chart">
+                        <!-- Background circle -->
+                        <circle cx="100" cy="100" r="70" fill="none" stroke="#e5e7eb" stroke-width="28"></circle>
+                        <!-- Segment 1 - Dark navy -->
+                        <circle cx="100" cy="100" r="70" fill="none" stroke="#334155" stroke-width="28" 
+                                stroke-dasharray="440" stroke-dashoffset="110" 
+                                transform="rotate(-90 100 100)"></circle>
+                        <!-- Segment 2 - Medium gray -->
+                        <circle cx="100" cy="100" r="70" fill="none" stroke="#64748b" stroke-width="28" 
+                                stroke-dasharray="440" stroke-dashoffset="220" 
+                                transform="rotate(-90 100 100)"></circle>
+                        <!-- Segment 3 - Light gray -->
+                        <circle cx="100" cy="100" r="70" fill="none" stroke="#94a3b8" stroke-width="28" 
+                                stroke-dasharray="440" stroke-dashoffset="330" 
+                                transform="rotate(-90 100 100)"></circle>
+                    </svg>
+                    <div class="chart-center">
+                        <div class="center-label">clocked</div>
+                        <div class="center-value">0h 0m</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-12 col-sm-7 col-md-8 col-lg-7 col-xl-8">
+                <div class="projects-list">
+                    <h6 class="list-title">Top 10 projects</h6>
+                    <div class="row g-2">
+                        @for (int i = 0; i < 10; i++)
+                        {
+                            <div class="col-12 col-sm-6">
+                                <div class="project-item">
+                                    <span class="project-dot"></span>
+                                    <div class="project-bar" style="width: @(Random.Shared.Next(30, 90))%"></div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .projects-card {
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 28px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 28px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .card-title {
+        font-size: 11px;
+        font-weight: 700;
+        color: #111827;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        margin: 0;
+    }
+
+    .card-link {
+        font-size: 13px;
+        color: #2563eb;
+        text-decoration: none;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        transition: color 0.2s;
+        white-space: nowrap;
+    }
+
+    .card-link:hover {
+        color: #1d4ed8;
+    }
+
+    .card-link i {
+        font-size: 11px;
+    }
+
+    .chart-section {
+        position: relative;
+        width: 200px;
+        height: 200px;
+        max-width: 100%;
+    }
+
+    .donut-chart {
+        width: 100%;
+        height: 100%;
+        transform: rotate(0deg);
+    }
+
+    .chart-center {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+    }
+
+    .center-label {
+        font-size: 13px;
+        color: #6b7280;
+        margin-bottom: 4px;
+        font-weight: 500;
+    }
+
+    .center-value {
+        font-size: 22px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .projects-list {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .list-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: #6b7280;
+        margin: 0 0 18px 0;
+    }
+
+    .project-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 0;
+    }
+
+    .project-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #94a3b8;
+        flex-shrink: 0;
+    }
+
+    .project-bar {
+        height: 6px;
+        background: #e5e7eb;
+        border-radius: 3px;
+        transition: width 0.3s ease;
+    }
+
+    /* Large tablets */
+    @@media (max-width: 1199px) {
+        .projects-card {
+            padding: 26px;
+        }
+
+        .chart-section {
+            width: 180px;
+            height: 180px;
+        }
+
+        .center-value {
+            font-size: 20px;
+        }
+    }
+
+    /* Tablets */
+    @@media (max-width: 991px) {
+        .projects-card {
+            padding: 24px;
+        }
+
+        .card-header {
+            margin-bottom: 24px;
+        }
+
+        .chart-section {
+            width: 170px;
+            height: 170px;
+        }
+
+        .center-label {
+            font-size: 12px;
+        }
+
+        .center-value {
+            font-size: 19px;
+        }
+    }
+
+    /* Small tablets and large phones */
+    @@media (max-width: 768px) {
+        .projects-card {
+            padding: 22px;
+            margin-bottom: 14px;
+        }
+
+        .card-header {
+            margin-bottom: 20px;
+        }
+
+        .chart-section {
+            width: 160px;
+            height: 160px;
+        }
+
+        .center-value {
+            font-size: 18px;
+        }
+
+        .list-title {
+            margin-bottom: 14px;
+        }
+    }
+
+    /* Mobile phones */
+    @@media (max-width: 576px) {
+        .projects-card {
+            padding: 20px 16px;
+            margin-bottom: 12px;
+        }
+
+        .card-header {
+            margin-bottom: 18px;
+        }
+
+        .card-title {
+            font-size: 10px;
+        }
+
+        .card-link {
+            font-size: 12px;
+        }
+
+        .chart-section {
+            width: 150px;
+            height: 150px;
+            margin-bottom: 20px;
+        }
+
+        .center-label {
+            font-size: 11px;
+        }
+
+        .center-value {
+            font-size: 17px;
+        }
+
+        .list-title {
+            font-size: 11px;
+            margin-bottom: 12px;
+        }
+
+        .project-item {
+            gap: 8px;
+            padding: 3px 0;
+        }
+
+        .project-dot {
+            width: 5px;
+            height: 5px;
+        }
+
+        .project-bar {
+            height: 5px;
+        }
+    }
+
+    /* Small mobile phones */
+    @@media (max-width: 400px) {
+        .projects-card {
+            padding: 18px 14px;
+        }
+
+        .chart-section {
+            width: 140px;
+            height: 140px;
+        }
+
+        .center-value {
+            font-size: 16px;
+        }
+    }
+</style>

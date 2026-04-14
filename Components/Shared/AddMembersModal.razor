@@ -1,0 +1,340 @@
+@using System.Net.Http.Json
+@inject IHttpClientFactory ClientFactory
+@inject APM.StaffZen.Blazor.Services.SessionService SessionService
+
+@* Groups are loaded once when the modal opens *@
+
+@if (IsVisible)
+{
+    <div class="modal-overlay" @onclick="Close">
+        <div class="modal-container" @onclick:stopPropagation="true">
+            
+            <!-- Modal Header -->
+            <div class="modal-header">
+                <h2 class="modal-title">Add Members</h2>
+                <button class="modal-close" @onclick="Close">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="modal-body">
+                
+                <!-- Info Text -->
+                <p class="info-text">
+                    We recommend letting employees create their own profile so they can clock in from their own devices and 
+                    view their timesheets. Send them an invite to get started.
+                </p>
+
+                <!-- Tabs -->
+                <div class="modal-tabs">
+                    <div class="modal-tab @(activeTab == "invite" ? "active" : "")" @onclick='() => activeTab = "invite"'>
+                        Invite by link
+                    </div>
+                    <div class="modal-tab @(activeTab == "add" ? "active" : "")" @onclick='() => activeTab = "add"'>
+                        Add member
+                    </div>
+                </div>
+
+                <!-- Tab Content -->
+                @if (activeTab == "add")
+                {
+                    <div class="tab-content">
+                        
+                        <!-- Invite Info Box -->
+                        <div class="invite-info-box">
+                            <div class="info-icon">
+                                <i class="bi bi-envelope-fill"></i>
+                            </div>
+                            <div class="info-content">
+                                <div class="info-title">Invite member</div>
+                                <div class="info-description">
+                                    Members that sign up with the same email or phone number will receive an invitation on their 
+                                    account page. Share this <a href="#" class="help-link">help article <i class="bi bi-box-arrow-up-right"></i></a> with your members for additional guidance.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Member Forms -->
+                        <div class="member-forms">
+                            @foreach (var member in newMembers)
+                            {
+                                <div class="member-form-row">
+                                    <input type="text" 
+                                           class="form-input" 
+                                           placeholder="Full name" 
+                                           @bind="member.FullName" />
+                                    
+                                    <div class="email-input-wrapper">
+                                        <input type="email" 
+                                               class="form-input @(member.HasError ? "error" : "")" 
+                                               placeholder="Email" 
+                                               @bind="member.Email"
+                                               @bind:event="oninput"
+                                               @onblur="@(() => ValidateEmail(member))" />
+                                        @if (member.HasError && !string.IsNullOrEmpty(member.ErrorMessage))
+                                        {
+                                            <span class="error-message">@member.ErrorMessage</span>
+                                        }
+                                    </div>
+                                    
+                                    <div class="phone-input-group">
+                                        <select class="country-code" @bind="member.CountryCode">
+                                            <option value="+91">🇮🇳 +91</option>
+                                            <option value="+1">🇺🇸 +1</option>
+                                            <option value="+44">🇬🇧 +44</option>
+                                            <option value="+61">🇦🇺 +61</option>
+                                        </select>
+                                        <input type="tel" 
+                                               class="form-input phone-number" 
+                                               placeholder="Phone number" 
+                                               @bind="member.PhoneNumber" />
+                                    </div>
+
+                                    <select class="form-input role-select" @bind="member.Role">
+                                        <option value="">Select Role</option>
+                                        <option value="Employee">Employee</option>
+                                        <option value="Team Lead">Team Lead</option>
+                                        <option value="HR">HR</option>
+                                        <option value="Manager">Manager</option>
+                                        <option value="Admin">Admin</option>
+                                    </select>
+
+                                    <select class="form-input group-select" @bind="member.GroupId">
+                                        <option value="">No Group</option>
+                                        @foreach (var group in availableGroups)
+                                        {
+                                            <option value="@group.Id">@group.Name</option>
+                                        }
+                                    </select>
+
+                                    @if (newMembers.Count > 1)
+                                    {
+                                        <button type="button" 
+                                                class="delete-member-btn" 
+                                                @onclick="@(() => RemoveMemberField(member))"
+                                                title="Remove this member">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <!-- Add New Member Button -->
+                        <button class="add-new-member-btn" @onclick="AddMemberField">
+                            <i class="bi bi-plus"></i>
+                            Add new member
+                        </button>
+
+                    </div>
+                }
+                else
+                {
+                    <div class="tab-content">
+                        <p class="tab-placeholder">Invite by link content goes here...</p>
+                    </div>
+                }
+
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="modal-footer">
+                <button class="btn-cancel" @onclick="Close">Cancel</button>
+                <button class="btn-save" @onclick="Save">Save</button>
+            </div>
+
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<List<NewMember>> OnSave { get; set; }
+
+    private string activeTab = "add";
+    private List<NewMember> newMembers = new List<NewMember>();
+    private List<GroupOption> availableGroups = new List<GroupOption>();
+    private bool isInitialized = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Clear fields and load groups when modal is opened
+        if (IsVisible && !isInitialized)
+        {
+            ResetForm();
+            await LoadGroups();
+            isInitialized = true;
+        }
+        else if (!IsVisible)
+        {
+            isInitialized = false;
+        }
+    }
+
+    private async Task LoadGroups()
+    {
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var response = await client.GetAsync("api/groups");
+            if (response.IsSuccessStatusCode)
+            {
+                availableGroups = await response.Content.ReadFromJsonAsync<List<GroupOption>>() ?? new List<GroupOption>();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading groups: {ex.Message}");
+        }
+    }
+
+    private void ResetForm()
+    {
+        newMembers.Clear();
+        AddMemberField();
+        activeTab = "add";
+    }
+
+    private void AddMemberField()
+    {
+        newMembers.Add(new NewMember 
+        { 
+            CountryCode = "+91" 
+        });
+    }
+
+    private void RemoveMemberField(NewMember member)
+    {
+        if (newMembers.Count > 1)
+        {
+            newMembers.Remove(member);
+            StateHasChanged();
+        }
+    }
+
+    private async Task ValidateEmail(NewMember member)
+    {
+        // Clear previous error
+        member.HasError = false;
+        member.ErrorMessage = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(member.Email))
+        {
+            return;
+        }
+
+        // Basic email format validation
+        if (!System.Text.RegularExpressions.Regex.IsMatch(member.Email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+        {
+            member.HasError = true;
+            member.ErrorMessage = "Invalid email format";
+            StateHasChanged();
+            return;
+        }
+
+        // Check for duplicate email within the same form
+        var duplicateInForm = newMembers
+            .Where(m => m != member && 
+                   !string.IsNullOrWhiteSpace(m.Email) && 
+                   m.Email.Trim().ToLower() == member.Email.Trim().ToLower())
+            .Any();
+
+        if (duplicateInForm)
+        {
+            member.HasError = true;
+            member.ErrorMessage = "Duplicate email in form";
+            StateHasChanged();
+            return;
+        }
+
+        // Check if this email is already an ACTIVE member of THIS org specifically.
+        // A person can belong to multiple orgs, so a global email check is wrong here.
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var orgId = SessionService.ActiveOrganizationId;
+            if (orgId.HasValue)
+            {
+                var url = $"api/employees/check-org-member?email={Uri.EscapeDataString(member.Email)}&orgId={orgId.Value}";
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<EmailCheckResponse>();
+                    if (result?.Exists == true)
+                    {
+                        member.HasError = true;
+                        member.ErrorMessage = "Already a member of this organization";
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error checking org membership: {ex.Message}");
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task Save()
+    {
+        // Validate all emails before saving
+        foreach (var member in newMembers)
+        {
+            if (!string.IsNullOrWhiteSpace(member.Email))
+            {
+                await ValidateEmail(member);
+            }
+        }
+
+        // Check if any member has errors
+        if (newMembers.Any(m => m.HasError))
+        {
+            // Don't save if there are validation errors
+            return;
+        }
+
+        // Filter out empty members
+        var validMembers = newMembers
+            .Where(m => !string.IsNullOrWhiteSpace(m.FullName) || 
+                        !string.IsNullOrWhiteSpace(m.Email))
+            .ToList();
+
+        if (validMembers.Any())
+        {
+            await OnSave.InvokeAsync(validMembers);
+        }
+        
+        await Close();
+    }
+
+    public class NewMember
+    {
+        public string FullName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string CountryCode { get; set; } = "+91";
+        public string PhoneNumber { get; set; } = "";
+        public string Role { get; set; } = "User";
+        public int? GroupId { get; set; } = null;
+        public bool HasError { get; set; } = false;
+        public string ErrorMessage { get; set; } = "";
+    }
+
+    public class GroupOption
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    public class EmailCheckResponse
+    {
+        public bool Exists { get; set; }
+    }
+}

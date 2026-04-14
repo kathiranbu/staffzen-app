@@ -1,0 +1,1178 @@
+@page "/settings/time-off-holidays"
+@using System.Net.Http.Json
+@using System.Text.Json
+@inject TimeOffPolicyService PolicyService
+@inject IHttpClientFactory ClientFactory
+@inject SessionService SessionService
+
+<BasePage Title="Time Off &amp; Holidays">
+
+<div class="tp-page">
+
+    <!-- ── Tabs ── -->
+    <div class="tp-tabs-row">
+        <div class="tp-tabs">
+            <span class='tp-tab @(activeTab == "policies" ? "tp-tab--active" : "")'
+                  @onclick='() => activeTab = "policies"'>Time Off Policies</span>
+            <span class='tp-tab @(activeTab == "holidays" ? "tp-tab--active" : "")'
+                  @onclick='() => activeTab = "holidays"'>Holidays</span>
+        </div>
+        <div class="tp-tabs-actions" style='@(activeTab == "policies" ? "" : "display:none")'>
+            <button class="tp-approval-btn">
+                <i class="bi bi-gear-fill"></i> Approval Settings
+            </button>
+            <button class="tp-add-btn" @onclick="OpenAdd">
+                Add Time Off Policy
+            </button>
+        </div>
+        <div class="tp-tabs-actions" style='@(activeTab == "holidays" ? "" : "display:none")'>
+            <button class="tp-approval-btn" @onclick="RefreshCalendars">
+                <i class="bi bi-arrow-clockwise"></i> Refresh calendars
+            </button>
+        </div>
+    </div>
+
+    <div id="tp-policies-section" style='@(activeTab == "policies" ? "" : "display:none")'>
+    <!-- ── Toolbar ── -->
+    <div class="tp-toolbar">
+        <div class="tp-toolbar-left">
+            <div class="tp-search">
+                <i class="bi bi-search"></i>
+                <input type="text" placeholder="Search..." @bind="searchText" @bind:event="oninput" />
+            </div>
+
+            <!-- Compensation dropdown -->
+            <div class="tp-dd-wrap" @onclick:stopPropagation>
+                <button class="tp-dd-btn @(compOpen ? "tp-dd-btn--open" : "")"
+                        @onclick="() => { compOpen = !compOpen; unitOpen = false; }">
+                    Compensation
+                    <i class="bi @(compOpen ? "bi-chevron-up" : "bi-chevron-down") tp-dd-chevron"></i>
+                </button>
+                @if (compOpen)
+                {
+                    <div class="tp-dd-menu">
+                        <div class="tp-dd-item @(filterComp=="Paid"?"tp-dd-item--sel":"")"
+                             @onclick='() => { filterComp = filterComp=="Paid"?"":"Paid"; compOpen=false; }'>
+                            Paid
+                        </div>
+                        <div class="tp-dd-item @(filterComp=="Unpaid"?"tp-dd-item--sel":"")"
+                             @onclick='() => { filterComp = filterComp=="Unpaid"?"":"Unpaid"; compOpen=false; }'>
+                            Unpaid
+                        </div>
+                        <div class="tp-dd-sep"></div>
+                        <div class="tp-dd-item tp-dd-item--clear"
+                             @onclick='() => { filterComp = ""; compOpen=false; }'>
+                            Clear selection
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- Units dropdown -->
+            <div class="tp-dd-wrap" @onclick:stopPropagation>
+                <button class="tp-dd-btn @(unitOpen ? "tp-dd-btn--open" : "")"
+                        @onclick="() => { unitOpen = !unitOpen; compOpen = false; }">
+                    Units
+                    <i class="bi @(unitOpen ? "bi-chevron-up" : "bi-chevron-down") tp-dd-chevron"></i>
+                </button>
+                @if (unitOpen)
+                {
+                    <div class="tp-dd-menu">
+                        <div class="tp-dd-item @(filterUnit=="Hours"?"tp-dd-item--sel":"")"
+                             @onclick='() => { filterUnit = filterUnit=="Hours"?"":"Hours"; unitOpen=false; }'>
+                            Hours
+                        </div>
+                        <div class="tp-dd-item @(filterUnit=="Days"?"tp-dd-item--sel":"")"
+                             @onclick='() => { filterUnit = filterUnit=="Days"?"":"Days"; unitOpen=false; }'>
+                            Days
+                        </div>
+                        <div class="tp-dd-sep"></div>
+                        <div class="tp-dd-item tp-dd-item--clear"
+                             @onclick='() => { filterUnit = ""; unitOpen=false; }'>
+                            Clear selection
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="tp-toolbar-right">
+        </div>
+    </div>
+
+    @if (compOpen || unitOpen)
+    {
+        <div style="position:fixed;inset:0;z-index:98;" @onclick="() => { compOpen=false; unitOpen=false; }"></div>
+    }
+
+    <!-- ── Table ── -->
+    @if (isLoading)
+    {
+        <div class="tp-loading"><div class="tp-spinner"></div><span>Loading...</span></div>
+    }
+    else if (errorMsg != null)
+    {
+        <div class="tp-error"><i class="bi bi-exclamation-circle"></i> @errorMsg <button @onclick="Load">Retry</button></div>
+    }
+    else
+    {
+        <div class="tp-table-wrap">
+            <table class="tp-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Compensation</th>
+                        <th>Units</th>
+                        <th>Accrual</th>
+                        <th>Assignees</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @if (!Filtered.Any())
+                {
+                    <tr>
+                        <td colspan="6" class="tp-nodata">
+                            @if (policies.Any())
+                            {
+                                <span>No policies match your search.</span>
+                            }
+                            else
+                            {
+                                <span>No data available</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var p in Filtered)
+                    {
+                        var cp = p;
+                        <tr class="tp-row" @onclick="() => OpenEdit(cp)">
+                            <td>
+                                <div class="tp-name-cell">
+                                    <div class="tp-name-icon"><i class="bi bi-briefcase"></i></div>
+                                    <span>@p.Name</span>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="tp-badge tp-badge--@p.CompensationType.ToLower()">@p.CompensationType</span>
+                            </td>
+                            <td class="tp-muted">@p.Unit</td>
+                            <td class="tp-muted">@p.AccrualType</td>
+                            <td class="tp-muted">@p.AssigneeSummary</td>
+                            <td class="tp-actions" @onclick:stopPropagation="true">
+                                <button class="tp-icon-btn" title="Edit" @onclick="() => OpenEdit(cp)">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="tp-icon-btn tp-icon-btn--del" title="Delete" @onclick="() => PromptDelete(cp)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+
+        @* Empty state hero card (Jibble-style) *@
+        @if (!policies.Any() && !heroDismissed)
+        {
+            <div class="tp-hero">
+                <div class="tp-hero-text">
+                    <h3>Manage time off for accurate attendance</h3>
+                    <p>Configure time off policies to track entitlements, manage attendance, and ensure accurate payroll records.</p>
+                    <a href="#" class="tp-hero-link">Learn more about Time Off <i class="bi bi-box-arrow-up-right"></i></a>
+                    <button class="tp-hero-dismiss" @onclick="() => heroDismissed = true">Dismiss</button>
+                </div>
+                <div class="tp-hero-img">
+                    <!-- Travel / time-off illustration -->
+                    <svg viewBox="0 0 240 200" xmlns="http://www.w3.org/2000/svg" fill="none">
+                        <!-- Ground blob -->
+                        <ellipse cx="120" cy="178" rx="95" ry="18" fill="#e8eaed" opacity=".6"/>
+                        <!-- Luggage body -->
+                        <rect x="72" y="100" width="62" height="72" rx="8" fill="#4285f4"/>
+                        <rect x="82" y="108" width="42" height="56" rx="5" fill="#5a9bf5"/>
+                        <!-- Luggage handle -->
+                        <rect x="93" y="86" width="20" height="20" rx="5" stroke="#4285f4" stroke-width="4" fill="none"/>
+                        <!-- Luggage wheels -->
+                        <circle cx="85" cy="175" r="6" fill="#2563eb"/>
+                        <circle cx="121" cy="175" r="6" fill="#2563eb"/>
+                        <!-- Luggage strap -->
+                        <rect x="99" y="100" width="8" height="72" rx="3" fill="#3b82f6" opacity=".5"/>
+                        <!-- Luggage latch -->
+                        <rect x="97" y="133" width="12" height="8" rx="3" fill="#1d4ed8"/>
+                        <!-- Person legs -->
+                        <rect x="148" y="138" width="14" height="38" rx="7" fill="#1e40af"/>
+                        <rect x="165" y="138" width="14" height="38" rx="7" fill="#1e40af"/>
+                        <!-- Person shoes -->
+                        <ellipse cx="155" cy="176" rx="10" ry="5" fill="#111827"/>
+                        <ellipse cx="172" cy="176" rx="10" ry="5" fill="#111827"/>
+                        <!-- Person body -->
+                        <rect x="142" y="90" width="42" height="52" rx="14" fill="#f97316"/>
+                        <!-- Person arm (reaching for luggage) -->
+                        <rect x="124" y="108" width="22" height="10" rx="5" fill="#f97316"/>
+                        <!-- Person arm (other side) -->
+                        <rect x="182" y="108" width="20" height="10" rx="5" fill="#f97316"/>
+                        <!-- Person head -->
+                        <circle cx="163" cy="72" r="22" fill="#92400e"/>
+                        <!-- Hair -->
+                        <ellipse cx="163" cy="55" rx="22" ry="12" fill="#111827"/>
+                        <ellipse cx="148" cy="68" rx="8" ry="14" fill="#111827"/>
+                        <!-- Plant pot -->
+                        <rect x="196" y="142" width="30" height="28" rx="4" fill="#d1d5db"/>
+                        <rect x="199" y="138" width="24" height="8" rx="3" fill="#9ca3af"/>
+                        <!-- Plant leaves -->
+                        <ellipse cx="211" cy="128" rx="8" ry="14" fill="#4ade80" transform="rotate(-20 211 128)"/>
+                        <ellipse cx="218" cy="122" rx="7" ry="12" fill="#22c55e" transform="rotate(15 218 122)"/>
+                        <ellipse cx="204" cy="124" rx="7" ry="12" fill="#4ade80" transform="rotate(-35 204 124)"/>
+                        <!-- Sparkles -->
+                        <circle cx="46" cy="88" r="4" fill="#fbbf24" opacity=".8"/>
+                        <circle cx="58" cy="70" r="3" fill="#f97316" opacity=".6"/>
+                        <circle cx="38" cy="110" r="3" fill="#a78bfa" opacity=".7"/>
+                    </svg>
+                </div>
+            </div>
+        }
+    }
+
+</div>
+
+    </div><!-- /tp-policies-section -->
+
+    <div id="tp-holidays-section" style='@(activeTab == "holidays" ? "" : "display:none")'>
+        <HolidaysTab />
+    </div>
+
+<!-- Archived policies footer -->
+<div class="tp-archived-footer">
+    <i class="bi bi-archive"></i>
+    <a href="#">Archived policies</a>
+</div>
+
+<!-- ════════════════════════════════════════════
+     ADD / EDIT SLIDE PANEL
+════════════════════════════════════════════ -->
+@if (panelOpen)
+{
+    <div class="tp-overlay" @onclick="ClosePanel"></div>
+    <div class="tp-panel" @onclick:stopPropagation>
+
+        <div class="tp-panel-head">
+            <span class="tp-panel-title">@(editId.HasValue ? "Edit Policy" : "Add Time Off Policy")</span>
+            <button class="tp-panel-x" @onclick="ClosePanel"><i class="bi bi-x-lg"></i></button>
+        </div>
+
+        <div class="tp-panel-body">
+
+            <!-- POLICY DETAILS -->
+            <div class="tp-section-label">POLICY DETAILS</div>
+
+            <!-- Name -->
+            <div class="tp-pfield">
+                <label class="tp-plabel">Name</label>
+                <input class="tp-pinput @(nameErr ? "tp-pinput--err" : "")"
+                       type="text" placeholder="Name of the policy (required)"
+                       @bind="fName" @bind:event="oninput"
+                       @onfocus="() => nameErr = false" />
+                @if (nameErr) { <span class="tp-ferr">Policy name is required.</span> }
+            </div>
+
+            <!-- Members -->
+            <div class="tp-pfield">
+                <label class="tp-plabel">
+                    Members
+                    <i class="bi bi-info-circle tp-info-icon" title="Assign specific members or groups, or leave it as default to apply to everyone."></i>
+                </label>
+                @if (selEmps.Any())
+                {
+                    <div class="tp-chips-wrap">
+                        @foreach (var mid in selEmps)
+                        {
+                            var m = members.FirstOrDefault(x => x.Id == mid);
+                            if (m != null)
+                            {
+                                var capturedId = mid;
+                                <span class="tp-chip">
+                                    @m.FullName
+                                    <button class="tp-chip-x" @onclick="() => TogEmp(capturedId)" @onclick:stopPropagation>x</button>
+                                </span>
+                            }
+                        }
+                    </div>
+                }
+                <div class="tp-member-box @(membersOpen ? "tp-member-box--open" : "")" @onclick:stopPropagation>
+                    <input class="tp-member-search-input"
+                           type="text"
+                           placeholder="Select members"
+                           @bind="memberSearch"
+                           @bind:event="oninput"
+                           @onfocus="() => membersOpen = true" />
+                </div>
+                @if (membersOpen)
+                {
+                    <div class="tp-member-dropdown" @onclick:stopPropagation>
+                        @{
+                            var filtered = string.IsNullOrWhiteSpace(memberSearch)
+                                ? members
+                                : members.Where(m => m.FullName.Contains(memberSearch, StringComparison.OrdinalIgnoreCase)
+                                                  || m.Email.Contains(memberSearch, StringComparison.OrdinalIgnoreCase)).ToList();
+                        }
+                        @if (!filtered.Any())
+                        {
+                            <div class="tp-member-empty">No members found</div>
+                        }
+                        else
+                        {
+                            @foreach (var m in filtered)
+                            {
+                                var mid2 = m.Id;
+                                bool isSel = selEmps.Contains(mid2);
+                                <div class="tp-member-row @(isSel ? "tp-member-row--sel" : "")"
+                                     @onclick="() => SelectMember(mid2)">
+                                    <div class="tp-member-av">@(m.FullName.Length > 0 ? m.FullName[0].ToString().ToUpper() : "?")</div>
+                                    <div class="tp-member-info">
+                                        <span class="tp-member-name">@m.FullName</span>
+                                        <span class="tp-member-email">@m.Email</span>
+                                    </div>
+                                    @if (isSel) { <i class="bi bi-check2 tp-member-check"></i> }
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (membersOpen)
+            {
+                <div style="position:fixed;inset:0;z-index:498;" @onclick="CloseMembersDropdown"></div>
+            }
+
+            <!-- Compensation -->
+            <div class="tp-pfield">
+                <label class="tp-plabel">
+                    Compensation
+                    <i class="bi bi-info-circle tp-info-icon" title="Paid leaves count towards payroll. Unpaid leaves deduct from salary."></i>
+                </label>
+                <div class="tp-toggle-row">
+                    <button class="tp-toggle-btn @(fComp=="Paid"?"tp-toggle-btn--sel":"")"
+                            @onclick='() => { fComp = "Paid"; }'>Paid</button>
+                    <button class="tp-toggle-btn @(fComp=="Unpaid"?"tp-toggle-btn--sel":"")"
+                            @onclick='() => { fComp = "Unpaid"; fAccrual = "None"; }'>Unpaid</button>
+                </div>
+            </div>
+
+            <!-- Units — always visible -->
+            <div class="tp-pfield">
+                <label class="tp-plabel">Units</label>
+                <div class="tp-toggle-row">
+                    <button class="tp-toggle-btn @(fUnit=="Days"?"tp-toggle-btn--sel":"")"
+                            @onclick='() => fUnit="Days"'>Days</button>
+                    <button class="tp-toggle-btn @(fUnit=="Hours"?"tp-toggle-btn--sel":"")"
+                            @onclick='() => fUnit="Hours"'>Hours</button>
+                </div>
+            </div>
+
+            @if (fComp == "Paid")
+            {
+                <!-- ACCRUAL SETTINGS — Paid only -->
+                <div class="tp-section-label">ACCRUAL SETTINGS</div>
+
+                <div class="tp-pfield">
+                    <label class="tp-plabel">Schedule of Accrual</label>
+                    <div class="tp-select-wrap">
+                        <select class="tp-pselect" @bind="fAccrual">
+                            <option value="None">None</option>
+                            <option value="Annual">Annual – earned yearly</option>
+                            <option value="Monthly">Monthly – earned each month</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="tp-pfield">
+                    <label class="tp-plabel">Entitled</label>
+                    <div class="tp-entitled-row">
+                        <input class="tp-pinput tp-entitled-num" type="number" min="0" step="0.5"
+                               placeholder="0" @bind="fEntitlement" />
+                        <div class="tp-select-wrap tp-entitled-unit">
+                            <select class="tp-pselect" @bind="fUnit">
+                                <option value="Days">Days</option>
+                                <option value="Hours">Hours</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- Exclude checkboxes — always visible -->
+            <label class="tp-pchk-row">
+                <input type="checkbox" @bind="fExcludePH" />
+                <span>Exclude public holidays</span>
+                <i class="bi bi-info-circle tp-info-icon" title="Public holidays won't be counted as leave days"></i>
+            </label>
+            <label class="tp-pchk-row">
+                <input type="checkbox" @bind="fExcludeNW" />
+                <span>Exclude non-working days</span>
+                <i class="bi bi-info-circle tp-info-icon" title="Weekends and non-working days won't be counted"></i>
+            </label>
+
+            @if (fComp == "Paid")
+            {
+                <!-- BALANCE RULES — Paid only -->
+                <div class="tp-section-label" style="margin-top:8px;">
+                    BALANCE RULES
+                    <i class="bi bi-info-circle tp-info-icon" title="Configure how unused leave balances are handled"></i>
+                </div>
+
+                <label class="tp-pchk-row">
+                    <input type="checkbox" @bind="fCarry" />
+                    <span>Leave balances can be carried forward to the next cycle.</span>
+                </label>
+
+                @if (fCarry)
+                {
+                    <div class="tp-carry-box">
+                        <div class="tp-pfield">
+                            <label class="tp-plabel">Max @fUnit to carry forward</label>
+                            <input class="tp-pinput" type="number" min="0" step="0.5"
+                                   placeholder="e.g. 5" @bind="fCarryLimit" />
+                        </div>
+                        <div class="tp-pfield">
+                            <label class="tp-plabel">Expires after (months into new cycle)</label>
+                            <input class="tp-pinput" type="number" min="1" max="12"
+                                   placeholder="e.g. 3" @bind="fCarryExpiry" />
+                            <span class="tp-hint">Leave blank for no expiry.</span>
+                        </div>
+                    </div>
+                }
+            }
+
+            @if (saveErr != null)
+            {
+                <div class="tp-save-err"><i class="bi bi-exclamation-triangle"></i> @saveErr</div>
+            }
+
+        </div>
+        <div class="tp-panel-foot">
+            <button class="tp-btn-cancel" @onclick="ClosePanel">Cancel</button>
+            <button class="tp-btn-save" @onclick="Save" disabled="@saving">
+                @if (saving) { <span class="tp-mini-spin"></span> }
+                else { <span>Save</span> }
+            </button>
+        </div>
+
+    </div>
+}
+
+<!-- ════════════════════════════════════════════
+     DELETE MODAL
+════════════════════════════════════════════ -->
+@if (deleteTarget != null)
+{
+    <div class="tp-modal-back">
+        <div class="tp-modal">
+            <div class="tp-modal-head">
+                <span>Delete Policy</span>
+                <button class="tp-panel-x" @onclick="() => deleteTarget = null"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <p class="tp-modal-body">
+                Are you sure you want to delete <strong>@deleteTarget.Name</strong>? This action cannot be undone.
+            </p>
+            @if (delErr != null)
+            {
+                <div class="tp-save-err"><i class="bi bi-exclamation-triangle"></i> @delErr</div>
+            }
+            <div class="tp-modal-foot">
+                <button class="tp-btn-cancel" @onclick="() => { deleteTarget = null; delErr = null; }">Cancel</button>
+                <button class="tp-btn-del" @onclick="ConfirmDelete" disabled="@deleting">
+                    @if (deleting) { <span class="tp-mini-spin"></span> } else { <span>Delete</span> }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+</BasePage>
+
+@code {
+    // ── Data ──────────────────────────────────────────────────────────────────
+    private List<TimeOffPolicyVm> policies = new();
+    private List<MiniEmployee>    members  = new();
+    private List<MiniGroup>       groups   = new();
+
+    // ── Tab ──────────────────────────────────────────────────────────────────
+    private string  activeTab = "policies";
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    private bool    isLoading = true;
+    private string? errorMsg;
+    private string  searchText   = "";
+    private string  filterComp   = "";
+    private string  filterUnit   = "";
+    private bool    compOpen     = false;
+    private bool    unitOpen     = false;
+    private bool    heroDismissed = false;
+
+    // ── Panel ─────────────────────────────────────────────────────────────────
+    private bool    panelOpen = false;
+    private int?    editId    = null;
+    private bool    saving    = false;
+    private string? saveErr;
+    private bool    nameErr   = false;
+    private string  memberSearch = "";
+    private bool    membersOpen  = false;
+
+    // Form fields
+    private string  fName        = "";
+    private string  fComp        = "Paid";
+    private string  fUnit        = "Days";
+    private string  fAccrual     = "None";
+    private double  fEntitlement = 0;
+    private bool    fExcludePH   = false;
+    private bool    fExcludeNW   = false;
+    private bool    fCarry       = false;
+    private double? fCarryLimit;
+    private int?    fCarryExpiry;
+    private HashSet<int> selGroups = new();
+    private HashSet<int> selEmps   = new();
+
+    // ── Delete ────────────────────────────────────────────────────────────────
+    private TimeOffPolicyVm? deleteTarget;
+    private bool    deleting = false;
+    private string? delErr;
+
+    // ── Computed ──────────────────────────────────────────────────────────────
+    private IEnumerable<TimeOffPolicyVm> Filtered => policies
+        .Where(p =>
+            (string.IsNullOrWhiteSpace(searchText) || p.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrWhiteSpace(filterComp) || p.CompensationType == filterComp) &&
+            (string.IsNullOrWhiteSpace(filterUnit) || p.Unit == filterUnit));
+
+    private IEnumerable<MiniEmployee> MembersFiltered => string.IsNullOrWhiteSpace(memberSearch)
+        ? members
+        : members.Where(m => m.FullName.Contains(memberSearch, StringComparison.OrdinalIgnoreCase)
+                          || m.Email.Contains(memberSearch, StringComparison.OrdinalIgnoreCase));
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+        => await Task.WhenAll(Load(), LoadMembersGroups());
+
+    private async Task Load()
+    {
+        isLoading = true; errorMsg = null; StateHasChanged();
+        try   { policies = await PolicyService.GetAllAsync(); }
+        catch (Exception ex) { errorMsg = ex.Message; }
+        isLoading = false; StateHasChanged();
+    }
+
+    private async Task LoadMembersGroups()
+    {
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var eRes   = await client.GetAsync($"api/employees?organizationId={SessionService.ActiveOrganizationId}");
+            var gRes   = await client.GetAsync("api/groups");
+
+            if (eRes.IsSuccessStatusCode)
+            {
+                var arr = JsonSerializer.Deserialize<JsonElement[]>(
+                    await eRes.Content.ReadAsStringAsync(),
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                members = arr?.Select(e => new MiniEmployee
+                {
+                    Id       = e.GetProperty("id").GetInt32(),
+                    FullName = e.GetProperty("fullName").GetString() ?? "",
+                    Email    = e.GetProperty("email").GetString() ?? ""
+                }).ToList() ?? new();
+            }
+
+            if (gRes.IsSuccessStatusCode)
+            {
+                var arr = JsonSerializer.Deserialize<JsonElement[]>(
+                    await gRes.Content.ReadAsStringAsync(),
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                groups = arr?.Select(g => new MiniGroup
+                {
+                    Id   = g.GetProperty("id").GetInt32(),
+                    Name = g.GetProperty("name").GetString() ?? ""
+                }).ToList() ?? new();
+            }
+        }
+        catch { /* non-critical */ }
+    }
+
+    // ── Panel open/close ──────────────────────────────────────────────────────
+    private void OpenAdd()
+    {
+        editId = null;
+        ResetForm();
+        panelOpen = true;
+    }
+
+    private void OpenEdit(TimeOffPolicyVm p)
+    {
+        editId       = p.Id;
+        fName        = p.Name;
+        fComp        = p.CompensationType;
+        fUnit        = p.Unit;
+        fAccrual     = p.AccrualType;
+        fEntitlement = p.AnnualEntitlement;
+        fExcludePH   = p.ExcludePublicHolidays;
+        fExcludeNW   = p.ExcludeNonWorkingDays;
+        fCarry       = p.AllowCarryForward;
+        fCarryLimit  = p.CarryForwardLimit;
+        fCarryExpiry = p.CarryForwardExpiryMonths;
+        selGroups    = new HashSet<int>(p.AssignedGroupIds);
+        selEmps      = new HashSet<int>(p.AssignedEmployeeIds);
+        saveErr      = null; nameErr = false; memberSearch = "";
+        panelOpen    = true;
+    }
+
+    private void ClosePanel() { panelOpen = false; saveErr = null; membersOpen = false; memberSearch = ""; }
+
+    private void ResetForm()
+    {
+        fName = ""; fComp = "Paid"; fUnit = "Days"; fAccrual = "None";
+        fEntitlement = 0; fExcludePH = false; fExcludeNW = false;
+        fCarry = false; fCarryLimit = null; fCarryExpiry = null;
+        selGroups = new(); selEmps = new(); saveErr = null; nameErr = false; memberSearch = "";
+    }
+
+    // ── Assign toggles ────────────────────────────────────────────────────────
+    private void TogGrp(int id) { if (!selGroups.Remove(id)) selGroups.Add(id); }
+    private void TogEmp(int id) { if (!selEmps.Remove(id))   selEmps.Add(id); }
+
+    private void SelectMember(int id)
+    {
+        TogEmp(id);
+        memberSearch = "";
+    }
+
+    private void CloseMembersDropdown()
+    {
+        membersOpen = false;
+        memberSearch = "";
+    }
+
+    // ── Save ──────────────────────────────────────────────────────────────────
+    private async Task Save()
+    {
+        nameErr = string.IsNullOrWhiteSpace(fName);
+        if (nameErr) return;
+
+        saving = true; saveErr = null;
+
+        var req = new SaveTimeOffPolicyRequest
+        {
+            Name                     = fName.Trim(),
+            CompensationType         = fComp,
+            Unit                     = fUnit,
+            AccrualType              = fComp == "Unpaid" ? "None" : fAccrual,
+            AnnualEntitlement        = fEntitlement,
+            ExcludePublicHolidays    = fExcludePH,
+            ExcludeNonWorkingDays    = fExcludeNW,
+            AllowCarryForward        = fCarry,
+            CarryForwardLimit        = fCarry ? fCarryLimit : null,
+            CarryForwardExpiryMonths = fCarry ? fCarryExpiry : null,
+            AssignedGroupIds         = selGroups.ToList(),
+            AssignedEmployeeIds      = selEmps.ToList()
+        };
+
+        var (ok, err) = editId.HasValue
+            ? await PolicyService.UpdateAsync(editId.Value, req)
+            : await PolicyService.CreateAsync(req);
+
+        if (ok) { panelOpen = false; await Load(); }
+        else    { saveErr = err ?? "Failed to save."; }
+
+        saving = false;
+    }
+
+    // ── Delete ────────────────────────────────────────────────────────────────
+    private void PromptDelete(TimeOffPolicyVm p) { deleteTarget = p; delErr = null; }
+
+    private async Task ConfirmDelete()
+    {
+        if (deleteTarget == null) return;
+        deleting = true; delErr = null;
+
+        var (ok, err) = await PolicyService.DeleteAsync(deleteTarget.Id);
+        if (ok) { deleteTarget = null; await Load(); }
+        else    { delErr = err ?? "Delete failed."; }
+
+        deleting = false;
+    }
+
+    // ── Holidays ─────────────────────────────────────────────────────────────
+    private void RefreshCalendars() { StateHasChanged(); }
+
+    // ── Local helper models ───────────────────────────────────────────────────
+    private record MiniEmployee(int Id, string FullName, string Email)
+    {
+        public MiniEmployee() : this(0, "", "") { }
+        public int    Id       { get; init; } = Id;
+        public string FullName { get; init; } = FullName;
+        public string Email    { get; init; } = Email;
+    }
+    private record MiniGroup(int Id, string Name)
+    {
+        public MiniGroup() : this(0, "") { }
+        public int    Id   { get; init; } = Id;
+        public string Name { get; init; } = Name;
+    }
+}
+
+<style>
+    /* ═══ Page ═══════════════════════════════════════════════════════════════ */
+    .tp-page { padding: 0; }
+
+    /* ═══ Tabs ═══════════════════════════════════════════════════════════════ */
+    .tp-tabs-row {
+        display: flex; align-items: center; justify-content: space-between;
+        border-bottom: 2px solid #e8eaed; margin-bottom: 20px; gap: 12px;
+    }
+    .tp-tabs {
+        display: flex; align-items: flex-end;
+    }
+    .tp-tab {
+        padding: 12px 22px;
+        font-size: 14px; font-weight: 500; color: #6b7280;
+        cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px;
+        transition: color .15s, border-color .15s;
+    }
+    .tp-tab:hover { color: #111827; }
+    .tp-tab--active { color: #ff7a00; border-bottom-color: #ff7a00; font-weight: 700; }
+    .tp-tabs-actions { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; }
+
+    /* ═══ Toolbar ════════════════════════════════════════════════════════════ */
+    .tp-toolbar {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; margin-bottom: 18px; flex-wrap: wrap;
+    }
+    .tp-toolbar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .tp-toolbar-right { display: flex; align-items: center; gap: 10px; }
+
+    .tp-search {
+        display: flex; align-items: center; gap: 8px;
+        background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 8px;
+        padding: 7px 14px; min-width: 200px;
+        transition: border-color .15s;
+    }
+    .tp-search:focus-within { border-color: #ff7a00; background: #fff; }
+    .tp-search i { color: #9ca3af; font-size: 13px; }
+    .tp-search input { border: none; background: transparent; outline: none; font-size: 13px; color: #111827; width: 100%; font-family: inherit; }
+
+    /* Custom dropdown */
+    .tp-dd-wrap { position: relative; z-index: 100; }
+    .tp-dd-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 7px 14px; background: #f9fafb; border: 1.5px solid #e5e7eb;
+        border-radius: 8px; font-size: 13px; color: #374151; cursor: pointer;
+        font-family: inherit; font-weight: 500; transition: border-color .15s, background .15s;
+        white-space: nowrap;
+    }
+    .tp-dd-btn:hover, .tp-dd-btn--open { border-color: #d1d5db; background: #fff; }
+    .tp-dd-chevron { font-size: 10px; color: #6b7280; }
+    .tp-dd-menu {
+        position: absolute; top: calc(100% + 4px); left: 0; min-width: 160px;
+        background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.12); z-index: 200;
+        padding: 6px 0; animation: tp-dd-in .12s ease;
+    }
+    @@keyframes tp-dd-in { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+    .tp-dd-item {
+        padding: 9px 16px; font-size: 13px; color: #374151; cursor: pointer;
+        transition: background .1s;
+    }
+    .tp-dd-item:hover { background: #f9fafb; }
+    .tp-dd-item--sel { font-weight: 600; color: #ff7a00; background: #fff7ed; }
+    .tp-dd-item--clear { color: #9ca3af; font-size: 12px; }
+    .tp-dd-item--clear:hover { background: #f9fafb; color: #6b7280; }
+    .tp-dd-sep { height: 1px; background: #f3f4f6; margin: 4px 0; }
+
+    .tp-approval-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 16px; border-radius: 8px; background: #fff;
+        border: 1.5px solid #e5e7eb; font-size: 13px; font-weight: 500;
+        color: #374151; cursor: pointer; font-family: inherit;
+        transition: border-color .15s, background .15s; white-space: nowrap;
+    }
+    .tp-approval-btn i { color: #ff7a00; font-size: 14px; }
+    .tp-approval-btn:hover { background: #f9fafb; border-color: #d1d5db; }
+
+    .tp-add-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 20px; border-radius: 8px;
+        background: #ff7a00; color: #fff; border: none;
+        font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+        transition: background .15s; white-space: nowrap;
+    }
+    .tp-add-btn:hover { background: #e66c00; }
+
+    /* ═══ Table ══════════════════════════════════════════════════════════════ */
+    .tp-table-wrap { border: 1.5px solid #e8eaed; border-radius: 10px; overflow: hidden; }
+    .tp-table { width: 100%; border-collapse: collapse; }
+    .tp-table thead th {
+        padding: 11px 16px;
+        font-size: 12px; font-weight: 700; color: #374151;
+        text-transform: uppercase; letter-spacing: .4px;
+        background: #f9fafb; text-align: left; white-space: nowrap;
+        border-bottom: 1.5px solid #e8eaed;
+    }
+    .tp-row { border-bottom: 1px solid #f3f4f6; cursor: pointer; transition: background .1s; }
+    .tp-row:last-child { border-bottom: none; }
+    .tp-row:hover { background: #fff7ed; }
+    .tp-row td { padding: 13px 16px; vertical-align: middle; }
+
+    .tp-name-cell { display: flex; align-items: center; gap: 10px; }
+    .tp-name-icon {
+        width: 32px; height: 32px; border-radius: 8px;
+        background: #fff7ed; color: #ff7a00; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center; font-size: 14px;
+    }
+    .tp-name-cell span { font-size: 14px; font-weight: 600; color: #111827; }
+    .tp-muted { font-size: 13px; color: #6b7280; }
+
+    .tp-badge {
+        display: inline-block; padding: 3px 10px; border-radius: 20px;
+        font-size: 11px; font-weight: 700; letter-spacing: .3px; border: 1px solid;
+    }
+    .tp-badge--paid   { color: #166534; background: #f0fdf4; border-color: #86efac; }
+    .tp-badge--unpaid { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+
+    .tp-nodata { text-align: center; padding: 40px 16px; color: #9ca3af; font-size: 14px; }
+
+    .tp-actions { text-align: right; width: 72px; }
+    .tp-icon-btn {
+        width: 28px; height: 28px; border-radius: 6px; border: 1.5px solid #e8eaed;
+        background: #fff; display: inline-flex; align-items: center; justify-content: center;
+        cursor: pointer; font-size: 12px; color: #6b7280; margin-left: 4px;
+        transition: border-color .15s, color .15s, background .15s;
+    }
+    .tp-icon-btn:hover { border-color: #ff7a00; color: #ff7a00; background: #fff7ed; }
+    .tp-icon-btn--del:hover { border-color: #ef4444; color: #ef4444; background: #fef2f2; }
+
+    /* ═══ Hero empty state ═══════════════════════════════════════════════════ */
+    .tp-hero {
+        display: flex; align-items: center; justify-content: space-between;
+        background: #fff; border: 1px solid #e8eaed; border-radius: 12px;
+        padding: 36px 48px 36px 40px; margin-top: 0; gap: 24px;
+        overflow: hidden;
+    }
+    .tp-hero-text { flex: 1; max-width: 480px; }
+    .tp-hero-text h3 { font-size: 22px; font-weight: 700; color: #111827; margin: 0 0 12px; }
+    .tp-hero-text p  { font-size: 14px; color: #6b7280; line-height: 1.6; margin: 0 0 16px; max-width: 440px; }
+    .tp-hero-link {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: 14px; font-weight: 600; color: #ff7a00;
+        text-decoration: none;
+    }
+    .tp-hero-link:hover { text-decoration: underline; }
+    .tp-hero-link i { font-size: 11px; }
+    .tp-hero-dismiss {
+        display: block; margin-top: 12px; background: none; border: none;
+        font-size: 13px; color: #9ca3af; cursor: pointer; padding: 0;
+        font-family: inherit; text-align: left;
+    }
+    .tp-hero-dismiss:hover { color: #6b7280; }
+    .tp-hero-img { flex-shrink: 0; width: 220px; height: 180px; display: flex; align-items: center; justify-content: center; }
+    .tp-hero-img svg { width: 100%; height: 100%; }
+
+    /* ═══ States ═════════════════════════════════════════════════════════════ */
+    .tp-loading { display: flex; align-items: center; gap: 10px; padding: 60px; justify-content: center; color: #9ca3af; }
+    .tp-spinner { width: 20px; height: 20px; border-radius: 50%; border: 2.5px solid #f3f4f6; border-top-color: #ff7a00; animation: tp-spin .7s linear infinite; }
+    @@keyframes tp-spin { to { transform: rotate(360deg); } }
+    .tp-error { display: flex; align-items: center; gap: 12px; padding: 20px; background: #fef2f2; border-radius: 10px; color: #b91c1c; font-size: 13px; }
+    .tp-error button { margin-left: auto; padding: 5px 14px; border-radius: 7px; border: 1.5px solid #b91c1c; background: #fff; color: #b91c1c; font-size: 12px; cursor: pointer; font-family: inherit; }
+
+    /* ═══ Slide Panel ════════════════════════════════════════════════════════ */
+    /* Overlay covers EVERYTHING including sidebar */
+    .tp-overlay {
+        position: fixed; inset: 0; z-index: 1050;
+        background: rgba(0,0,0,.45);
+        backdrop-filter: blur(1px);
+        -webkit-backdrop-filter: blur(1px);
+    }
+    .tp-panel {
+        position: fixed; top: 0; right: 0; bottom: 0; width: 640px; z-index: 1051;
+        background: #fff; box-shadow: -8px 0 48px rgba(0,0,0,.18);
+        display: flex; flex-direction: column;
+        animation: tp-slide-in .24s cubic-bezier(.4,0,.2,1);
+    }
+    @@keyframes tp-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+    .tp-panel-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 24px 32px 20px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0;
+    }
+    .tp-panel-title { font-size: 20px; font-weight: 700; color: #111827; }
+    .tp-panel-x {
+        width: 36px; height: 36px; border-radius: 8px; border: none; background: transparent;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; color: #9ca3af; font-size: 16px;
+        transition: background .15s, color .15s;
+    }
+    .tp-panel-x:hover { background: #f3f4f6; color: #374151; }
+
+    .tp-panel-body { flex: 1; overflow-y: auto; padding: 0 32px 32px; scrollbar-width: thin; }
+    .tp-panel-foot {
+        display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+        padding: 18px 32px; border-top: 1px solid #f0f0f0; flex-shrink: 0;
+    }
+
+    /* ═══ Panel section labels ══════════════════════════════════════════════ */
+    .tp-section-label {
+        font-size: 12px; font-weight: 800; color: #374151;
+        letter-spacing: 1px; text-transform: uppercase;
+        padding: 22px 0 14px; display: flex; align-items: center; gap: 7px;
+        border-top: 1px solid #f3f4f6; margin-top: 4px;
+    }
+    .tp-section-label:first-of-type { border-top: none; }
+
+    .tp-info-icon { font-size: 13px; color: #9ca3af; cursor: help; }
+
+    /* ═══ Panel form fields ═════════════════════════════════════════════════ */
+    .tp-pfield { margin-bottom: 20px; }
+    .tp-plabel {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 14px; font-weight: 500; color: #374151;
+        margin-bottom: 8px;
+    }
+    .tp-pinput {
+        width: 100%; padding: 12px 16px; border-radius: 8px;
+        border: 1.5px solid #e5e7eb; background: #fff;
+        font-size: 15px; color: #111827; font-family: inherit;
+        transition: border-color .15s; box-sizing: border-box;
+    }
+    .tp-pinput:focus { outline: none; border-color: #ff7a00; }
+    .tp-pinput--err { border-color: #ef4444 !important; }
+    .tp-ferr { display: block; font-size: 12px; color: #ef4444; margin-top: 5px; }
+    .tp-hint { display: block; font-size: 12px; color: #9ca3af; margin-top: 5px; }
+
+    /* Toggle buttons (Paid/Unpaid, Days/Hours) */
+    .tp-toggle-row {
+        display: flex; border-radius: 8px;
+        border: 1.5px solid #e5e7eb; overflow: hidden;
+    }
+    .tp-toggle-btn {
+        flex: 1; padding: 13px 0; border: none; background: #fff;
+        font-size: 15px; font-weight: 500; color: #374151;
+        cursor: pointer; font-family: inherit;
+        transition: background .15s, color .15s;
+    }
+    .tp-toggle-btn + .tp-toggle-btn { border-left: 1.5px solid #e5e7eb; }
+    .tp-toggle-btn--sel {
+        background: #fff7ed; color: #ff7a00; font-weight: 700;
+    }
+
+    /* Select with caret */
+    .tp-select-wrap { position: relative; }
+    .tp-pselect {
+        width: 100%; padding: 12px 40px 12px 16px; border-radius: 8px;
+        border: 1.5px solid #e5e7eb; background: #fff;
+        font-size: 15px; color: #111827; font-family: inherit;
+        appearance: none; cursor: pointer;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 14px center;
+        transition: border-color .15s;
+    }
+    .tp-pselect:focus { outline: none; border-color: #ff7a00; }
+
+    /* Entitled row */
+    .tp-entitled-row { display: flex; gap: 10px; }
+    .tp-entitled-num { width: 120px; flex-shrink: 0; }
+    .tp-entitled-unit { flex: 1; }
+    .tp-entitled-unit .tp-pselect { width: 100%; }
+
+    /* Checkboxes */
+    .tp-pchk-row {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 14px; color: #374151; cursor: pointer;
+        margin-bottom: 14px;
+    }
+    .tp-pchk-row input[type=checkbox] {
+        width: 17px; height: 17px; accent-color: #ff7a00; cursor: pointer; flex-shrink: 0;
+    }
+
+    /* ═══ Members dynamic dropdown ══════════════════════════════════════════ */
+    .tp-chips-wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .tp-chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 4px 10px 4px 12px; border-radius: 20px;
+        background: #fff7ed; color: #ff7a00; font-size: 13px; font-weight: 600;
+        border: 1.5px solid #fed7aa;
+    }
+    .tp-chip-x {
+        border: none; background: none; color: #ff7a00; font-size: 16px;
+        cursor: pointer; padding: 0; line-height: 1; display: flex; align-items: center;
+    }
+    .tp-chip-x:hover { color: #c05a00; }
+
+    .tp-member-box {
+        display: flex; align-items: center; gap: 10px;
+        border: 1.5px solid #e5e7eb; border-radius: 8px;
+        padding: 11px 16px; background: #fff;
+        transition: border-color .15s; cursor: text;
+    }
+    .tp-member-box--open, .tp-member-box:focus-within { border-color: #ff7a00; }
+    .tp-member-search-icon { color: #9ca3af; font-size: 14px; flex-shrink: 0; }
+    .tp-member-search-input {
+        flex: 1; border: none; outline: none;
+        font-size: 15px; color: #111827; font-family: inherit; background: transparent;
+    }
+    .tp-member-search-input::placeholder { color: #9ca3af; }
+
+    .tp-member-dropdown {
+        position: relative; z-index: 499;
+        border: 1.5px solid #e5e7eb; border-radius: 8px;
+        background: #fff; max-height: 220px; overflow-y: auto;
+        scrollbar-width: thin; margin-top: 4px;
+        box-shadow: 0 6px 24px rgba(0,0,0,.1);
+    }
+    .tp-member-row {
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #f9fafb;
+        transition: background .1s;
+    }
+    .tp-member-row:last-child { border-bottom: none; }
+    .tp-member-row:hover { background: #f9fafb; }
+    .tp-member-row--sel { background: #fff7ed; }
+    .tp-member-av {
+        width: 34px; height: 34px; border-radius: 50%;
+        background: #e5e7eb; color: #374151;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 13px; font-weight: 700; flex-shrink: 0;
+    }
+    .tp-member-info { flex: 1; min-width: 0; }
+    .tp-member-name { display: block; font-size: 14px; font-weight: 600; color: #111827; }
+    .tp-member-email { display: block; font-size: 12px; color: #9ca3af; }
+    .tp-member-check { margin-left: auto; color: #ff7a00; font-size: 16px; font-weight: 700; }
+    .tp-member-empty { padding: 16px; text-align: center; font-size: 14px; color: #9ca3af; }
+
+    /* Groups assign list */
+    .tp-assign-list {
+        border: 1.5px solid #e5e7eb; border-radius: 8px;
+        overflow: hidden; margin-bottom: 4px;
+    }
+    .tp-assign-row {
+        display: flex; align-items: center; gap: 12px;
+        padding: 11px 16px; cursor: pointer;
+        border-bottom: 1px solid #f9fafb; transition: background .1s;
+        font-size: 14px; color: #374151;
+    }
+    .tp-assign-row:last-child { border-bottom: none; }
+    .tp-assign-row:hover { background: #f9fafb; }
+    .tp-assign-row--sel { background: #fff7ed; }
+    .tp-av {
+        width: 34px; height: 34px; border-radius: 50%; background: #e5e7eb; color: #374151;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 14px; font-weight: 700; flex-shrink: 0;
+    }
+    .tp-av--grp { background: #fff7ed; color: #ff7a00; border-radius: 8px; }
+    .tp-av-name { font-size: 14px; font-weight: 500; flex: 1; }
+
+    /* Carry forward box */
+    .tp-carry-box {
+        background: #f9fafb; border: 1px solid #e8eaed; border-radius: 10px;
+        padding: 20px; margin-top: 10px; margin-bottom: 14px;
+    }
+
+    /* Carry forward inline row */
+    .tp-carry-inline {
+        display: flex; align-items: center; gap: 10px;
+        margin-top: 10px; margin-bottom: 14px; flex-wrap: wrap;
+    }
+    .tp-carry-label { font-size: 14px; color: #374151; white-space: nowrap; }
+    .tp-carry-num { width: 80px !important; flex-shrink: 0; }
+    .tp-carry-months { min-width: 130px; }
+
+    /* Accrual side-by-side row */
+    .tp-accrual-row {
+        display: flex; gap: 16px; align-items: flex-start; margin-bottom: 0;
+    }
+
+    /* Accrue inline row */
+    .tp-accrue-inline {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .tp-accrue-num { width: 80px !important; flex-shrink: 0; }
+    .tp-accrue-unit { min-width: 110px; }
+    .tp-accrue-on { font-size: 14px; color: #6b7280; white-space: nowrap; }
+    .tp-accrue-month { min-width: 120px; }
+    .tp-accrue-day { min-width: 100px; }
+
+    /* Member add icon */
+    .tp-member-add-icon { color: #9ca3af; font-size: 16px; flex-shrink: 0; }
+
+    /* Section description text */
+    .tp-section-desc { font-size: 13px; color: #9ca3af; margin: -8px 0 12px; }
+
+    .tp-save-err {
+        display: flex; align-items: center; gap: 8px;
+        padding: 12px 16px; background: #fef2f2; border-radius: 8px;
+        color: #b91c1c; font-size: 14px; margin-top: 16px;
+    }
+
+    /* Buttons */
+    .tp-btn-cancel {
+        padding: 11px 28px; border-radius: 8px; border: none; background: none;
+        font-size: 15px; font-weight: 500; color: #ff7a00; cursor: pointer; font-family: inherit;
+        transition: background .15s;
+    }
+    .tp-btn-cancel:hover { background: #fff7ed; }
+    .tp-btn-save {
+        padding: 11px 36px; border-radius: 8px; border: none; background: #ff7a00; color: #fff;
+        font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit;
+        transition: background .15s; display: flex; align-items: center; gap: 8px;
+    }
+    .tp-btn-save:hover { background: #e66c00; }
+    .tp-btn-save:disabled { background: #fbd5a7; cursor: not-allowed; }
+    .tp-btn-del {
+        padding: 11px 28px; border-radius: 8px; border: none; background: #ef4444; color: #fff;
+        font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+        transition: background .15s; display: flex; align-items: center; gap: 8px;
+    }
+    .tp-btn-del:hover { background: #b91c1c; }
+    .tp-btn-del:disabled { background: #fca5a5; cursor: not-allowed; }
+    .tp-mini-spin {
+        width: 15px; height: 15px; border-radius: 50%;
+        border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+        animation: tp-spin .6s linear infinite; display: inline-block;
+    }
+
+    /* ═══ Delete modal ═══════════════════════════════════════════════════════ */
+    .tp-modal-back {
+        position: fixed; inset: 0; z-index: 1100; background: rgba(0,0,0,.5);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .tp-modal {
+        background: #fff; border-radius: 14px; padding: 28px;
+        width: 420px; max-width: calc(100vw - 32px);
+        box-shadow: 0 20px 60px rgba(0,0,0,.2);
+        animation: tp-modal-in .18s ease;
+    }
+    @@keyframes tp-modal-in { from { opacity: 0; transform: scale(.95); } to { opacity: 1; transform: scale(1); } }
+    .tp-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; font-size: 18px; font-weight: 700; color: #111827; }
+    .tp-modal-body { font-size: 14px; color: #6b7280; line-height: 1.6; margin: 0 0 10px; }
+    .tp-modal-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+    /* ═══ Archived footer ════════════════════════════════════════════════════ */
+    .tp-archived-footer {
+        display: flex; align-items: center; gap: 8px;
+        padding: 16px 0 4px; font-size: 13px; color: #6b7280;
+    }
+    .tp-archived-footer i { font-size: 14px; }
+    .tp-archived-footer a { color: #6b7280; text-decoration: none; font-weight: 500; }
+    .tp-archived-footer a:hover { color: #111827; text-decoration: underline; }
+
+    /* ═══ Responsive ═════════════════════════════════════════════════════════ */
+    @@media (max-width: 640px) {
+        .tp-panel { width: 100%; }
+        .tp-toolbar { flex-direction: column; align-items: stretch; }
+        .tp-toolbar-right { flex-wrap: wrap; }
+        .tp-hero { flex-direction: column; padding: 24px; }
+        .tp-hero-img { display: none; }
+    }
+</style>

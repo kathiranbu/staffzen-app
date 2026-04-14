@@ -1,0 +1,1416 @@
+@page "/settings/locations"
+@rendermode RenderMode.InteractiveServer
+@inject SessionService SessionService
+@inject IJSRuntime JS
+@inject LocationService LocationService
+@implements IDisposable
+@using APM.StaffZen.Blazor.Services
+
+<BasePage Title="Locations">
+
+    <div class="loc-page" @onclick="CloseAllDropdowns">
+
+        @* ── Top info banner ── *@
+        @if (showBanner)
+        {
+            <div class="loc-banner">
+                <i class="bi bi-info-circle loc-banner-icon"></i>
+                <span>To assign locations as geofences <a href="/settings/work-schedules" class="loc-banner-link">Go to Work Schedules</a></span>
+                <button class="loc-banner-close" @onclick="() => showBanner = false"><i class="bi bi-x"></i></button>
+            </div>
+        }
+
+        @* ── Toolbar: always full-width, Map/List stays right-aligned ── *@
+        <div class="loc-toolbar">
+            <div class="loc-search-wrap" @onclick:stopPropagation="true">
+                <div class="loc-search-field @(searchDropdownOpen ? "loc-search-field--open" : "")">
+                    <i class="bi bi-search loc-search-icon"></i>
+                    <input id="loc-search-input" class="loc-search-input"
+                           placeholder="@GetSearchPlaceholder()"
+                           @bind="searchQuery" @bind:event="oninput" />
+                    <button class="loc-search-chevron" @onclick:stopPropagation="true"
+                            @onclick="() => searchDropdownOpen = !searchDropdownOpen">
+                        <i class="bi bi-chevron-down"></i>
+                    </button>
+                </div>
+                @if (searchDropdownOpen)
+                {
+                    <div class="loc-search-dd">
+                        <div class="loc-search-dd-header">SEARCH FOR</div>
+                        <div class="loc-search-dd-item @(searchType == "new" ? "loc-search-dd-item--sel" : "")"
+                             @onclick='async () => { searchType = "new"; searchDropdownOpen = false; await ReInitPlaces(); }'>
+                            New locations
+                        </div>
+                        <div class="loc-search-dd-item @(searchType == "added" ? "loc-search-dd-item--sel" : "")"
+                             @onclick='async () => { searchType = "added"; searchDropdownOpen = false; await ReInitPlaces(); }'>
+                            Added locations
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="loc-toolbar-divider"></div>
+            <div class="loc-radius-filter-wrap" @onclick:stopPropagation="true">
+                <button class="loc-radius-btn @(radiusFilterOpen ? "loc-radius-btn--open" : "")"
+                        @onclick="() => radiusFilterOpen = !radiusFilterOpen">
+                    Radius <i class="bi @(radiusFilterOpen ? "bi-chevron-up" : "bi-chevron-down")"></i>
+                </button>
+                @if (radiusFilterOpen)
+                {
+                    <div class="loc-radius-dd">
+                        @foreach (var (bandLabel, min, max) in RadiusBands)
+                        {
+                            var lb = bandLabel; var mn = min; var mx = max;
+                            bool rsel = radiusMin == mn && radiusMax == mx;
+                            <div class="loc-radius-item @(rsel ? "loc-radius-item--sel" : "")"
+                                 @onclick="() => { radiusMin = mn; radiusMax = mx; radiusFilterOpen = false; }">@lb</div>
+                        }
+                        <div class="loc-radius-clear @(radiusMin == -1 ? "loc-radius-clear--disabled" : "")"
+                             @onclick="() => { radiusMin = -1; radiusMax = -1; radiusFilterOpen = false; }">
+                            Clear selection
+                        </div>
+                    </div>
+                }
+            </div>
+            <div style="flex:1;"></div>
+            @* Map/List toggle — always visible, right side of toolbar *@
+            <div class="loc-view-toggle">
+                <button class="loc-vt-btn @(!listView ? "loc-vt-btn--active" : "")" @onclick="SwitchToMap">
+                    <i class="bi bi-map"></i> Map
+                </button>
+                <button class="loc-vt-btn @(listView ? "loc-vt-btn--active" : "")" @onclick="SwitchToList">
+                    <i class="bi bi-list-ul"></i> List
+                </button>
+            </div>
+        </div>
+
+        @* ══════════════════════════════════
+           BODY — map or list fills space
+        ══════════════════════════════════ *@
+        <div class="loc-body">
+
+            @* ══ MAP VIEW ══ *@
+            @if (!listView)
+            {
+                <div class="loc-map-layout">
+                    @* ── Left sidebar ── *@
+                    <div class="loc-map-sidebar">
+                        @if (!FilteredLocations.Any())
+                        {
+                            <div class="loc-map-empty">
+                                <div class="loc-map-empty-phone">
+                                    <svg width="72" height="90" viewBox="0 0 72 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <rect x="8" y="2" width="56" height="86" rx="8" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="2"/>
+                                        <rect x="14" y="12" width="44" height="60" rx="3" fill="#e8eaed"/>
+                                        <circle cx="36" cy="80" r="4" fill="#d1d5db"/>
+                                        <rect x="26" y="6" width="20" height="3" rx="1.5" fill="#d1d5db"/>
+                                        <circle cx="49" cy="30" r="6" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+                                        <path d="M46 30 L48.5 32.5 L52 27" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <circle cx="28" cy="48" r="5" fill="#3b82f6" fill-opacity="0.15" stroke="#3b82f6" stroke-width="1.5"/>
+                                        <circle cx="28" cy="48" r="2" fill="#3b82f6"/>
+                                        <line x1="28" y1="43" x2="28" y2="30" stroke="#3b82f6" stroke-width="1" stroke-dasharray="2 2"/>
+                                    </svg>
+                                    <div class="loc-map-empty-plus"><i class="bi bi-plus"></i></div>
+                                </div>
+                                <div class="loc-map-empty-title">Add locations to track time<br />with GPS</div>
+                                <div class="loc-map-empty-sub">Search for a location on the<br />map to begin.</div>
+                                <a href="#" class="loc-map-empty-link">Learn more about Locations <i class="bi bi-box-arrow-up-right" style="font-size:11px;"></i></a>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="loc-map-list">
+                                @foreach (var loc in FilteredLocations)
+                                {
+                                    var l = loc;
+                                    <div class="loc-map-list-item @(selectedLocation?.Id == l.Id ? "loc-map-list-item--active" : "")"
+                                         @onclick="() => SelectAndFly(l)">
+                                        <div class="loc-map-list-text">
+                                            <div class="loc-map-list-name">@l.Name</div>
+                                            <div class="loc-map-list-addr">@l.Address</div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <div class="loc-archived-footer">
+                            <button class="loc-archived-btn" @onclick="() => showArchivedModal = true">
+                                <i class="bi bi-archive"></i> Archived Locations
+                            </button>
+                        </div>
+                    </div>
+
+                    @* ── Map area ── *@
+                    <div class="loc-map-container">
+                        <div id="loc-map" class="loc-map"></div>
+                        <div class="loc-map-style-toggle">
+                            <button class="loc-ms-btn @(!satellite ? "loc-ms-btn--active" : "")" @onclick="() => SetMapStyle(false)">Map</button>
+                            <button class="loc-ms-btn @(satellite ? "loc-ms-btn--active" : "")" @onclick="() => SetMapStyle(true)">Satellite</button>
+                        </div>
+
+                        @* ── Add Missing Location overlay — fixed center pin + bottom bar ── *@
+                        @if (missingModeActive)
+                        {
+                            @* Fixed center pin — stays in center while map pans underneath *@
+                            <div class="loc-center-pin">
+                                <div class="loc-center-pin-icon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="26" height="36" viewBox="0 0 26 36">
+                                        <path d="M13 0C5.82 0 0 5.82 0 13c0 9.75 13 23 13 23S26 22.75 26 13C26 5.82 20.18 0 13 0z"
+                                              fill="#c0392b"/>
+                                        <path d="M13 1C6.37 1 1 6.37 1 13c0 9.37 12 21.8 12 21.8S25 22.37 25 13C25 6.37 19.63 1 13 1z"
+                                              fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1"/>
+                                        <circle cx="13" cy="13" r="5" fill="#fff" opacity="0.97"/>
+                                        <circle cx="13" cy="13" r="2.2" fill="#c0392b"/>
+                                    </svg>
+                                </div>
+                                <div class="loc-center-pin-shadow"></div>
+                            </div>
+
+                            @* Bottom bar — "Move the map to the correct location" + Done *@
+                            <div class="loc-missing-bar">
+                                <span class="loc-missing-bar-text">Move the map to the correct location</span>
+                                <button class="loc-missing-bar-done" @onclick="ConfirmMissingPin">
+                                    Done
+                                </button>
+                            </div>
+                        }
+                        @if (showAddPopup && pendingLocation != null)
+                        {
+                            <div class="loc-add-popup">
+                                <div class="loc-popup-name">@pendingLocation.Name</div>
+                                <div class="loc-popup-addr">@pendingLocation.Address</div>
+                                <div class="loc-popup-remaining">2 of 2 locations remaining. <span class="loc-popup-upgrade">Upgrade for more</span></div>
+                                <button class="loc-popup-btn" @onclick="OpenAddLocationPanel">Add New Location</button>
+                            </div>
+                        }
+                    </div>
+
+                    @* ── Right panel — third column, inline, does NOT overlap map or toolbar ── *@
+                    @if (showLocationPanel)
+                    {
+                        <div class="loc-panel" @onclick:stopPropagation="true">
+                            <div class="loc-panel-header">
+                                <span class="loc-panel-title">@(viewingLocation != null ? "View Location" : editingLocation != null ? "Edit Location" : "Add New Location")</span>
+                                <div class="loc-panel-header-actions">
+                                    @if (viewingLocation != null)
+                                    {
+                                        <button class="loc-panel-icon-btn" title="Edit"
+                                                @onclick="() => { editingLocation = viewingLocation; viewingLocation = null; }">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="loc-panel-icon-btn" title="Archive"
+                                                @onclick="() => { archiveTarget = viewingLocation; showArchiveConfirm = true; }">
+                                            <i class="bi bi-archive"></i>
+                                        </button>
+                                    }
+                                    <button class="loc-panel-close" @onclick="CloseLocationPanel"><i class="bi bi-x-lg"></i></button>
+                                </div>
+                            </div>
+
+                            @* VIEW mode *@
+                            @if (viewingLocation != null)
+                            {
+                                <div class="loc-panel-body">
+                                    <div class="loc-view-name">@viewingLocation.Name</div>
+                                    <div class="loc-view-coords">
+                                        @viewingLocation.Lat.ToString("F7"),@viewingLocation.Lng.ToString("F7")
+                                        <i class="bi bi-eye loc-view-coords-icon"></i>
+                                    </div>
+                                    <div class="loc-panel-field-label">Address</div>
+                                    <div class="loc-panel-address-display">
+                                        <div class="loc-panel-address-name">@viewingLocation.Name</div>
+                                        <div class="loc-panel-address-full">@viewingLocation.Address</div>
+                                    </div>
+                                    <div class="loc-view-radius-row">
+                                        <i class="bi bi-record-circle loc-view-radius-icon"></i>
+                                        <span>@viewingLocation.RadiusM Meters</span>
+                                    </div>
+                                </div>
+                            }
+
+                            @* ADD / EDIT mode *@
+                            else
+                            {
+                                <div class="loc-panel-body">
+                                    <div class="loc-panel-field-label">Location Name</div>
+                                    <input class="loc-panel-input" placeholder="Location name" @bind="panelName" />
+
+                                    <div class="loc-panel-field-label" style="margin-top:18px;">Coordinates <i class="bi bi-info-circle loc-panel-info"></i></div>
+                                    <input class="loc-panel-input loc-panel-input--mono" placeholder="e.g. 13.0827, 80.2707" @bind="panelCoords" />
+
+                                    <div class="loc-panel-field-label" style="margin-top:18px;">Address</div>
+
+                                    @* ── Normal search-result add: static address display (Image 2) ── *@
+                                    @if (pendingLocation == null || !pendingLocation.IsMissing)
+                                    {
+                                        <div class="loc-panel-address-display">
+                                            <div class="loc-panel-address-name">@panelName</div>
+                                            <div class="loc-panel-address-full">@panelStreet</div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        @* ── Missing location add: editable address inputs ── *@
+                                        <input class="loc-panel-input" placeholder="Street"
+                                               @bind="panelStreet" style="margin-bottom:8px;" />
+                                        <input class="loc-panel-input" placeholder="Country"
+                                               @bind="panelCountry" style="margin-bottom:8px;" />
+                                        <input class="loc-panel-input" placeholder="City"
+                                               @bind="panelCity" style="margin-bottom:8px;" />
+                                        <input class="loc-panel-input" placeholder="Postal Code"
+                                               @bind="panelPostal" />
+                                    }
+
+                                    <div class="loc-panel-field-label" style="margin-top:18px;">
+                                        Radius <i class="bi bi-info-circle loc-panel-info"></i>
+                                    </div>
+                                    <div class="loc-panel-radii">
+                                        @foreach (var r in new[] { 300, 400, 500, 1000 })
+                                        {
+                                            var rad = r;
+                                            bool sel = panelRadius == rad && !panelCustomRadius;
+                                            <label class="loc-panel-radio-row" @onclick="() => { panelRadius = rad; panelCustomRadius = false; UpdateCircle(); }">
+                                                <div class="loc-radio-circle @(sel ? "loc-radio-circle--sel" : "")">
+                                                    @if (sel) { <div class="loc-radio-dot"></div> }
+                                                </div>
+                                                <span>@rad Meters</span>
+                                                @if (rad == 300) { <span class="loc-rec-badge">RECOMMENDED</span> }
+                                            </label>
+                                        }
+                                        <label class="loc-panel-radio-row" @onclick="() => panelCustomRadius = true">
+                                            <div class="loc-radio-circle @(panelCustomRadius ? "loc-radio-circle--sel" : "")">
+                                                @if (panelCustomRadius) { <div class="loc-radio-dot"></div> }
+                                            </div>
+                                            <span>Custom radius</span>
+                                        </label>
+                                        @if (panelCustomRadius)
+                                        {
+                                            <div class="loc-custom-radius-row">
+                                                <input type="number" class="loc-panel-input loc-custom-radius-input"
+                                                       min="100" placeholder="e.g. 600"
+                                                       value="@panelCustomRadiusVal"
+                                                       @oninput="e => { panelCustomRadiusVal = int.TryParse(e.Value?.ToString(), out var v) ? v : panelCustomRadiusVal; UpdateCircle(); }" />
+                                                <span class="loc-custom-radius-unit">meters</span>
+                                            </div>
+                                        }
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(panelError))
+                                    {
+                                        <div class="loc-panel-error"><i class="bi bi-exclamation-circle"></i> @panelError</div>
+                                    }
+                                </div>
+                                <div class="loc-panel-footer">
+                                    <button class="loc-panel-cancel" @onclick="CloseLocationPanel">Cancel</button>
+                                    @if (missingPinDropped && pendingLocation != null)
+                                    {
+                                        <button class="loc-panel-save" @onclick="SaveMissingLocation" disabled="@panelSaving">
+                                            @(panelSaving ? "Saving\u2026" : "Save")
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="loc-panel-save" @onclick="SaveLocation" disabled="@panelSaving">
+                                            @(panelSaving ? "Saving\u2026" : "Save")
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+
+                </div>
+            }
+
+            @* ══ LIST VIEW ══ *@
+            else
+            {
+                <div class="loc-list-layout">
+                    @if (selectedIds.Any())
+                    {
+                        <div class="loc-bulk-bar">
+                            <span class="loc-bulk-count">@selectedIds.Count selected</span>
+                            <button class="loc-bulk-btn loc-bulk-btn--orange" @onclick="BulkEditRadius">
+                                <i class="bi bi-pencil-square"></i> Edit Radius
+                            </button>
+                            <button class="loc-bulk-btn loc-bulk-btn--outline" @onclick="() => showBulkArchiveConfirm = true">
+                                <i class="bi bi-archive"></i> Archive
+                            </button>
+                        </div>
+                    }
+                    <div class="loc-list-header">
+                        <div class="loc-lhcell loc-lhcell--check">
+                            <input type="checkbox" class="loc-list-cb"
+                                   @onchange="ToggleSelectAll"
+                                   checked="@(selectedIds.Count == FilteredLocations.Count && FilteredLocations.Any())" />
+                        </div>
+                        <div class="loc-lhcell loc-lhcell--count">@FilteredLocations.Count of @locations.Count locations</div>
+                        <div class="loc-lhcell loc-lhcell--addr">Address</div>
+                        <div class="loc-lhcell loc-lhcell--radius">Radius</div>
+                        <div class="loc-lhcell loc-lhcell--actions"></div>
+                    </div>
+                    @if (!FilteredLocations.Any())
+                    {
+                        <div class="loc-list-nodata">No data available</div>
+                    }
+                    else
+                    {
+                        <div class="loc-list-rows">
+                            @foreach (var loc in FilteredLocations)
+                            {
+                                var l = loc;
+                                bool sel = selectedIds.Contains(l.Id);
+                                <div class="loc-list-row @(sel ? "loc-list-row--sel" : "")" @onclick="() => SelectLocation(l)">
+                                    <div class="loc-lcell loc-lcell--check">
+                                        <input type="checkbox" class="loc-list-cb" checked="@sel"
+                                               @onchange="() => ToggleSelect(l.Id)" @onclick:stopPropagation="true" />
+                                    </div>
+                                    <div class="loc-lcell loc-lcell--name">@l.Name</div>
+                                    <div class="loc-lcell loc-lcell--addr">@l.Address</div>
+                                    <div class="loc-lcell loc-lcell--radius">@l.RadiusM Meters</div>
+                                    <div class="loc-lcell loc-lcell--actions">
+                                        <button class="loc-row-action-btn" title="Edit"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => OpenEditPanel(l)">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="loc-row-action-btn loc-row-action-btn--arch" title="Archive"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => { archiveTarget = l; showArchiveConfirm = true; }">
+                                            <i class="bi bi-archive"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    <div class="loc-archived-footer">
+                        <button class="loc-archived-btn" @onclick="() => showArchivedModal = true">
+                            <i class="bi bi-archive"></i> Archived Locations
+                        </button>
+                    </div>
+                </div>
+            }
+
+
+        </div>@* end loc-body *@
+
+        @* ══ ARCHIVE CONFIRM (single) ══ *@
+        @if (showArchiveConfirm && archiveTarget != null)
+        {
+            <div class="loc-modal-backdrop">
+                <div class="loc-modal loc-modal--confirm" @onclick:stopPropagation="true">
+                    <div class="loc-confirm-header">
+                        <span class="loc-confirm-title">Are you sure you want to<br />archive "@archiveTarget.Name" ?</span>
+                        <button class="loc-panel-close" @onclick="() => { showArchiveConfirm = false; archiveTarget = null; }"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                    <div class="loc-confirm-body">
+                        Archived locations will no longer be accessible when clocking in and out. Tracked location data will continue to be accessible in timesheets, reports, and logs.
+                    </div>
+                    <div class="loc-confirm-footer">
+                        <button class="loc-confirm-cancel" @onclick="() => { showArchiveConfirm = false; archiveTarget = null; }">Cancel</button>
+                        <button class="loc-confirm-ok" @onclick="ConfirmArchiveSingle">Confirm</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ══ BULK ARCHIVE CONFIRM ══ *@
+        @if (showBulkArchiveConfirm)
+        {
+            <div class="loc-modal-backdrop">
+                <div class="loc-modal loc-modal--confirm" @onclick:stopPropagation="true">
+                    <div class="loc-confirm-header">
+                        <span class="loc-confirm-title">Are you sure you want to archive @selectedIds.Count location(s)?</span>
+                        <button class="loc-panel-close" @onclick="() => showBulkArchiveConfirm = false"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                    <div class="loc-confirm-body">
+                        Archived locations will no longer be accessible when clocking in and out. Tracked location data will continue to be accessible in timesheets, reports, and logs.
+                    </div>
+                    <div class="loc-confirm-footer">
+                        <button class="loc-confirm-cancel" @onclick="() => showBulkArchiveConfirm = false">Cancel</button>
+                        <button class="loc-confirm-ok" @onclick="ConfirmBulkArchive">Confirm</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ══ EDIT RADIUS MODAL ══ *@
+        @if (showBulkRadiusModal)
+        {
+            <div class="loc-modal-backdrop">
+                <div class="loc-modal" @onclick:stopPropagation="true">
+                    <div class="loc-modal-header">
+                        <span class="loc-modal-title">Edit Radius</span>
+                        <button class="loc-panel-close" @onclick="() => showBulkRadiusModal = false"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                    <div class="loc-modal-body">
+                        <p class="loc-modal-sub">Select a radius for @selectedIds.Count location(s)</p>
+                        <div class="loc-panel-radii">
+                            @foreach (var r in new[] { 300, 400, 500, 1000 })
+                            {
+                                var rad = r; bool sel = bulkRadius == rad;
+                                <label class="loc-panel-radio-row" @onclick="() => bulkRadius = rad">
+                                    <div class="loc-radio-circle @(sel ? "loc-radio-circle--sel" : "")">
+                                        @if (sel) { <div class="loc-radio-dot"></div> }
+                                    </div>
+                                    <span>@rad Meters</span>
+                                    @if (rad == 300) { <span class="loc-rec-badge">RECOMMENDED</span> }
+                                </label>
+                            }
+                        </div>
+                    </div>
+                    <div class="loc-modal-footer">
+                        <button class="loc-panel-cancel" @onclick="() => showBulkRadiusModal = false">Cancel</button>
+                        <button class="loc-panel-save" @onclick="ApplyBulkRadius">Save</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ══ ARCHIVED LOCATIONS MODAL ══ *@
+        @if (showArchivedModal)
+        {
+            <div class="loc-modal-backdrop" @onclick="() => showArchivedModal = false">
+                <div class="loc-archived-modal" @onclick:stopPropagation="true">
+                    <div class="loc-archived-modal-header">
+                        <span class="loc-archived-modal-title">Archived Locations</span>
+                        <button class="loc-panel-close" @onclick="() => showArchivedModal = false"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                    <div class="loc-archived-modal-search">
+                        <i class="bi bi-search" style="color:#9ca3af;font-size:13px;"></i>
+                        <input class="loc-archived-search-input" placeholder="Search locations..."
+                               @bind="archivedSearchQuery" @bind:event="oninput" />
+                        <span class="loc-archived-lastused">Last used</span>
+                    </div>
+                    <div class="loc-archived-modal-body">
+                        @if (!FilteredArchivedLocations.Any())
+                        {
+                            <div class="loc-list-nodata">No archived locations.</div>
+                        }
+                        else
+                        {
+                            @foreach (var al in FilteredArchivedLocations)
+                            {
+                                var a = al;
+                                <div class="loc-archived-row">
+                                    <div class="loc-archived-row-info">
+                                        <div class="loc-archived-row-name">@a.Name</div>
+                                        <div class="loc-archived-row-addr">@a.Address</div>
+                                    </div>
+                                    <div class="loc-archived-row-meta">-</div>
+                                    @* Action buttons — icon only, no overlap *@
+                                    <div class="loc-archived-row-actions">
+                                        <button class="loc-arch-icon-btn loc-arch-icon-btn--restore"
+                                                title="Restore"
+                                                @onclick="() => RestoreLocation(a)">
+                                            <i class="bi bi-box-arrow-up"></i>
+                                        </button>
+                                        <button class="loc-arch-icon-btn loc-arch-icon-btn--del"
+                                                title="Delete permanently"
+                                                @onclick="() => { deleteTarget = a; deleteConfirmText = string.Empty; showDeleteConfirm = true; }">
+                                            <i class="bi bi-trash3"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ══ PERMANENT DELETE CONFIRM MODAL ══ *@
+        @if (showDeleteConfirm && deleteTarget != null)
+        {
+            <div class="loc-modal-backdrop">
+                <div class="loc-modal loc-modal--confirm" @onclick:stopPropagation="true">
+                    <div class="loc-confirm-header">
+                        <span class="loc-confirm-title">Are you sure you want to<br />permanently delete "@deleteTarget.Name"?</span>
+                        <button class="loc-panel-close" @onclick="() => { showDeleteConfirm = false; deleteTarget = null; }"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                    <div class="loc-confirm-body" style="padding-bottom:8px;">
+                        This action cannot be undone. Historical data will still be available.
+                    </div>
+                    <div class="loc-confirm-body" style="padding-top:0;">
+                        <div class="loc-delete-label">Type DELETE to confirm</div>
+                        <input class="loc-delete-input @(deleteConfirmText.Length > 0 && deleteConfirmText != "DELETE" ? "loc-delete-input--err" : "")"
+                               placeholder=""
+                               @bind="deleteConfirmText"
+                               @bind:event="oninput" />
+                    </div>
+                    <div class="loc-confirm-footer">
+                        <button class="loc-confirm-cancel" @onclick="() => { showDeleteConfirm = false; deleteTarget = null; }">Cancel</button>
+                        <button class="loc-confirm-ok loc-confirm-ok--disabled" style="@(deleteConfirmText == "DELETE" ? "opacity:1;cursor:pointer;" : "opacity:.4;cursor:not-allowed;")"
+                                disabled="@(deleteConfirmText != "DELETE")"
+                                @onclick="ConfirmDelete">Confirm</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+    </div>
+
+</BasePage>
+
+@code {
+    private class LocationItem
+    {
+        public int    Id        { get; set; }
+        public string Name      { get; set; } = "";
+        public string Address   { get; set; } = "";
+        public double Lat       { get; set; }
+        public double Lng       { get; set; }
+        public int    RadiusM   { get; set; } = 300;
+        public bool   Archived  { get; set; } = false;
+        public bool   IsMissing { get; set; } = false;
+    }
+
+    private static readonly (string Label, int Min, int Max)[] RadiusBands =
+    {
+        ("0-300 meters",    0,    300),
+        ("300-400 meters",  300,  400),
+        ("400-500 meters",  400,  500),
+        ("500-1000 meters", 500,  1000),
+        ("1000+ meters",    1001, int.MaxValue),
+    };
+
+    private bool   showBanner         = true;
+    private bool   listView           = false;
+    private bool   satellite          = false;
+    private bool   searchDropdownOpen = false;
+    private bool   radiusFilterOpen   = false;
+    private string searchQuery        = "";
+    private string searchType         = "all";
+    private int    radiusMin          = -1;
+    private int    radiusMax          = -1;
+    private bool   mapNeedsReinit     = false;
+
+    private LocationItem? selectedLocation = null;
+    private HashSet<int>  selectedIds      = new();
+
+    // ── These now mirror LocationState (static, survives navigation) ──
+    private List<LocationItem> locations         = new();
+    private List<LocationItem> archivedLocations = new();
+
+    private List<LocationItem> FilteredLocations => locations
+        .Where(l =>
+            (radiusMin < 0 || (l.RadiusM >= radiusMin && l.RadiusM <= radiusMax)) &&
+            (string.IsNullOrEmpty(searchQuery) ||
+             l.Name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+             l.Address.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)))
+        .ToList();
+
+    // Panel / view state
+    private bool          showLocationPanel = false;
+    private LocationItem? editingLocation   = null;
+    private LocationItem? viewingLocation   = null;
+    private LocationItem? pendingLocation   = null;
+    private bool          showAddPopup      = false;
+    private string panelName            = "";
+    private string panelCoords          = "";
+    private string panelStreet          = "";
+    private string panelCountry         = "";
+    private string panelCity            = "";
+    private string panelPostal          = "";
+    private int    panelRadius          = 300;
+    private bool   panelCustomRadius    = false;
+    private int    panelCustomRadiusVal = 300;
+    private string panelError           = "";
+    private bool   panelSaving          = false;
+
+    // ── Add Missing Location state ────────────────────────────────────────
+    // Pin drops directly on map; bottom bar shows "Move the map..." + Done
+    private bool   missingModeActive     = false;   // true while drag-pin overlay bar is visible
+    private bool   missingPinDropped     = false;   // true once Blazor has received pin coordinates
+    private double missingLat            = 0;
+    private double missingLng            = 0;
+    private bool   missingGeofenceWarn   = false;   // true when saved radius < 300 m
+
+    // Modals
+    private bool          showBulkRadiusModal   = false;
+    private bool          showArchiveConfirm     = false;
+    private bool          showBulkArchiveConfirm = false;
+    private bool          showArchivedModal      = false;
+    private bool          showDeleteConfirm      = false;
+    private LocationItem? archiveTarget          = null;
+    private LocationItem? deleteTarget           = null;
+    private string        deleteConfirmText      = "";
+    private string        archivedSearchQuery    = "";
+    private int           bulkRadius             = 300;
+    private List<LocationItem> FilteredArchivedLocations => archivedLocations
+        .Where(l => string.IsNullOrEmpty(archivedSearchQuery) ||
+                    l.Name.Contains(archivedSearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    l.Address.Contains(archivedSearchQuery, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    private DotNetObjectReference<Locations>? _dotNetRef;
+
+    protected override void OnInitialized()
+    {
+        // ── Load persisted data from static state (survives navigation) ──
+        locations = LocationState.Locations
+            .Select(s => new LocationItem { Id = s.Id, Name = s.Name, Address = s.Address, Lat = s.Lat, Lng = s.Lng, RadiusM = s.RadiusM, IsMissing = s.IsMissing })
+            .ToList();
+        archivedLocations = LocationState.ArchivedLocations
+            .Select(s => new LocationItem { Id = s.Id, Name = s.Name, Address = s.Address, Lat = s.Lat, Lng = s.Lng, RadiusM = s.RadiusM, IsMissing = s.IsMissing })
+            .ToList();
+    }
+
+    private void PersistToState()
+    {
+        LocationState.Locations = locations
+            .Select(l => new LocationState.PersistedLocation { Id = l.Id, Name = l.Name, Address = l.Address, Lat = l.Lat, Lng = l.Lng, RadiusM = l.RadiusM, IsMissing = l.IsMissing })
+            .ToList();
+        LocationState.ArchivedLocations = archivedLocations
+            .Select(l => new LocationState.PersistedLocation { Id = l.Id, Name = l.Name, Address = l.Address, Lat = l.Lat, Lng = l.Lng, RadiusM = l.RadiusM, IsMissing = l.IsMissing })
+            .ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await InitMap();
+            await ReInitPlaces();
+        }
+        else if (mapNeedsReinit)
+        {
+            mapNeedsReinit = false;
+            await InitMap();
+            await ReInitPlaces();
+        }
+    }
+
+    public void Dispose() => _dotNetRef?.Dispose();
+
+    private async Task InitMap()
+    {
+        try
+        {
+            var locData = locations.Select(l => new { id = l.Id, name = l.Name, lat = l.Lat, lng = l.Lng, radius = l.RadiusM }).ToArray();
+            await JS.InvokeVoidAsync("locMap.init", "loc-map", locData);
+        }
+        catch { }
+    }
+
+    private async Task ReInitPlaces()
+    {
+        try { await JS.InvokeVoidAsync("locMap.initPlacesSearch", "loc-search-input", "OnPlaceSelected", _dotNetRef); }
+        catch { }
+    }
+
+    private void SwitchToMap()
+    {
+        if (listView) { listView = false; mapNeedsReinit = true; }
+    }
+
+    private void SwitchToList()
+    {
+        listView = true;
+        // Close any open panel when switching to list view
+        CloseLocationPanel();
+    }
+
+    [JSInvokable]
+    public async Task OnPlaceSelected(string name, string address, double lat, double lng)
+    {
+        searchQuery = name;
+        pendingLocation = new LocationItem { Name = name, Address = address, Lat = lat, Lng = lng };
+        showAddPopup = true;
+        try { await JS.InvokeVoidAsync("locMap.showPendingPin", lat, lng, name); } catch { }
+        StateHasChanged();
+    }
+
+    private async Task SelectAndFly(LocationItem l)
+    {
+        selectedLocation  = l;
+        viewingLocation   = l;
+        editingLocation   = null;
+        showLocationPanel = true;
+        try { await JS.InvokeVoidAsync("locMap.flyTo", l.Lat, l.Lng, l.RadiusM); } catch { }
+        StateHasChanged();
+    }
+
+    private void SelectLocation(LocationItem l) => selectedLocation = l;
+
+    private async Task SetMapStyle(bool sat)
+    {
+        satellite = sat;
+        try { await JS.InvokeVoidAsync("locMap.setStyle", sat); } catch { }
+    }
+
+    private void OpenAddLocationPanel()
+    {
+        showAddPopup = false; editingLocation = null; viewingLocation = null;
+        if (pendingLocation != null)
+        {
+            // Normal search-result flow — IsMissing must be false
+            pendingLocation.IsMissing = false;
+            panelName    = pendingLocation.Name;
+            panelCoords  = $"{pendingLocation.Lat:F7},{pendingLocation.Lng:F7}";
+            // panelStreet holds the full formatted address for static display
+            panelStreet  = pendingLocation.Address;
+            panelCountry = panelCity = panelPostal = "";
+        }
+        else
+        {
+            panelName = panelCoords = panelStreet = panelCountry = panelCity = panelPostal = "";
+        }
+        panelRadius = 300; panelCustomRadius = false; panelError = "";
+        showLocationPanel = true;
+        UpdateCircle();
+    }
+
+    private void OpenEditPanel(LocationItem l)
+    {
+        viewingLocation = null; editingLocation = l;
+        panelName = l.Name; panelCoords = $"{l.Lat:F7},{l.Lng:F7}"; panelStreet = l.Address;
+        panelCountry = panelCity = panelPostal = "";
+        panelRadius = new[] { 300, 400, 500, 1000 }.Contains(l.RadiusM) ? l.RadiusM : 300;
+        panelCustomRadius = !new[] { 300, 400, 500, 1000 }.Contains(l.RadiusM);
+        panelCustomRadiusVal = l.RadiusM; panelError = "";
+        showLocationPanel = true;
+        UpdateCircle();
+    }
+
+    private void CloseLocationPanel()
+    {
+        showLocationPanel = false; editingLocation = null; viewingLocation = null;
+        pendingLocation = null; showAddPopup = false;
+        _ = JS.InvokeVoidAsync("locMap.clearPendingPin");
+    }
+
+    private async Task SaveLocation()
+    {
+        panelError = "";
+        if (string.IsNullOrWhiteSpace(panelName)) { panelError = "Name is required."; return; }
+        int radius = panelCustomRadius ? panelCustomRadiusVal : panelRadius;
+        if (radius < 100) { panelError = "Radius must be at least 100 meters."; return; }
+        panelSaving = true;
+
+        double lat = 0, lng = 0;
+        if (!string.IsNullOrEmpty(panelCoords))
+        {
+            var parts = panelCoords.Split(',');
+            if (parts.Length >= 2)
+            {
+                double.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out lat);
+                double.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out lng);
+            }
+        }
+
+        // For normal search-result locations, panelStreet IS the full address.
+        // For missing locations, build address from individual fields.
+        var addr = (pendingLocation?.IsMissing == true)
+            ? string.Join(", ", new[] { panelStreet, panelCity, panelCountry, panelPostal }.Where(s => !string.IsNullOrWhiteSpace(s)))
+            : panelStreet;
+        if (string.IsNullOrEmpty(addr)) addr = panelCoords;
+
+        var req = new SaveLocationRequest
+        {
+            Name         = panelName,
+            Latitude     = lat,
+            Longitude    = lng,
+            Street       = panelStreet,
+            City         = panelCity,
+            Country      = panelCountry,
+            PostalCode   = panelPostal,
+            RadiusMetres = radius,
+            IsMissing    = false
+        };
+
+        if (editingLocation != null)
+        {
+            // ── Edit existing via API ──────────────────────────────────────
+            var updated = await LocationService.UpdateAsync(editingLocation.Id, req);
+            if (updated != null)
+            {
+                editingLocation.Name      = updated.Name;
+                editingLocation.RadiusM   = updated.RadiusMetres;
+                editingLocation.Address   = updated.DisplayAddress;
+                editingLocation.Lat       = updated.Latitude;
+                editingLocation.Lng       = updated.Longitude;
+                editingLocation.IsMissing = updated.IsMissing;
+            }
+            else
+            {
+                // Optimistic local update if API unreachable
+                editingLocation.Name = panelName; editingLocation.RadiusM = radius; editingLocation.Address = addr;
+                if (lat != 0) { editingLocation.Lat = lat; editingLocation.Lng = lng; }
+            }
+            try { await JS.InvokeVoidAsync("locMap.addMarker", editingLocation.Id, editingLocation.Name, editingLocation.Lat, editingLocation.Lng, editingLocation.RadiusM); } catch { }
+        }
+        else
+        {
+            // ── Add new via API ────────────────────────────────────────────
+            var saved = await LocationService.AddAsync(req);
+            LocationItem newLoc;
+            if (saved != null)
+            {
+                newLoc = new LocationItem { Id = saved.Id, Name = saved.Name, RadiusM = saved.RadiusMetres, Lat = saved.Latitude, Lng = saved.Longitude, Address = saved.DisplayAddress, IsMissing = saved.IsMissing };
+                LocationState.NextId = Math.Max(LocationState.NextId, saved.Id + 1);
+            }
+            else
+            {
+                // Optimistic fallback — no API connection
+                newLoc = new LocationItem { Id = LocationState.NextId++, Name = panelName, RadiusM = radius, Lat = lat, Lng = lng, Address = addr, IsMissing = false };
+            }
+            locations.Add(newLoc);
+            try { await JS.InvokeVoidAsync("locMap.addMarker", newLoc.Id, newLoc.Name, newLoc.Lat, newLoc.Lng, newLoc.RadiusM); } catch { }
+        }
+        PersistToState();
+        panelSaving = false; CloseLocationPanel(); StateHasChanged();
+    }
+
+    // ── Add Missing Location flow ──────────────────────────────────────────
+
+    /// <summary>
+    /// Closes the missing-location drag modal and clears the pending pin.
+    /// Used by both the X button and the Cancel button.
+    /// </summary>
+    private void CloseMissingModal()
+    {
+        missingModeActive = false;
+        missingLat = 0; missingLng = 0;
+        _ = JS.InvokeVoidAsync("locMap.cancelMissingPin");
+    }
+
+    /// <summary>
+    /// Called when user clicks "+ Add missing location" — from sidebar button
+    /// or from the JS-injected item in the Google Places pac-container.
+    /// </summary>
+    [JSInvokable]
+    public async Task OpenAddMissingFlow()
+    {
+        await OpenAddMissingLocationFlow();
+    }
+
+    private async Task OpenAddMissingLocationFlow()
+    {
+        searchDropdownOpen  = false;
+        missingLat          = 0;
+        missingLng          = 0;
+        missingModeActive   = true;   // show the bottom overlay bar immediately
+        panelName = panelStreet = panelCity = panelCountry = panelPostal = panelCoords = "";
+        panelRadius = 300; panelCustomRadius = false; panelCustomRadiusVal = 300; panelError = "";
+        StateHasChanged();
+        // Small delay so Blazor renders the overlay bar before JS runs
+        await Task.Delay(50);
+        try { await JS.InvokeVoidAsync("locMap.startMissingPinDrag", _dotNetRef); } catch { }
+    }
+
+    /// <summary>
+    /// JS → Blazor callback: fires when the user drops the draggable pin.
+    /// </summary>
+    /// <summary>
+    /// Called by JS after reverse geocoding completes — fills address fields only.
+    /// Coordinates are read synchronously in ConfirmMissingPin via getMissingPinPosition.
+    /// </summary>
+    [JSInvokable]
+    public void OnMissingAddressResolved(string street, string city, string country, string postal)
+    {
+        if (!string.IsNullOrWhiteSpace(street))  panelStreet  = street;
+        if (!string.IsNullOrWhiteSpace(city))    panelCity    = city;
+        if (!string.IsNullOrWhiteSpace(country)) panelCountry = country;
+        if (!string.IsNullOrWhiteSpace(postal))  panelPostal  = postal;
+        // Also update pendingLocation address for display consistency
+        if (pendingLocation != null)
+            pendingLocation.Address = string.Join(", ",
+                new[] { street, city, country }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        StateHasChanged();
+    }
+
+    /// <summary>Legacy stub — kept so existing JS calls don't throw.</summary>
+    [JSInvokable]
+    public void OnMissingPinDropped(double lat, double lng,
+        string street = "", string city = "", string country = "", string postal = "")
+    {
+        // Coordinates are now read synchronously in ConfirmMissingPin.
+        // This method is kept only so any lingering JS calls don't error.
+    }
+
+    /// <summary>
+    /// Called when the user clicks "Done" in the missing-location modal.
+    /// Closes the drag-pin step and opens the Add panel with coordinates pre-filled.
+    /// </summary>
+    private async Task ConfirmMissingPin()
+    {
+        // ALWAYS read pin position directly from JS — this is synchronous and
+        // never fails regardless of timing. Returns [lat, lng] or [0, 0].
+        double lat = 0, lng = 0;
+        try
+        {
+            var coords = await JS.InvokeAsync<double[]>("locMap.getMissingPinPosition");
+            if (coords != null && coords.Length == 2)
+            {
+                lat = coords[0];
+                lng = coords[1];
+            }
+        }
+        catch (Exception ex)
+        {
+            // JS not available (e.g. prerender) — keep 0,0 and show panel anyway
+            Console.WriteLine($"getMissingPinPosition failed: {ex.Message}");
+        }
+
+        missingLat        = lat;
+        missingLng        = lng;
+        missingModeActive = false;   // hide the bottom overlay bar
+
+        // Build display coordinates string
+        panelCoords = (lat != 0 || lng != 0)
+            ? $"{lat:F7},{lng:F7}"
+            : "";
+
+        // Trigger reverse geocode FIRST — address fields fill in as user sees panel
+        if (lat != 0 || lng != 0)
+        {
+            try { await JS.InvokeVoidAsync("locMap.reverseGeocodeForPanel", lat, lng); }
+            catch { }
+        }
+
+        if (string.IsNullOrEmpty(panelName)) panelName = "My Location";
+
+        // IsMissing=true triggers the editable address inputs in the panel
+        pendingLocation = new LocationItem
+        {
+            Name      = panelName,
+            Lat       = missingLat,
+            Lng       = missingLng,
+            Address   = "",          // will be filled by reverse geocode
+            IsMissing = true
+        };
+
+        showLocationPanel = true;
+        editingLocation   = null;
+        viewingLocation   = null;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Saves a missing location through the dedicated API endpoint.
+    /// Called from the panel Save button when IsMissing flow is active.
+    /// </summary>
+    private async Task SaveMissingLocation()
+    {
+        panelError = "";
+        if (string.IsNullOrWhiteSpace(panelName)) { panelError = "Name is required."; return; }
+        int radius = panelCustomRadius ? panelCustomRadiusVal : panelRadius;
+        if (radius < 100) { panelError = "Radius must be at least 100 meters."; return; }
+        panelSaving = true;
+
+        var req = new SaveLocationRequest
+        {
+            Name         = panelName,
+            Latitude     = missingLat,
+            Longitude    = missingLng,
+            Street       = panelStreet,
+            City         = panelCity,
+            Country      = panelCountry,
+            PostalCode   = panelPostal,
+            RadiusMetres = radius,
+            IsMissing    = true
+        };
+
+        var result = await LocationService.AddMissingAsync(req);
+
+        if (result.Success && result.Location != null)
+        {
+            var loc = result.Location;
+            var newLoc = new LocationItem
+            {
+                Id        = loc.Id,
+                Name      = loc.Name,
+                RadiusM   = loc.RadiusMetres,
+                Lat       = loc.Latitude,
+                Lng       = loc.Longitude,
+                Address   = loc.DisplayAddress,
+                IsMissing = true
+            };
+            LocationState.NextId = Math.Max(LocationState.NextId, loc.Id + 1);
+            locations.Add(newLoc);
+            missingGeofenceWarn = !result.GeofenceReady;
+            try { await JS.InvokeVoidAsync("locMap.addMarker", newLoc.Id, newLoc.Name, newLoc.Lat, newLoc.Lng, newLoc.RadiusM); } catch { }
+            PersistToState();
+            panelSaving = false;
+            CloseLocationPanel();
+            // Reset missing flow state
+            missingLat = 0; missingLng = 0; missingPinDropped = false; missingModeActive = false;
+            StateHasChanged();
+        }
+        else
+        {
+            // Fallback: save locally so the user does not lose their work
+            var fallbackLoc = new LocationItem
+            {
+                Id        = LocationState.NextId++,
+                Name      = panelName,
+                RadiusM   = radius,
+                Lat       = missingLat,
+                Lng       = missingLng,
+                Address   = string.Join(", ", new[] { panelStreet, panelCity, panelCountry }.Where(s => !string.IsNullOrWhiteSpace(s))),
+                IsMissing = true
+            };
+            locations.Add(fallbackLoc);
+            try { await JS.InvokeVoidAsync("locMap.addMarker", fallbackLoc.Id, fallbackLoc.Name, fallbackLoc.Lat, fallbackLoc.Lng, fallbackLoc.RadiusM); } catch { }
+            PersistToState();
+            panelError = result.Error ?? "Saved locally (API unavailable).";
+            panelSaving = false;
+            CloseLocationPanel();
+            StateHasChanged();
+        }
+    }
+    private async Task ConfirmArchiveSingle()
+    {
+        if (archiveTarget == null) return;
+        // Call API (fire-and-forget on failure; UI update is optimistic)
+        await LocationService.ArchiveAsync(archiveTarget.Id);
+        archivedLocations.Add(archiveTarget);
+        locations.Remove(archiveTarget);
+        _ = JS.InvokeVoidAsync("locMap.removeMarker", archiveTarget.Id);
+        archiveTarget = null; showArchiveConfirm = false;
+        PersistToState();
+        CloseLocationPanel();
+    }
+
+    private async Task ConfirmBulkArchive()
+    {
+        foreach (var id in selectedIds.ToList())
+        {
+            var l = locations.FirstOrDefault(x => x.Id == id);
+            if (l != null)
+            {
+                await LocationService.ArchiveAsync(l.Id);
+                archivedLocations.Add(l); locations.Remove(l);
+                _ = JS.InvokeVoidAsync("locMap.removeMarker", l.Id);
+            }
+        }
+        selectedIds.Clear(); showBulkArchiveConfirm = false;
+        PersistToState();
+    }
+
+    private void ToggleSelect(int id) { if (selectedIds.Contains(id)) selectedIds.Remove(id); else selectedIds.Add(id); }
+
+    private void ToggleSelectAll()
+    {
+        if (selectedIds.Count == FilteredLocations.Count) selectedIds.Clear();
+        else selectedIds = FilteredLocations.Select(l => l.Id).ToHashSet();
+    }
+
+    private void BulkEditRadius() { bulkRadius = 300; showBulkRadiusModal = true; }
+
+    private async Task ApplyBulkRadius()
+    {
+        await LocationService.BulkUpdateRadiusAsync(selectedIds.ToList(), bulkRadius);
+        foreach (var id in selectedIds) { var l = locations.FirstOrDefault(x => x.Id == id); if (l != null) l.RadiusM = bulkRadius; }
+        selectedIds.Clear(); showBulkRadiusModal = false;
+        PersistToState();
+    }
+
+    private async Task RestoreLocation(LocationItem l)
+    {
+        await LocationService.RestoreAsync(l.Id);
+        l.Archived = false; archivedLocations.Remove(l); locations.Add(l);
+        PersistToState();
+        StateHasChanged();
+    }
+
+    private void DeletePermanently(LocationItem l) { archivedLocations.Remove(l); PersistToState(); StateHasChanged(); }
+
+    private async Task ConfirmDelete()
+    {
+        if (deleteTarget == null || deleteConfirmText != "DELETE") return;
+        await LocationService.DeletePermanentAsync(deleteTarget.Id);
+        archivedLocations.Remove(deleteTarget);
+        PersistToState();
+        deleteTarget = null;
+        deleteConfirmText = "";
+        showDeleteConfirm = false;
+        StateHasChanged();
+    }
+
+    private void CloseAllDropdowns() { searchDropdownOpen = false; radiusFilterOpen = false; }
+
+    private string GetSearchPlaceholder() => searchType switch
+    {
+        "added" => "Search added locations",
+        "new"   => "Search new locations",
+        _       => "Search all"
+    };
+
+    private void UpdateCircle()
+    {
+        int radius = panelCustomRadius ? panelCustomRadiusVal : panelRadius;
+        if (pendingLocation != null)
+            _ = JS.InvokeVoidAsync("locMap.updateCircle", pendingLocation.Lat, pendingLocation.Lng, radius);
+        else if (editingLocation != null)
+            _ = JS.InvokeVoidAsync("locMap.updateCircle", editingLocation.Lat, editingLocation.Lng, radius);
+    }
+
+}
+
+<style>
+    .loc-page { display: flex; flex-direction: column; height: 100%; min-height: 0; background: #fff; overflow: hidden; }
+
+    /* Banner */
+    .loc-banner { display: flex; align-items: center; gap: 8px; padding: 10px 20px; background: #f0f9ff; border-bottom: 1px solid #bae6fd; font-size: 13px; color: #374151; flex-shrink: 0; }
+    .loc-banner-icon { color: #0284c7; font-size: 14px; flex-shrink: 0; }
+    .loc-banner-link { color: #ff7a00; text-decoration: none; font-weight: 600; }
+    .loc-banner-link:hover { text-decoration: underline; }
+    .loc-banner-close { margin-left: auto; width: 22px; height: 22px; border: none; background: transparent; cursor: pointer; color: #9ca3af; font-size: 16px; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
+    .loc-banner-close:hover { color: #374151; }
+
+    /* Toolbar — always full width, panel slides over the body below */
+    .loc-toolbar { display: flex; align-items: center; border-bottom: 1.5px solid #e8eaed; flex-shrink: 0; background: #fff; height: 52px; z-index: 10; }
+    .loc-toolbar-divider { width: 1.5px; height: 28px; background: #e8eaed; flex-shrink: 0; }
+
+    /* Search */
+    .loc-search-wrap { position: relative; padding: 0 14px; display: flex; align-items: center; height: 100%; }
+    .loc-search-field { display: flex; align-items: center; border: 1.5px solid transparent; border-radius: 6px; background: #fff; min-width: 200px; }
+    .loc-search-field--open { border-color: #ff7a00; }
+    .loc-search-icon { font-size: 13px; color: #9ca3af; padding: 0 6px 0 2px; flex-shrink: 0; }
+    .loc-search-input { flex: 1; border: none; outline: none; font-size: 13px; color: #374151; padding: 8px 0; background: transparent; font-family: inherit; min-width: 0; }
+    .loc-search-input::placeholder { color: #9ca3af; }
+    .loc-search-chevron { width: 28px; height: 34px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #9ca3af; flex-shrink: 0; }
+    .loc-search-dd { position: absolute; top: calc(100% + 2px); left: 14px; right: 14px; background: #fff; border: 1.5px solid #e8eaed; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12); z-index: 600; padding: 4px 0; }
+    .loc-search-dd-header { padding: 10px 14px 6px; font-size: 11px; font-weight: 700; color: #9ca3af; letter-spacing: .06em; text-transform: uppercase; }
+    .loc-search-dd-item { padding: 10px 14px; font-size: 13px; color: #374151; cursor: pointer; }
+    .loc-search-dd-item:hover { background: #f9fafb; }
+    .loc-search-dd-item--sel { color: #ff7a00; font-weight: 600; }
+
+    /* Radius filter */
+    .loc-radius-filter-wrap { position: relative; padding: 0 14px; display: flex; align-items: center; height: 100%; }
+    .loc-radius-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1.5px solid #e8eaed; border-radius: 6px; background: #fff; font-size: 13px; font-weight: 500; color: #374151; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .loc-radius-btn--open { border-color: #ff7a00; color: #ff7a00; }
+    .loc-radius-dd { position: absolute; top: calc(100% + 4px); left: 14px; background: #fff; border: 1.5px solid #e8eaed; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12); z-index: 600; min-width: 180px; padding: 4px 0; }
+    .loc-radius-item { padding: 10px 16px; font-size: 13px; color: #374151; cursor: pointer; }
+    .loc-radius-item:hover { background: #f9fafb; }
+    .loc-radius-item--sel { color: #ff7a00; font-weight: 600; }
+    .loc-radius-clear { padding: 10px 16px; font-size: 13px; color: #9ca3af; cursor: pointer; border-top: 1px solid #f3f4f6; margin-top: 2px; }
+    .loc-radius-clear:hover { background: #f9fafb; color: #374151; }
+    .loc-radius-clear--disabled { opacity: .45; pointer-events: none; }
+
+    /* View toggle */
+    .loc-view-toggle { display: flex; border: 1.5px solid #e8eaed; border-radius: 6px; overflow: hidden; margin: 0 14px; }
+    .loc-vt-btn { padding: 6px 14px; border: none; background: #fff; font-size: 13px; font-weight: 500; color: #6b7280; cursor: pointer; display: flex; align-items: center; gap: 5px; font-family: inherit; }
+    .loc-vt-btn + .loc-vt-btn { border-left: 1.5px solid #e8eaed; }
+    .loc-vt-btn--active { background: #fff7ed; color: #ff7a00; font-weight: 700; }
+
+    /* Body wrapper — panel slides over this */
+    .loc-body { flex: 1; min-height: 0; position: relative; display: flex; overflow: hidden; }
+
+    /* MAP VIEW */
+    .loc-map-layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+    .loc-map-sidebar { width: 296px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid #e8eaed; background: #fff; overflow: hidden; }
+    .loc-map-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px 18px; text-align: center; }
+    .loc-map-empty-phone { position: relative; display: inline-block; margin-bottom: 16px; }
+    .loc-map-empty-plus { position: absolute; top: -4px; right: -10px; width: 20px; height: 20px; background: #e8eaed; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #6b7280; font-weight: 700; border: 1.5px solid #fff; }
+    .loc-map-empty-title { font-size: 14px; font-weight: 700; color: #374151; line-height: 1.5; margin-bottom: 8px; text-align: center; }
+    .loc-map-empty-sub { font-size: 13px; color: #9ca3af; line-height: 1.55; margin-bottom: 16px; text-align: center; }
+    .loc-map-empty-link { font-size: 13px; color: #ff7a00; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+    .loc-map-empty-link:hover { text-decoration: underline; }
+    /* Delete confirm */
+    .loc-delete-label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px; }
+    .loc-delete-input { width: 100%; padding: 12px 14px; border: 2px solid #ff7a00; border-radius: 8px; font-size: 14px; color: #111827; outline: none; font-family: inherit; box-sizing: border-box; }
+    .loc-delete-input--err { border-color: #ef4444; }
+    .loc-confirm-ok--disabled { background: #9ca3af; }
+    .loc-map-list { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+    .loc-map-list-item { display: flex; align-items: center; padding: 13px 16px; border-bottom: 1px solid #f3f4f6; cursor: pointer; transition: background .12s; }
+    .loc-map-list-item:hover { background: #f9fafb; }
+    .loc-map-list-item--active { background: #fff7ed; border-left: 3px solid #ff7a00; }
+    .loc-map-list-text { flex: 1; min-width: 0; }
+    .loc-map-list-name { font-size: 13px; font-weight: 600; color: #111827; }
+    .loc-map-list-addr { font-size: 11px; color: #9ca3af; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .loc-map-container { flex: 1; position: relative; overflow: hidden; }
+    .loc-map { width: 100%; height: 100%; background: #e8e8e4; }
+    .loc-map-style-toggle { position: absolute; bottom: 28px; left: 14px; display: flex; border: 1px solid rgba(0,0,0,.2); border-radius: 4px; overflow: hidden; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.15); z-index: 500; }
+    .loc-ms-btn { padding: 6px 14px; border: none; background: transparent; font-size: 12px; font-weight: 600; color: #374151; cursor: pointer; font-family: inherit; }
+    .loc-ms-btn + .loc-ms-btn { border-left: 1px solid rgba(0,0,0,.12); }
+    .loc-ms-btn--active { background: #e8e8e8; }
+    .loc-add-popup { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.2); padding: 22px 24px; min-width: 300px; z-index: 600; }
+    .loc-popup-name { font-size: 16px; font-weight: 700; color: #111827; margin-bottom: 4px; }
+    .loc-popup-addr { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+    .loc-popup-remaining { font-size: 12px; color: #9ca3af; margin-bottom: 16px; }
+    .loc-popup-upgrade { color: #ff7a00; cursor: pointer; font-weight: 600; }
+    .loc-popup-btn { width: 100%; padding: 11px; border: none; border-radius: 8px; background: #ff7a00; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .loc-popup-btn:hover { background: #e66c00; }
+
+    /* LIST VIEW */
+    .loc-list-layout { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; background: #fff; }
+    .loc-bulk-bar { display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #fff; border-bottom: 1.5px solid #e8eaed; flex-shrink: 0; }
+    .loc-bulk-count { font-size: 13px; font-weight: 600; color: #374151; margin-right: 4px; }
+    .loc-bulk-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .loc-bulk-btn--orange { background: #ff7a00; color: #fff; border: none; }
+    .loc-bulk-btn--orange:hover { background: #e66c00; }
+    .loc-bulk-btn--outline { background: #fff; color: #ff7a00; border: 1.5px solid #ff7a00; }
+    .loc-bulk-btn--outline:hover { background: #fff7ed; }
+    .loc-list-header { display: flex; align-items: center; padding: 0 20px; height: 44px; border-bottom: 1.5px solid #e8eaed; background: #f9fafb; flex-shrink: 0; font-size: 13px; font-weight: 600; color: #6b7280; }
+    .loc-lhcell--check { width: 40px; flex-shrink: 0; }
+    .loc-lhcell--count { flex: 1; font-size: 13px; color: #374151; font-weight: 500; }
+    .loc-lhcell--addr { flex: 2; }
+    .loc-lhcell--radius { width: 120px; flex-shrink: 0; }
+    .loc-lhcell--actions { width: 72px; flex-shrink: 0; }
+    .loc-lcell--actions { width: 72px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+    .loc-row-action-btn { width: 28px; height: 28px; border: 1.5px solid #e8eaed; border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; color: #9ca3af; display: flex; align-items: center; justify-content: center; transition: border-color .15s, color .15s; flex-shrink: 0; }
+    .loc-row-action-btn:hover { border-color: #ff7a00; color: #ff7a00; }
+    .loc-row-action-btn--arch:hover { border-color: #ef4444; color: #ef4444; }
+    .loc-list-cb { width: 16px; height: 16px; accent-color: #22c55e; cursor: pointer; }
+    .loc-list-rows { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+    .loc-list-nodata { padding: 60px 20px; text-align: center; font-size: 14px; color: #9ca3af; }
+    .loc-list-row { display: flex; align-items: center; padding: 0 20px; height: 52px; border-bottom: 1px solid #f3f4f6; cursor: pointer; transition: background .1s; }
+    .loc-list-row:hover { background: #f9fafb; }
+    .loc-list-row--sel { background: #f3f4f6; }
+    .loc-lcell--check { width: 40px; flex-shrink: 0; }
+    .loc-lcell--name { flex: 1; font-size: 13px; font-weight: 500; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .loc-lcell--addr { flex: 2; font-size: 13px; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .loc-lcell--radius { width: 120px; flex-shrink: 0; font-size: 13px; color: #6b7280; }
+
+    /* Archived footer button */
+    .loc-archived-footer { flex-shrink: 0; border-top: 1px solid #f3f4f6; padding: 12px 16px; }
+    .loc-archived-btn { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: none; cursor: pointer; font-size: 13px; color: #9ca3af; font-family: inherit; padding: 4px 0; }
+    .loc-archived-btn:hover { color: #374151; }
+
+    /* Panel — inline third column inside loc-map-layout, does NOT overlap toolbar */
+    .loc-panel { width: 340px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1.5px solid #e8eaed; background: #fff; overflow: hidden; animation: loc-panel-in .2s cubic-bezier(.4,0,.2,1); }
+    @@keyframes loc-panel-in { from { width: 0; opacity: 0; } to { width: 340px; opacity: 1; } }
+    .loc-panel-backdrop { display: none; }
+    @@keyframes loc-panel-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .loc-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px 16px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0; }
+    .loc-panel-title { font-size: 18px; font-weight: 700; color: #111827; }
+    .loc-panel-header-actions { display: flex; align-items: center; gap: 6px; }
+    .loc-panel-icon-btn { width: 32px; height: 32px; border: 1.5px solid #e8eaed; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; color: #6b7280; display: flex; align-items: center; justify-content: center; }
+    .loc-panel-icon-btn:hover { border-color: #ff7a00; color: #ff7a00; }
+    .loc-panel-close { width: 30px; height: 30px; border: none; background: transparent; cursor: pointer; font-size: 16px; color: #6b7280; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+    .loc-panel-close:hover { color: #111827; }
+    .loc-panel-body { flex: 1; padding: 20px 22px; overflow-y: auto; scrollbar-width: thin; }
+    .loc-panel-field-label { font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: 5px; }
+    .loc-panel-info { color: #9ca3af; font-size: 11px; }
+    .loc-panel-input { width: 100%; padding: 11px 14px; border: 1.5px solid #e8eaed; border-radius: 8px; font-size: 14px; color: #111827; outline: none; font-family: inherit; transition: border-color .15s; box-sizing: border-box; display: block; }
+    .loc-panel-input:focus { border-color: #ff7a00; }
+    .loc-panel-input--mono { font-family: monospace; font-size: 13px; }
+    .loc-panel-address-display { padding: 2px 0 4px; }
+    .loc-panel-address-name { font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 2px; }
+    .loc-panel-address-full { font-size: 13px; color: #6b7280; line-height: 1.4; }
+    .loc-panel-radii { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
+    .loc-panel-radio-row { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #374151; cursor: pointer; user-select: none; }
+    .loc-radio-circle { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #d1d5db; background: #fff; flex-shrink: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: border-color .15s; }
+    .loc-radio-circle--sel { border-color: #22c55e; }
+    .loc-radio-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; }
+    .loc-rec-badge { font-size: 10px; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 2px 8px; border-radius: 4px; }
+    .loc-custom-radius-row { display: flex; align-items: center; gap: 8px; margin-left: 30px; }
+    .loc-custom-radius-input { width: 110px !important; display: inline-block !important; }
+    .loc-custom-radius-unit { font-size: 13px; color: #6b7280; }
+    .loc-panel-error { margin-top: 14px; padding: 10px 14px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; font-size: 13px; color: #dc2626; display: flex; align-items: center; gap: 7px; }
+    .loc-panel-footer { display: flex; align-items: center; gap: 10px; padding: 14px 22px; border-top: 1px solid #f3f4f6; flex-shrink: 0; }
+    .loc-panel-cancel { flex: 1; padding: 10px; border: 1.5px solid #e8eaed; border-radius: 8px; background: #fff; font-size: 14px; font-weight: 600; color: #ff7a00; cursor: pointer; font-family: inherit; }
+    .loc-panel-cancel:hover { border-color: #ff7a00; }
+    .loc-panel-save { flex: 1; padding: 10px; border: none; border-radius: 8px; background: #ff7a00; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .loc-panel-save:hover:not(:disabled) { background: #e66c00; }
+    .loc-panel-save:disabled { opacity: .6; cursor: not-allowed; }
+
+    /* View location panel */
+    .loc-view-name { font-size: 22px; font-weight: 700; color: #111827; margin-bottom: 4px; }
+    .loc-view-coords { font-size: 12px; color: #9ca3af; display: flex; align-items: center; gap: 6px; margin-bottom: 20px; }
+    .loc-view-coords-icon { color: #d1d5db; font-size: 13px; }
+    .loc-view-radius-row { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 14px; color: #374151; }
+    .loc-view-radius-icon { color: #9ca3af; font-size: 16px; }
+
+    /* Confirm modal */
+    .loc-modal-backdrop { position: fixed; inset: 0; z-index: 1400; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; }
+    .loc-modal { background: #fff; border-radius: 16px; width: 500px; max-width: calc(100vw - 32px); box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+    .loc-modal--confirm { border-radius: 12px; width: 520px; }
+    .loc-confirm-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 28px 28px 14px; gap: 16px; }
+    .loc-confirm-title { font-size: 20px; font-weight: 700; color: #111827; line-height: 1.35; }
+    .loc-confirm-body { padding: 0 28px 20px; font-size: 14px; color: #6b7280; line-height: 1.65; }
+    .loc-confirm-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 28px; border-top: 1px solid #f3f4f6; }
+    .loc-confirm-cancel { padding: 9px 22px; border: 1.5px solid #e8eaed; border-radius: 8px; background: #fff; font-size: 14px; font-weight: 600; color: #374151; cursor: pointer; font-family: inherit; }
+    .loc-confirm-cancel:hover { border-color: #9ca3af; }
+    .loc-confirm-ok { padding: 9px 22px; border: none; border-radius: 8px; background: #ff7a00; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .loc-confirm-ok:hover { background: #e66c00; }
+
+    /* Edit radius modal */
+    .loc-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 24px 26px 16px; gap: 12px; }
+    .loc-modal-title { font-size: 16px; font-weight: 700; color: #111827; }
+    .loc-modal-body { padding: 0 26px 16px; }
+    .loc-modal-sub { font-size: 13px; color: #6b7280; margin: 0 0 16px; }
+    .loc-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 26px; border-top: 1px solid #f3f4f6; }
+
+    /* Archived locations modal */
+    .loc-archived-modal { background: #fff; border-radius: 12px; width: 620px; max-width: calc(100vw - 32px); max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+    .loc-archived-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 22px 24px 14px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0; }
+    .loc-archived-modal-title { font-size: 20px; font-weight: 700; color: #111827; }
+    .loc-archived-modal-search { display: flex; align-items: center; gap: 10px; padding: 12px 24px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0; }
+    .loc-archived-search-input { flex: 1; border: none; outline: none; font-size: 13px; color: #374151; font-family: inherit; background: transparent; }
+    .loc-archived-search-input::placeholder { color: #9ca3af; }
+    .loc-archived-lastused { font-size: 12px; color: #9ca3af; white-space: nowrap; }
+    .loc-archived-modal-body { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+    .loc-archived-row { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid #f3f4f6; }
+    .loc-archived-row:hover { background: #f9fafb; }
+    .loc-archived-row-info { flex: 1; min-width: 0; }
+    .loc-archived-row-name { font-size: 14px; font-weight: 600; color: #111827; }
+    .loc-archived-row-addr { font-size: 12px; color: #6b7280; margin-top: 2px; }
+    .loc-archived-row-meta { font-size: 13px; color: #9ca3af; width: 40px; text-align: center; flex-shrink: 0; }
+    /* Actions group — inline, no absolute positioning → no overlap */
+    .loc-archived-row-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .loc-arch-icon-btn { width: 32px; height: 32px; border: 1.5px solid #e8eaed; border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .loc-arch-icon-btn--restore { color: #ff7a00; border-color: #fed7aa; }
+    .loc-arch-icon-btn--restore:hover { background: #fff7ed; }
+    .loc-arch-icon-btn--del { color: #9ca3af; }
+    .loc-arch-icon-btn--del:hover { border-color: #ef4444; color: #ef4444; }
+    /* Restore text button — sits right of the icon buttons, never overlaps */
+    .loc-arch-restore-btn { padding: 5px 16px; background: #1f2937; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
+    .loc-arch-restore-btn:hover { background: #111827; }
+
+    /* ── Add Missing Location — sidebar link button ── */
+
+    /* ── Add Missing Location — fixed center pin + bottom bar ── */
+    .loc-center-pin {
+        position: absolute;
+        top: 50%; left: 50%;
+        /* shift so the SVG tip (bottom-center) sits exactly at the map centre */
+        transform: translate(-50%, calc(-100% + 0px));
+        z-index: 700;
+        pointer-events: none;
+        /* subtle bob animation so user notices the pin */
+        animation: loc-pin-bob 1.8s ease-in-out infinite;
+    }
+    @@keyframes loc-pin-bob {
+        0%,100% { transform: translate(-50%, -100%);        }
+        50%      { transform: translate(-50%, calc(-100% - 5px)); }
+    }
+    .loc-center-pin-icon {
+        display: block;
+        filter: drop-shadow(0 3px 5px rgba(0,0,0,.38));
+    }
+    .loc-center-pin-shadow {
+        width: 8px; height: 4px;
+        background: rgba(0,0,0,.22);
+        border-radius: 50%;
+        margin: 1px auto 0;
+        /* shadow grows/shrinks in sync with the bob */
+        animation: loc-pin-shadow-bob 1.8s ease-in-out infinite;
+    }
+    @@keyframes loc-pin-shadow-bob {
+        0%,100% { transform: scale(1);    opacity: .22; }
+        50%      { transform: scale(.65); opacity: .14; }
+    }
+
+    /* Bottom bar */
+    .loc-missing-bar { position: absolute; bottom: 28px; left: 50%;
+        transform: translateX(-50%); z-index: 600;
+        display: flex; align-items: center; gap: 20px;
+        background: #1f2937; color: #fff; border-radius: 10px;
+        padding: 14px 20px; box-shadow: 0 4px 20px rgba(0,0,0,.35);
+        white-space: nowrap; min-width: 360px; max-width: 90vw; }
+    .loc-missing-bar-text { font-size: 14px; font-weight: 500; flex: 1; }
+    .loc-missing-bar-done { padding: 8px 22px; border: none; border-radius: 7px;
+        background: #ff7a00; color: #fff; font-size: 14px; font-weight: 700;
+        cursor: pointer; font-family: inherit; flex-shrink: 0; }
+    .loc-missing-bar-done:hover { background: #e66c00; }
+    .loc-missing-bar-done:disabled { opacity: .5; cursor: not-allowed; }
+
+    .pac-container { border-radius: 8px !important; border: 1.5px solid #e8eaed !important; box-shadow: 0 6px 20px rgba(0,0,0,.12) !important; font-family: inherit !important; z-index: 9999 !important; min-width: 260px !important; max-width: 380px !important; width: auto !important; }
+    .pac-item { padding: 8px 14px !important; font-size: 13px !important; cursor: pointer !important; }
+    .pac-item:hover { background: #f9fafb !important; }
+    .pac-icon { display: none !important; }
+</style>

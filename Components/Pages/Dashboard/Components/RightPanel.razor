@@ -1,0 +1,347 @@
+@namespace APM.StaffZen.Blazor.Components.Pages.Dashboard.Components
+@inject AttendanceService AttendanceService
+@inject SessionService SessionService
+@rendermode RenderMode.InteractiveServer
+@implements IDisposable
+@using APM.StaffZen.Blazor.Services
+
+<div class="wios-card">
+
+    <!-- Header -->
+    <div class="wios-header">
+        <h5 class="wios-title">Who's in/out</h5>
+        <span class="wios-count">@FilteredMembers.Count member@(FilteredMembers.Count != 1 ? "s" : "")@(selectedGroupId != null ? " · filtered" : "")</span>
+    </div>
+
+    <!-- IN / BREAK / OUT Tabs -->
+    <div class="wios-tabs">
+        <button class="wios-tab @(activeTab == "in"    ? "wios-tab--on" : "")" @onclick='() => SwitchTab("in")'>
+            <span class="wios-tab-n @(activeTab == "in" ? "wios-tab-n--on" : "")">@CountIn</span>
+            <span class="wios-tab-l">IN</span>
+        </button>
+        <button class="wios-tab @(activeTab == "break" ? "wios-tab--on" : "")" @onclick='() => SwitchTab("break")'>
+            <span class="wios-tab-n">@CountBreak</span>
+            <span class="wios-tab-l">BREAK</span>
+        </button>
+        <button class="wios-tab @(activeTab == "out"   ? "wios-tab--on" : "")" @onclick='() => SwitchTab("out")'>
+            <span class="wios-tab-n">@CountOut</span>
+            <span class="wios-tab-l">OUT</span>
+        </button>
+    </div>
+
+    <!-- Search -->
+    <div class="wios-search">
+        <i class="bi bi-search wios-search-ic"></i>
+        <input class="wios-search-inp"
+               type="text"
+               placeholder="Search members..."
+               @bind="query"
+               @bind:event="oninput" />
+    </div>
+
+    <!-- Member list -->
+    <div class="wios-list">
+        @if (loading)
+        {
+            <div class="wios-state">
+                <span class="wios-spin"></span> Loading…
+            </div>
+        }
+        else if (!Visible.Any())
+        {
+            <div class="wios-state">No members found</div>
+        }
+        else
+        {
+            @foreach (var m in Visible)
+            {
+                <div class="wios-row" @onclick="() => MemberClicked(m)">
+                    <div class="wios-av-wrap">
+                        <div class="wios-av">@char.ToUpper(m.FullName[0])</div>
+                        <span class="wios-dot wios-dot--@m.StatusKey"></span>
+                    </div>
+                    <div class="wios-info">
+                        <span class="wios-name">@m.FullName</span>
+                        <span class="wios-sub">@m.Sub</span>
+                    </div>
+                    <i class="bi bi-chevron-right wios-arr"></i>
+                </div>
+            }
+        }
+    </div>
+
+</div>
+
+@code {
+    [Parameter] public EventCallback<WiosMember> OnMemberSelected { get; set; }
+    [Parameter] public int? SelectedGroupId { get; set; }
+
+    // Called by Dashboard after a clock action so the who's in/out list refreshes
+    public async Task RefreshAsync() => await Reload();
+
+    // Called by Dashboard when the group filter changes
+    public void ApplyGroupFilter(int? groupId)
+    {
+        SelectedGroupId = groupId;
+        StateHasChanged();
+    }
+
+    private bool           loading   = true;
+    private string         activeTab = "in";
+    private string         query     = "";
+    private List<AllMember> allMembers = new();
+
+    // Members filtered by selected group
+    private List<AllMember> FilteredMembers =>
+        selectedGroupId == null
+            ? allMembers
+            : allMembers.Where(m => m.GroupId == selectedGroupId).ToList();
+
+    private int? selectedGroupId => SelectedGroupId;
+
+    private int CountIn    => FilteredMembers.Count(m => m.StatusKey == "in");
+    private int CountBreak => FilteredMembers.Count(m => m.StatusKey == "break");
+    private int CountOut   => FilteredMembers.Count(m => m.StatusKey == "out");
+
+    private IEnumerable<WiosMember> Visible =>
+        FilteredMembers
+            .Where(m => m.StatusKey == activeTab)
+            .Where(m => string.IsNullOrWhiteSpace(query) ||
+                        m.FullName.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Select(m => new WiosMember
+            {
+                Id        = m.Id,
+                FullName  = m.FullName,
+                StatusKey = m.StatusKey,
+                Sub       = m.Sub
+            });
+
+    protected override async Task OnInitializedAsync()
+    {
+        SessionService.OnSessionReady += Reload;
+        await Reload();
+    }
+
+    protected override void OnParametersSet()
+    {
+        // When parent changes SelectedGroupId parameter, trigger re-render
+        StateHasChanged();
+    }
+
+    private async Task Reload()
+    {
+        loading = true;
+        allMembers.Clear();
+
+        if (SessionService.IsLoggedIn)
+        {
+            // Load all org members with clock status
+            var members = await AttendanceService.GetAllMembersAsync(SessionService.ActiveOrganizationId);
+            foreach (var m in members)
+            {
+                string statusKey = m.IsClockedIn ? "in" : "out";
+                string sub = m.IsClockedIn && m.ClockIn.HasValue
+                    ? $"{m.ClockIn.Value:hh:mm tt}, {Ago(m.ClockIn.Value)} (GMT+5:30)"
+                    : "Not clocked in";
+
+                allMembers.Add(new AllMember
+                {
+                    Id          = m.Id,
+                    FullName    = m.FullName,
+                    Email       = m.Email,
+                    GroupId     = m.GroupId,
+                    GroupName   = m.GroupName,
+                    IsClockedIn = m.IsClockedIn,
+                    ClockIn     = m.ClockIn,
+                    StatusKey   = statusKey,
+                    Sub         = sub
+                });
+            }
+        }
+
+        if (CountIn == 0 && CountOut > 0) activeTab = "out";
+
+        loading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void SwitchTab(string tab) { activeTab = tab; query = ""; }
+
+    private async Task MemberClicked(WiosMember m)
+    {
+        await OnMemberSelected.InvokeAsync(m);
+    }
+
+    private static string Ago(DateTime dt)
+    {
+        var d = DateTime.Now - dt;
+        return d.TotalMinutes < 60
+            ? $"{(int)d.TotalMinutes} mins ago"
+            : $"{(int)d.TotalHours} hours ago";
+    }
+
+    public void Dispose()
+    {
+        SessionService.OnSessionReady -= Reload;
+    }
+
+    // Extended AllMember with display fields
+    private class AllMember : APM.StaffZen.Blazor.Services.AllMember
+    {
+        public string StatusKey { get; set; } = "out";
+        public string Sub       { get; set; } = "";
+    }
+
+    public class WiosMember
+    {
+        public int    Id        { get; set; }
+        public string FullName  { get; set; } = "";
+        public string StatusKey { get; set; } = "out";
+        public string Sub       { get; set; } = "";
+    }
+}
+
+<style>
+    /* ─── WHO'S IN/OUT CARD ─── */
+    .wios-card {
+        background: #fff;
+        border-radius: 14px;
+        padding: 20px 20px 0;
+        box-shadow: 0 1px 4px rgba(0,0,0,.08);
+        display: flex;
+        flex-direction: column;
+        /* Fill the right column height minus top/bottom padding of container */
+        height: 100%;
+        overflow: hidden;
+    }
+
+    /* The member list fills remaining space and scrolls */
+    .wios-list {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-bottom: 12px;
+        scrollbar-width: thin;
+        scrollbar-color: #cbd5e1 transparent;
+    }
+
+    .wios-list::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    .wios-list::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .wios-list::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+    }
+
+    .wios-list::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+    }
+
+    .wios-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+    }
+    .wios-title { font-size: 15px; font-weight: 600; color: #111827; margin: 0; }
+    .wios-count { font-size: 12px; color: #6b7280; }
+
+    /* Tabs */
+    .wios-tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        border-bottom: 1.5px solid #f3f4f6;
+        margin-bottom: 14px;
+    }
+    .wios-tab {
+        background: none; border: none; cursor: pointer;
+        padding: 8px 4px 10px;
+        display: flex; flex-direction: column; align-items: center; gap: 1px;
+        font-family: inherit; font-size: 11px; font-weight: 600;
+        letter-spacing: .4px; color: #9ca3af;
+        position: relative; transition: color .15s;
+    }
+    .wios-tab--on { color: #ff7a00; }
+    .wios-tab--on::after {
+        content: '';
+        position: absolute; bottom: -1.5px; left: 18%; right: 18%;
+        height: 2px; background: #ff7a00; border-radius: 2px 2px 0 0;
+    }
+    .wios-tab-n { font-size: 22px; font-weight: 700; color: #d1d5db; line-height: 1; transition: color .15s; }
+    .wios-tab-n--on { color: #ff7a00; }
+    .wios-tab-l { font-size: 10px; }
+
+    /* Search */
+    .wios-search { position: relative; margin-bottom: 8px; }
+    .wios-search-ic {
+        position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+        color: #9ca3af; font-size: 13px; pointer-events: none;
+    }
+    .wios-search-inp {
+        width: 100%; padding: 8px 12px 8px 32px;
+        border: 1px solid #e5e7eb; border-radius: 8px;
+        font-size: 13px; color: #111827; outline: none;
+        font-family: inherit; transition: border-color .2s;
+    }
+    .wios-search-inp:focus { border-color: #ff7a00; }
+    .wios-search-inp::placeholder { color: #9ca3af; }
+
+    /* Member rows */
+    .wios-row {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 6px; border-radius: 8px;
+        cursor: pointer; transition: background .13s;
+    }
+    .wios-row:hover { background: #f9fafb; }
+
+    .wios-av-wrap { position: relative; flex-shrink: 0; }
+    .wios-av {
+        width: 36px; height: 36px; border-radius: 50%;
+        background: #e5e7eb; color: #374151;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 14px; font-weight: 700;
+    }
+    .wios-dot {
+        width: 10px; height: 10px; border-radius: 50%;
+        border: 2px solid #fff;
+        position: absolute; bottom: 0; right: 0;
+    }
+    .wios-dot--in    { background: #22c55e; }
+    .wios-dot--break { background: #eab308; }
+    .wios-dot--out   { background: #d1d5db; }
+
+    .wios-info { flex: 1; min-width: 0; }
+    .wios-name {
+        display: block; font-size: 13px; font-weight: 600; color: #111827;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .wios-sub {
+        display: block; font-size: 11px; color: #6b7280; margin-top: 1px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .wios-arr {
+        color: #d1d5db; font-size: 11px; flex-shrink: 0;
+        transition: transform .15s, color .15s;
+    }
+    .wios-row:hover .wios-arr { color: #9ca3af; transform: translateX(2px); }
+
+    /* Loading/empty */
+    .wios-state {
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 24px 0; font-size: 13px; color: #9ca3af;
+    }
+    .wios-spin {
+        width: 14px; height: 14px;
+        border: 2px solid #e5e7eb; border-top-color: #9ca3af;
+        border-radius: 50%; animation: wios-spin .7s linear infinite;
+        display: inline-block; flex-shrink: 0;
+    }
+    @@keyframes wios-spin { to { transform: rotate(360deg); } }
+</style>

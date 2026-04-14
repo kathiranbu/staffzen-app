@@ -1,0 +1,406 @@
+/* =====================================================
+   GLOBAL
+===================================================== */
+
+html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    font-family: 'Segoe UI', sans-serif;
+    background-color: #f6f7fb;
+}
+
+    /* Login & auth pages need normal scrolling */
+    body.login-page {
+        overflow: auto;
+        height: auto;
+        min-height: 100%;
+    }
+
+* {
+    box-sizing: border-box;
+}
+
+/* =====================================================
+   APP LAYOUT STRUCTURE
+===================================================== */
+
+.layout-container {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* =====================================================
+   MAIN CONTENT AREA
+===================================================== */
+
+.main-content {
+    margin-left: 260px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    transition: margin-left 0.3s ease;
+}
+
+    .main-content.sidebar-collapsed {
+        margin-left: 90px;
+    }
+
+/* Header */
+
+.top-header {
+    height: 60px;
+    border-bottom: 1px solid #e5e5e5;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    background: #ffffff;
+}
+
+.page-title {
+    margin: 0;
+    font-weight: 600;
+    font-size: 18px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.icon-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: none;
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.2s ease;
+}
+
+    .icon-btn:hover {
+        background: #e5e7eb;
+    }
+
+.play-btn {
+    background: #22c55e;
+    color: white;
+}
+
+    .play-btn:hover {
+        background: #16a34a;
+    }
+
+/* Page container — must be full height so page-body flex:1 can resolve */
+.page-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* Page body */
+
+.page-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 5px 20px 20px 20px;
+    min-height: 0;
+}
+
+/* Dashboard manages its own scroll — only left column scrolls */
+.page-body:has(.dashboard-wrapper) {
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Locations page — full height map, no padding, no scroll */
+.page-body:has(.loc-page) {
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Holidays tab — full width, no padding, allow dropdown overflow */
+.page-body:has(.ht-layout) {
+    padding: 0;
+    overflow: visible;
+}
+
+/* Allow dropdowns to escape main-content clipping when holidays tab is active */
+.main-content:has(.ht-layout) {
+    overflow-x: visible;
+}
+
+/* =====================================================
+   RESPONSIVE DESIGN
+===================================================== */
+
+/* Tablets and below (1024px and down) */
+@media (max-width: 1024px) {
+    .main-content {
+        margin-left: 0;
+    }
+
+        .main-content.sidebar-collapsed {
+            margin-left: 0;
+        }
+
+    .page-body {
+        padding: 5px 15px 15px 15px;
+    }
+}
+
+/* Mobile devices (768px and down) */
+@media (max-width: 768px) {
+    html, body {
+        overflow: auto;
+    }
+
+    .layout-container {
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .main-content {
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .top-header {
+        height: 56px;
+        padding: 0 12px;
+    }
+
+    .page-title {
+        font-size: 16px;
+    }
+
+    .header-right {
+        gap: 10px;
+    }
+
+    .icon-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+
+    .page-body {
+        padding: 5px 12px 12px 12px;
+    }
+}
+
+/* Small mobile (480px and down) */
+@media (max-width: 480px) {
+    .top-header {
+        height: 52px;
+        padding: 0 10px;
+    }
+
+    .page-title {
+        font-size: 15px;
+    }
+
+    .header-right {
+        gap: 8px;
+    }
+
+    .icon-btn {
+        width: 34px;
+        height: 34px;
+        font-size: 13px;
+    }
+
+    .page-body {
+        padding: 5px 10px 10px 10px;
+    }
+}
+
+/* =====================================================
+   UTILITY CLASSES
+===================================================== */
+
+/* Hide on mobile */
+@media (max-width: 768px) {
+    .hide-mobile {
+        display: none !important;
+    }
+}
+
+/* Show only on mobile */
+.show-mobile {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    .show-mobile {
+        display: block !important;
+    }
+}
+
+/* ── Push notification channel button ─────────────────────────────────────── */
+.nc-channel-btn--push {
+    border-color: #6366f1;
+    color: #6366f1;
+}
+.nc-channel-btn--push:hover {
+    background: #ede9fe;
+}
+.nc-channel-btn--push.nc-channel-btn--on {
+    background: #6366f1;
+    color: #fff;
+    border-color: #6366f1;
+}
+
+/* =====================================================
+   LOGIN INPUTS — global (not scoped) so child components
+   LoginForm.razor and SignupForm.razor receive these styles
+===================================================== */
+
+.login-input {
+    font-size: 15px !important;
+    border: 1.5px solid #dde1e7 !important;
+    border-radius: 10px !important;
+    padding: 20px 18px 10px 18px !important;
+    color: #111 !important;
+    background: #fff !important;
+    height: auto !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+    width: 100% !important;
+}
+
+.login-input::placeholder {
+    color: transparent !important;
+}
+
+.login-input:focus {
+    border-color: #ff6600 !important;
+    box-shadow: 0 0 0 3px rgba(255, 102, 0, 0.12) !important;
+    outline: none !important;
+}
+
+.login-input:not(:placeholder-shown),
+.login-input:focus {
+    border-color: #ff6600 !important;
+}
+
+/* Floating label wrapper */
+.login-field {
+    position: relative;
+    margin-bottom: 0;
+}
+
+.login-field label {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 15px;
+    color: #bfc4cc;
+    pointer-events: none;
+    transition: all 0.15s ease;
+    background: transparent;
+    padding: 0;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+/* Float label up when input is focused or has content */
+.login-field input:focus ~ label,
+.login-field input:not(:placeholder-shown) ~ label {
+    top: 12px;
+    transform: translateY(0);
+    font-size: 11px;
+    color: #ff6600 !important;
+    background: transparent;
+    font-weight: 500;
+}
+
+/* Login / Create Account button */
+.login-btn {
+    background: #e9eaec !important;
+    color: #aaa !important;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    border-radius: 10px !important;
+    font-size: 15px;
+    font-weight: 600;
+    border: none !important;
+}
+
+.login-btn-active {
+    background: #ff6600 !important;
+    color: #fff !important;
+}
+
+.login-btn-active:hover {
+    background: #e55a00 !important;
+}
+
+.login-btn:disabled {
+    background: #e9eaec !important;
+    color: #aaa !important;
+    cursor: not-allowed;
+}
+
+/* Forgot password link */
+.forgot-link {
+    color: #ff6600;
+    font-size: 13px;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.forgot-link:hover {
+    text-decoration: underline;
+}
+
+/* Language selector */
+.lang-selector {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: #333;
+    cursor: pointer;
+    padding-bottom: 3px;
+    border-bottom: 1.5px solid #d0d4da;
+    transition: border-color 0.15s;
+}
+
+.lang-selector:hover {
+    border-color: #888;
+}
+
+/* ── Social icon buttons (login page) ── */
+.social-icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+    .social-icon-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+.social-icon-border {
+    border: 1.5px solid #e5e7eb;
+    background: #fff;
+}

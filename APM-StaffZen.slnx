@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="../APM.StaffZen.API/APM.StaffZen.API.csproj" Id="8eee03e8-4580-41e1-8a73-d09e0993e0e9" />
+  <Project Path="APM.StaffZen.Blazor.csproj" />
+</Solution>

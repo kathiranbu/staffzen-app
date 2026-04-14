@@ -1,0 +1,61 @@
+@page "/google-success"
+@layout EmptyLayout
+@rendermode RenderMode.InteractiveServer
+
+@inject SessionService SessionService
+@inject NavigationManager NavManager
+
+<div style="display:flex;justify-content:center;align-items:center;height:100vh;flex-direction:column;gap:16px;font-family:'Segoe UI',sans-serif;">
+    <div style="width:48px;height:48px;border:4px solid #ff6b00;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+    <p style="color:#666;font-size:16px;">Signing you in...</p>
+</div>
+
+<style>
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+
+@code {
+    [SupplyParameterFromQuery] public int id { get; set; }
+    [SupplyParameterFromQuery] public string? name { get; set; }
+    [SupplyParameterFromQuery] public string? email { get; set; }
+    [SupplyParameterFromQuery] public string? role { get; set; }
+    [SupplyParameterFromQuery] public string? error { get; set; }
+    [SupplyParameterFromQuery] public bool isonboarded { get; set; }
+    [SupplyParameterFromQuery] public string? orgname { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrEmpty(error))
+        {
+            NavManager.NavigateTo($"/login?googleError={Uri.EscapeDataString(error)}", forceLoad: false);
+            return;
+        }
+
+        if (id > 0 && !string.IsNullOrEmpty(email))
+        {
+            SessionService.SetSession(new APM.StaffZen.Blazor.ViewModels.LoginResponse
+            {
+                Id               = id,
+                FullName         = name ?? email!,
+                Email            = email!,
+                Role             = role ?? "Employee",
+                IsOnboarded      = isonboarded,
+                OrganizationName = orgname
+            });
+
+            string destination;
+            if (!isonboarded)
+                destination = "/getting-started";
+            else
+                destination = (role == "Admin") ? "/admin" : "/dashboard";
+
+            NavManager.NavigateTo(destination, forceLoad: false);
+        }
+        else
+        {
+            NavManager.NavigateTo("/login?googleError=missing_data", forceLoad: false);
+        }
+    }
+}

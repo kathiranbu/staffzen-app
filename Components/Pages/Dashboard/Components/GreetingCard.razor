@@ -1,0 +1,276 @@
+@namespace APM.StaffZen.Blazor.Components.Pages.Dashboard.Components
+@inject SessionService SessionService
+@implements IDisposable
+
+<div class="greeting-card-container">
+    <div class="row align-items-center g-3">
+        <div class="col-12 col-sm-7 col-md-8 col-lg-7 col-xl-8">
+            <div class="greeting-content">
+                <h2 class="greeting-title">@GreetingMessage, @FirstName! 👋</h2>
+                <p class="greeting-subtitle">@SubtitleMessage</p>
+            </div>
+        </div>
+        <div class="col-12 col-sm-5 col-md-4 col-lg-5 col-xl-4">
+            <div class="greeting-illustration d-flex align-items-center justify-content-sm-end justify-content-center gap-3">
+                <div class="greeting-badge">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+                <img src="/Images/Dashboard/greeting-illustration.png" alt="Welcome illustration" class="img-fluid greeting-img" />
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string FirstName =>
+        SessionService.FullName?.Split(' ').FirstOrDefault() ?? "there";
+
+    private string GreetingMessage
+    {
+        get
+        {
+            var hour = DateTime.Now.Hour;
+            return hour switch
+            {
+                >= 5 and < 12  => "Good Morning",
+                >= 12 and < 17 => "Good Afternoon",
+                >= 17 and < 21 => "Good Evening",
+                _              => "Good Night"
+            };
+        }
+    }
+
+    private string SubtitleMessage
+    {
+        get
+        {
+            var hour = DateTime.Now.Hour;
+            return hour switch
+            {
+                >= 5 and < 12  => "Hope you have a productive day ahead!",
+                >= 12 and < 17 => "Here's your dashboard for today.",
+                >= 17 and < 21 => "Here's a summary of your day.",
+                _              => "Don't forget to clock out before you sleep!"
+            };
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        // Re-render when session is restored after a page refresh
+        SessionService.OnSessionReady += OnSessionRestored;
+    }
+
+    private async Task OnSessionRestored()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        SessionService.OnSessionReady -= OnSessionRestored;
+    }
+}
+
+<style>
+    .greeting-card-container {
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 32px;
+        margin-bottom: 16px;
+        position: relative;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        overflow: hidden;
+    }
+
+    /* Subtle background pattern/gradient */
+    .greeting-card-container::before {
+        content: '';
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 60%;
+        height: 100%;
+        background: linear-gradient(135deg, transparent 0%, #f9fafb 100%);
+        z-index: 0;
+        pointer-events: none;
+    }
+
+    .greeting-content {
+        position: relative;
+        z-index: 1;
+    }
+
+    .greeting-title {
+        font-size: 36px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0 0 8px 0;
+        letter-spacing: -0.5px;
+        line-height: 1.2;
+    }
+
+    .greeting-subtitle {
+        font-size: 15px;
+        color: #6b7280;
+        margin: 0;
+        line-height: 1.5;
+    }
+
+    .greeting-illustration {
+        position: relative;
+        z-index: 1;
+    }
+
+    .greeting-badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #ff7a00;
+        color: white;
+        width: 56px;
+        height: 56px;
+        border-radius: 14px;
+        box-shadow: 0 4px 12px rgba(255, 122, 0, 0.25);
+        flex-shrink: 0;
+    }
+
+    .greeting-badge i {
+        font-size: 26px;
+    }
+
+    .greeting-img {
+        max-width: 180px;
+        height: auto;
+    }
+
+    /* Large tablets and desktops */
+    @@media (max-width: 1199px) {
+        .greeting-card-container {
+            padding: 28px;
+        }
+
+        .greeting-title {
+            font-size: 32px;
+        }
+
+        .greeting-img {
+            max-width: 160px;
+        }
+    }
+
+    /* Tablets */
+    @@media (max-width: 991px) {
+        .greeting-card-container {
+            padding: 26px;
+        }
+
+        .greeting-title {
+            font-size: 30px;
+        }
+
+        .greeting-subtitle {
+            font-size: 14px;
+        }
+
+        .greeting-badge {
+            width: 52px;
+            height: 52px;
+        }
+
+        .greeting-badge i {
+            font-size: 24px;
+        }
+
+        .greeting-img {
+            max-width: 150px;
+        }
+    }
+
+    /* Small tablets and large phones */
+    @@media (max-width: 768px) {
+        .greeting-card-container {
+            padding: 24px;
+            margin-bottom: 14px;
+        }
+
+        .greeting-title {
+            font-size: 28px;
+        }
+
+        .greeting-subtitle {
+            font-size: 14px;
+        }
+
+        .greeting-badge {
+            width: 48px;
+            height: 48px;
+        }
+
+        .greeting-badge i {
+            font-size: 22px;
+        }
+
+        .greeting-img {
+            max-width: 140px;
+        }
+    }
+
+    /* Mobile phones */
+    @@media (max-width: 576px) {
+        .greeting-card-container {
+            padding: 22px 18px;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        .greeting-title {
+            font-size: 26px;
+        }
+
+        .greeting-subtitle {
+            font-size: 13px;
+        }
+
+        .greeting-badge {
+            width: 46px;
+            height: 46px;
+        }
+
+        .greeting-badge i {
+            font-size: 20px;
+        }
+
+        .greeting-img {
+            max-width: 130px;
+        }
+    }
+
+    /* Small mobile phones */
+    @@media (max-width: 400px) {
+        .greeting-card-container {
+            padding: 20px 16px;
+        }
+
+        .greeting-title {
+            font-size: 24px;
+        }
+
+        .greeting-subtitle {
+            font-size: 12.5px;
+        }
+
+        .greeting-badge {
+            width: 44px;
+            height: 44px;
+        }
+
+        .greeting-badge i {
+            font-size: 18px;
+        }
+
+        .greeting-img {
+            max-width: 120px;
+        }
+    }
+</style>

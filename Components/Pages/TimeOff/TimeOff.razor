@@ -1,0 +1,2607 @@
+@page "/time-off"
+@using System.Globalization
+@using System.Net.Http.Json
+@using System.Text.Json
+@inject IHttpClientFactory ClientFactory
+@inject TimeOffPolicyService PolicyService
+@inject SessionService SessionService
+@inject LeaveRequestService LeaveRequestService
+
+<div class="timeoff-container">
+
+    <!-- Page Header -->
+    <div class="to-page-header">
+        <h2 class="to-title">@(IsUserRole && activeTab == "leaveRequests" ? "Leave Requests" : "Overview")</h2>
+        <div class="to-header-actions">
+            @if (IsUserRole)
+            {
+                <button class="to-btn-add to-btn-new-request" @onclick="OpenLrForm">
+                    <i class="bi bi-plus"></i> New Request
+                </button>
+            }
+            else
+            {
+                <button class="to-btn-export" @onclick="OpenExport">
+                    <i class="bi bi-download"></i> Export
+                </button>
+                <button class="to-btn-add" @onclick="OpenAddTimeOff">
+                    Add Time Off
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="to-tabs">
+        <span class="to-tab @(activeTab == "overview" ? "to-tab-active" : "")"
+              @onclick='() => activeTab = "overview"'>Overview</span>
+        <span class="to-tab @(activeTab == "leave" ? "to-tab-active" : "")"
+              @onclick='() => activeTab = "leave"'>Leave Balance</span>
+        @if (IsUserRole)
+        {
+            <span class="to-tab @(activeTab == "leaveRequests" ? "to-tab-active" : "")"
+                  @onclick='() => activeTab = "leaveRequests"'>Leave Requests</span>
+        }
+    </div>
+
+    @if (activeTab == "overview")
+    {
+        @* ════════════════════════════════════════════════════════
+           USER LEAVE DASHBOARD — Zoho-style overview for logged-in user
+           Shown only when IsUserRole; admin sees the standard overview below
+           ════════════════════════════════════════════════════════ *@
+        @if (IsUserRole)
+        {
+            @* ── Summary Cards ── *@
+            <div class="lov-cards-row">
+                @{
+                    var approvedRequests  = myLeaveRequests.Where(r => r.Status == "Approved").ToList();
+                    var pendingRequests   = myLeaveRequests.Where(r => r.Status.StartsWith("Pending")).ToList();
+                    var thisMonthTaken    = approvedRequests.Where(r => r.StartDate.Month == DateTime.Today.Month && r.StartDate.Year == DateTime.Today.Year).ToList();
+                    var upcomingLeaves    = approvedRequests.Where(r => r.StartDate.Date > DateTime.Today).OrderBy(r => r.StartDate).ToList();
+                    int thisMonthDays     = thisMonthTaken.Sum(r => { var e = r.EndDate ?? r.StartDate; return (e.Date - r.StartDate.Date).Days + 1; });
+                    int totalPolicyDays   = (int)policies.Sum(p => p.AnnualEntitlement);
+                    int usedDays          = approvedRequests.Sum(r => { var e = r.EndDate ?? r.StartDate; return (e.Date - r.StartDate.Date).Days + 1; });
+                    int availableDays     = Math.Max(0, totalPolicyDays - usedDays);
+                }
+                <div class="lov-card lov-card--available">
+                    <div class="lov-card-icon"><i class="bi bi-calendar-check"></i></div>
+                    <div class="lov-card-body">
+                        <span class="lov-card-value">@availableDays</span>
+                        <span class="lov-card-label">Available Leaves</span>
+                    </div>
+                </div>
+                <div class="lov-card lov-card--taken">
+                    <div class="lov-card-icon"><i class="bi bi-calendar-x"></i></div>
+                    <div class="lov-card-body">
+                        <span class="lov-card-value">@thisMonthDays</span>
+                        <span class="lov-card-label">Taken This Month</span>
+                    </div>
+                </div>
+                <div class="lov-card lov-card--pending">
+                    <div class="lov-card-icon"><i class="bi bi-hourglass-split"></i></div>
+                    <div class="lov-card-body">
+                        <span class="lov-card-value">@pendingRequests.Count</span>
+                        <span class="lov-card-label">Pending Requests</span>
+                    </div>
+                </div>
+                <div class="lov-card lov-card--upcoming">
+                    <div class="lov-card-icon"><i class="bi bi-calendar2-week"></i></div>
+                    <div class="lov-card-body">
+                        <span class="lov-card-value">@upcomingLeaves.Count</span>
+                        <span class="lov-card-label">Upcoming Leaves</span>
+                    </div>
+                </div>
+            </div>
+
+            @* ── Middle Row: Balance Bars + Mini Calendar ── *@
+            <div class="lov-mid-row">
+                @* LEFT: Leave Balance Bars *@
+                <div class="lov-balance-card">
+                    <div class="lov-section-header">
+                        <span class="lov-section-title">Leave Balance</span>
+                        <span class="lov-section-sub">@DateTime.Today.Year</span>
+                    </div>
+                    @if (!policies.Any())
+                    {
+                        <div class="lov-empty-small">No leave policies configured.</div>
+                    }
+                    else
+                    {
+                        @foreach (var pol in policies)
+                        {
+                            int polUsed  = approvedRequests.Sum(rr => { var e = rr.EndDate ?? rr.StartDate; return (e.Date - rr.StartDate.Date).Days + 1; });
+                            int polTotal = pol.AnnualEntitlement > 0 ? (int)pol.AnnualEntitlement : 1;
+                            int polAvail = Math.Max(0, polTotal - polUsed);
+                            double pct   = Math.Min(100, (polUsed * 100.0) / polTotal);
+                            <div class="lov-bal-row">
+                                <div class="lov-bal-header">
+                                    <span class="lov-bal-name">@pol.Name</span>
+                                    <span class="lov-bal-counts"><b>@polAvail</b> / @polTotal days left</span>
+                                </div>
+                                <div class="lov-bal-track">
+                                    <div class="lov-bal-fill" style="width:@(pct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                                </div>
+                                <div class="lov-bal-footer">
+                                    <span class="lov-bal-used">@polUsed used</span>
+                                    <span class="lov-bal-avail">@polAvail remaining</span>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+
+                @* RIGHT: Mini Calendar with leave highlights *@
+                <div class="lov-cal-card">
+                    <div class="lov-section-header">
+                        <button class="lov-cal-nav" @onclick="() => lovCalMonth = lovCalMonth.AddMonths(-1)">&#8249;</button>
+                        <span class="lov-section-title">@lovCalMonth.ToString("MMMM yyyy")</span>
+                        <button class="lov-cal-nav" @onclick="() => lovCalMonth = lovCalMonth.AddMonths(1)">&#8250;</button>
+                    </div>
+                    <div class="lov-cal-legend">
+                        <span class="lov-leg-dot lov-leg-dot--approved"></span><span>Approved</span>
+                        <span class="lov-leg-dot lov-leg-dot--pending" style="margin-left:12px;"></span><span>Pending</span>
+                    </div>
+                    <div class="lov-mini-cal-grid">
+                        @foreach (var dn in new[]{"Mo","Tu","We","Th","Fr","Sa","Su"})
+                        { <div class="lov-cal-dn">@dn</div> }
+                        @{
+                            var first = new DateTime(lovCalMonth.Year, lovCalMonth.Month, 1).DayOfWeek;
+                            int blanks = first == DayOfWeek.Sunday ? 6 : (int)first - 1;
+                        }
+                        @for (int b = 0; b < blanks; b++) { <div></div> }
+                        @for (int d = 1; d <= DateTime.DaysInMonth(lovCalMonth.Year, lovCalMonth.Month); d++)
+                        {
+                            var day = d;
+                            var td  = new DateTime(lovCalMonth.Year, lovCalMonth.Month, day);
+                            var isToday = td.Date == DateTime.Today;
+
+                            // Check if this date falls in any leave request
+                            var matchApproved = myLeaveRequests.FirstOrDefault(r =>
+                                r.Status == "Approved" &&
+                                td.Date >= r.StartDate.Date &&
+                                td.Date <= (r.EndDate ?? r.StartDate).Date);
+                            var matchPending = myLeaveRequests.FirstOrDefault(r =>
+                                r.Status.StartsWith("Pending") &&
+                                td.Date >= r.StartDate.Date &&
+                                td.Date <= (r.EndDate ?? r.StartDate).Date);
+
+                            string calCss = isToday ? "lov-cal-today" : "";
+                            if (matchApproved != null) calCss += " lov-cal-approved";
+                            else if (matchPending != null) calCss += " lov-cal-pending";
+
+                            <div class="lov-mini-cal-day @calCss" title="@(matchApproved != null ? "Approved Leave" : matchPending != null ? "Pending Leave" : "")">@day</div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @* ── Trend Chart + Right Panel Row ── *@
+            <div class="lov-bottom-row">
+                @* Trend Chart *@
+                <div class="lov-trend-card">
+                    <div class="lov-section-header">
+                        <span class="lov-section-title">Monthly Leave Usage</span>
+                        <span class="lov-section-sub">Last 6 months</span>
+                    </div>
+                    @{
+                        var months = Enumerable.Range(0, 6)
+                            .Select(i => DateTime.Today.AddMonths(-5 + i))
+                            .ToList();
+                        var monthlyData = months.Select(m => new {
+                            Label = m.ToString("MMM"),
+                            Days  = approvedRequests
+                                .Where(r => r.StartDate.Month == m.Month && r.StartDate.Year == m.Year)
+                                .Sum(r => { var e = r.EndDate ?? r.StartDate; return (e.Date - r.StartDate.Date).Days + 1; })
+                        }).ToList();
+                        int maxDays = monthlyData.Max(x => x.Days);
+                        if (maxDays == 0) maxDays = 1;
+                    }
+                    <div class="lov-chart-wrap">
+                        @foreach (var md in monthlyData)
+                        {
+                            double barPct = (md.Days * 100.0) / maxDays;
+                            <div class="lov-chart-col">
+                                <span class="lov-chart-val">@(md.Days > 0 ? md.Days.ToString() : "")</span>
+                                <div class="lov-chart-bar-wrap">
+                                    <div class="lov-chart-bar" style="height:@(barPct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                                </div>
+                                <span class="lov-chart-label">@md.Label</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @* Right: Upcoming + Recent Activity *@
+                <div class="lov-right-panel">
+                    @* Upcoming Leaves *@
+                    <div class="lov-upcoming-card">
+                        <div class="lov-section-header">
+                            <span class="lov-section-title">Upcoming Leaves</span>
+                            @if (upcomingLeaves.Any())
+                            {
+                                <span class="lov-badge-count">@upcomingLeaves.Count</span>
+                            }
+                        </div>
+                        @if (!upcomingLeaves.Any())
+                        {
+                            <div class="lov-empty-small">No upcoming leaves scheduled.</div>
+                        }
+                        else
+                        {
+                            @foreach (var ul in upcomingLeaves.Take(4))
+                            {
+                                var uEnd   = ul.EndDate ?? ul.StartDate;
+                                var uDays  = (uEnd.Date - ul.StartDate.Date).Days + 1;
+                                <div class="lov-upcoming-row">
+                                    <div class="lov-upcoming-dot lov-upcoming-dot--approved"></div>
+                                    <div class="lov-upcoming-info">
+                                        <span class="lov-upcoming-dates">@ul.StartDate.ToString("MMM dd") @(ul.EndDate.HasValue && ul.EndDate.Value.Date != ul.StartDate.Date ? $"– {ul.EndDate.Value:MMM dd}" : "")</span>
+                                        <span class="lov-upcoming-meta">@uDays day@(uDays != 1 ? "s" : "") · Approved</span>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    @* Recent Activity *@
+                    <div class="lov-activity-card">
+                        <div class="lov-section-header">
+                            <span class="lov-section-title">Recent Activity</span>
+                        </div>
+                        @{
+                            var recentActivity = myLeaveRequests
+                                .OrderByDescending(r => r.CreatedAt)
+                                .Take(5)
+                                .ToList();
+                        }
+                        @if (!recentActivity.Any())
+                        {
+                            <div class="lov-empty-small">No recent activity.</div>
+                        }
+                        else
+                        {
+                            @foreach (var act in recentActivity)
+                            {
+                                string actIcon  = act.Status == "Approved" ? "bi-check-circle-fill" :
+                                                  act.Status.StartsWith("Rejected") ? "bi-x-circle-fill" : "bi-clock-fill";
+                                string actClass = act.Status == "Approved" ? "lov-act--approved" :
+                                                  act.Status.StartsWith("Rejected") ? "lov-act--rejected" : "lov-act--pending";
+                                string actLabel = act.DisplayStatus;
+                                <div class="lov-act-row">
+                                    <i class="bi @actIcon lov-act-icon @actClass"></i>
+                                    <div class="lov-act-info">
+                                        <span class="lov-act-title">Leave @actLabel</span>
+                                        <span class="lov-act-date">@act.StartDate.ToString("MMM dd, yyyy")@(act.EndDate.HasValue && act.EndDate.Value.Date != act.StartDate.Date ? $" – {act.EndDate.Value:MMM dd}" : "")</span>
+                                    </div>
+                                    <span class="lov-act-time">@act.CreatedAt.ToString("MMM dd")</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ════ Admin Overview content below (hidden for user role) ════ *@
+        @if (!IsUserRole)
+        {
+
+        <!-- Date Range Filter Row -->
+        <div class="to-filter-row">
+            <div class="to-date-selector" style="position:relative;">
+
+                @* ── Preset label button ── *@
+                <div class="to-range-btn @(presetOpen ? "to-range-btn--open" : "")" @onclick="() => { presetOpen = !presetOpen; datePickerOpen = false; }">
+                    <span class="to-range-label">@selectedPreset</span>
+                    <i class="bi @(presetOpen ? "bi-chevron-up" : "bi-chevron-down") to-range-caret"></i>
+                </div>
+
+                @* ── Preset dropdown ── *@
+                @if (presetOpen)
+                {
+                    <div class="to-preset-popup" @onclick:stopPropagation>
+                        @foreach (var preset in new[]{"Today","Yesterday","Last 7 days","Last week","This week","This month","This year","Last month","Custom"})
+                        {
+                            var ps = preset;
+                            <div class="to-preset-row @(selectedPreset == ps ? "to-preset-row--active" : "")"
+                                 @onclick="() => ApplyPreset(ps)">
+                                <span>@ps</span>
+                                @if (selectedPreset == ps) { <i class="bi bi-check2 to-preset-check"></i> }
+                            </div>
+                        }
+                    </div>
+                    <div style="position:fixed;inset:0;z-index:498;" @onclick="() => presetOpen=false"></div>
+                }
+
+                @* ── Date range display + calendar icon ── *@
+                <div class="to-range-display-wrap" @onclick='() => { if(selectedPreset=="Custom") { datePickerOpen=!datePickerOpen; presetOpen=false; } }'>
+                    <span class="to-range-display">
+                        @filterStart.ToString("MMM, dd yyyy") &ndash; @filterEnd.ToString("MMM, dd yyyy")
+                    </span>
+                    <i class="bi bi-calendar3 to-range-cal-icon" @onclick='() => { selectedPreset="Custom"; datePickerOpen=!datePickerOpen; presetOpen=false; }' @onclick:stopPropagation></i>
+                </div>
+
+                @* ── Custom date picker calendar ── *@
+                @if (datePickerOpen)
+                {
+                    <div class="to-datepicker-popup" @onclick:stopPropagation>
+                        <div class="to-cal-header">
+                            <button class="to-cal-nav" @onclick="FilterCalPrev">&#8249;</button>
+                            <span class="to-cal-month-label">@filterCalDate.ToString("MMMM")</span>
+                            <button class="to-cal-nav" @onclick="FilterCalNext">&#8250;</button>
+                            <button class="to-cal-nav" @onclick="FilterCalPrevYear">&#8249;</button>
+                            <span class="to-cal-year-label">@filterCalDate.Year</span>
+                            <button class="to-cal-nav" @onclick="FilterCalNextYear">&#8250;</button>
+                        </div>
+                        <div class="to-cal-pick-hint">@(pickingStart ? "Select start date" : "Select end date")</div>
+                        <div class="to-cal-grid">
+                            @foreach (var dn in new[]{"Mon","Tue","Wed","Thu","Fri","Sat","Sun"})
+                            {
+                                <div class="to-cal-dayname">@dn</div>
+                            }
+                            @for (int blank = 0; blank < FilterCalStartBlank(); blank++)
+                            {
+                                <div></div>
+                            }
+                            @for (int d = 1; d <= DateTime.DaysInMonth(filterCalDate.Year, filterCalDate.Month); d++)
+                            {
+                                var day = d;
+                                var thisDate = new DateTime(filterCalDate.Year, filterCalDate.Month, day);
+                                var isSel    = thisDate.Date == filterStart.Date || thisDate.Date == filterEnd.Date;
+                                var inRange  = thisDate.Date > filterStart.Date && thisDate.Date < filterEnd.Date;
+                                var isToday  = thisDate.Date == DateTime.Today;
+                                <div class="to-cal-day @(isSel ? "to-cal-day--sel" : "") @(inRange ? "to-cal-day--range" : "") @(isToday && !isSel ? "to-cal-day--today" : "")"
+                                     @onclick="() => PickFilterDate(day)">@day</div>
+                            }
+                        </div>
+                    </div>
+                    <div style="position:fixed;inset:0;z-index:498;" @onclick="() => { datePickerOpen=false; pickingStart=true; }"></div>
+                }
+            </div>
+        </div>
+
+        <!-- Search & Filter Bar -->
+        <div class="to-search-bar" @onclick="CloseAllFilterDropdowns">
+            <div class="to-search-input-wrap">
+                <i class="bi bi-search to-search-icon"></i>
+                <input class="to-search-input" placeholder="Search members..." @bind="searchText" @bind:event="oninput" @onclick:stopPropagation />
+            </div>
+            <div class="to-filter-divider"></div>
+            <div class="to-filter-group">
+
+                @* ── Policies dropdown ── *@
+                <div class="to-filter-dd-wrap" @onclick:stopPropagation>
+                    <button class="to-filter-btn @(filterPolicyIds.Any() ? "to-filter-btn--active" : "")"
+                            @onclick="() => { filterPoliciesOpen = !filterPoliciesOpen; filterStatusesOpen = false; }">
+                        @if (filterPolicyIds.Any())
+                        {
+                            <span>Policies: <strong>@string.Join(", ", policies.Where(p => filterPolicyIds.Contains(p.Id)).Select(p => p.Name))</strong></span>
+                        }
+                        else
+                        {
+                            <span>Policies</span>
+                        }
+                        <i class="bi @(filterPoliciesOpen ? "bi-chevron-up" : "bi-chevron-down")"></i>
+                    </button>
+                    @if (filterPoliciesOpen)
+                    {
+                        <div class="to-filter-popup" @onclick:stopPropagation>
+                            <div class="to-filter-popup-search">
+                                <i class="bi bi-search" style="color:#aaa;font-size:.8rem;"></i>
+                                <input class="to-filter-popup-input" placeholder="Search policies" @bind="filterPoliciesSearch" @bind:event="oninput" />
+                            </div>
+                            @{ var filtPolicies = string.IsNullOrWhiteSpace(filterPoliciesSearch) ? policies : policies.Where(p => p.Name.Contains(filterPoliciesSearch, StringComparison.OrdinalIgnoreCase)).ToList(); }
+                            @foreach (var pol in filtPolicies)
+                            {
+                                var p = pol;
+                                var isChecked = filterPolicyIds.Contains(p.Id);
+                                <div class="to-filter-popup-row" @onclick="() => { if(!filterPolicyIds.Remove(p.Id)) filterPolicyIds.Add(p.Id); }">
+                                    <span>@p.Name</span>
+                                    @if (isChecked) { <i class="bi bi-check2" style="color:#f07820;font-weight:700;"></i> }
+                                </div>
+                            }
+                            @if (!filtPolicies.Any()) { <div class="to-filter-popup-empty">No policies found</div> }
+                            @if (filterPolicyIds.Any())
+                            {
+                                <div class="to-filter-popup-clear" @onclick='() => { filterPolicyIds = new(); filterPoliciesSearch = string.Empty; }'>Clear selection</div>
+                            }
+                        </div>
+                        <div style="position:fixed;inset:0;z-index:498;" @onclick="() => filterPoliciesOpen=false"></div>
+                    }
+                </div>
+
+                @* ── Positions (static, no data) ── *@
+                <button class="to-filter-btn">Positions <i class="bi bi-chevron-down"></i></button>
+
+                @* ── Employment types (static, no data) ── *@
+                <button class="to-filter-btn">Employment types <i class="bi bi-chevron-down"></i></button>
+
+                @* ── Statuses dropdown ── *@
+                <div class="to-filter-dd-wrap" @onclick:stopPropagation>
+                    <button class="to-filter-btn @(filterStatuses.Any() ? "to-filter-btn--active" : "")"
+                            @onclick="() => { filterStatusesOpen = !filterStatusesOpen; filterPoliciesOpen = false; }">
+                        @if (filterStatuses.Any())
+                        {
+                            <span>Statuses: <strong>@string.Join(", ", filterStatuses)</strong></span>
+                        }
+                        else
+                        {
+                            <span>Statuses</span>
+                        }
+                        <i class="bi @(filterStatusesOpen ? "bi-chevron-up" : "bi-chevron-down")"></i>
+                    </button>
+                    @if (filterStatusesOpen)
+                    {
+                        <div class="to-filter-popup" @onclick:stopPropagation>
+                            @foreach (var st in new[]{"Pending","Approved","Rejected","Cancelled"})
+                            {
+                                var s = st;
+                                var isChecked = filterStatuses.Contains(s);
+                                <div class="to-filter-popup-row" @onclick="() => { if(!filterStatuses.Remove(s)) filterStatuses.Add(s); }">
+                                    <span>@s</span>
+                                    @if (isChecked) { <i class="bi bi-check2" style="color:#f07820;font-weight:700;"></i> }
+                                </div>
+                            }
+                            @if (filterStatuses.Any())
+                            {
+                                <div class="to-filter-popup-clear" @onclick="() => filterStatuses = new()">Clear selection</div>
+                            }
+                        </div>
+                        <div style="position:fixed;inset:0;z-index:498;" @onclick="() => filterStatusesOpen=false"></div>
+                    }
+                </div>
+
+                <div class="to-filter-divider"></div>
+                <button class="to-reset-btn" @onclick="ResetFilters">Reset</button>
+            </div>
+        </div>
+
+        @* Bulk action bar - shown when rows are selected *@
+        @if (selectedIds.Any())
+        {
+            <div class="to-bulk-bar">
+                <span class="to-bulk-count">@selectedIds.Count selected</span>
+                <button class="to-bulk-cancel" @onclick="ClearSelection">Cancel</button>
+                <div style="flex:1;"></div>
+                <button class="to-bulk-btn to-bulk-cancel-req" @onclick="BulkCancelRequest">Cancel request</button>
+            </div>
+        }
+
+        @if (isLoading)
+        {
+            <div class="to-loading"><div class="to-spinner"></div></div>
+        }
+        else if (!filteredRequests.Any())
+        {
+            <div class="to-empty-state">
+                <div class="to-empty-illustration">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="280" height="210">
+                        <ellipse cx="200" cy="265" rx="130" ry="22" fill="#e0e0e0" opacity="0.6"/>
+                        <ellipse cx="140" cy="200" rx="95" ry="75" fill="#e8e8e8" opacity="0.7"/>
+                        <rect x="130" y="185" width="90" height="75" rx="8" fill="#4a7fd4"/>
+                        <rect x="135" y="190" width="80" height="65" rx="6" fill="#5585dc"/>
+                        <rect x="157" y="175" width="36" height="15" rx="7" fill="none" stroke="#3a6fc4" stroke-width="4"/>
+                        <rect x="165" y="218" width="20" height="14" rx="3" fill="#ffa040"/>
+                        <rect x="195" y="165" width="55" height="70" rx="10" fill="#f07820"/>
+                        <circle cx="222" cy="150" r="22" fill="#8B5E3C"/>
+                        <rect x="198" y="225" width="22" height="50" rx="6" fill="#4a90d9"/>
+                        <rect x="225" y="225" width="22" height="50" rx="6" fill="#3a80c9"/>
+                        <path d="M195 185 Q165 205 155 220" stroke="#f07820" stroke-width="14" stroke-linecap="round" fill="none"/>
+                        <path d="M250 185 Q265 195 268 185" stroke="#f07820" stroke-width="14" stroke-linecap="round" fill="none"/>
+                        <line x1="310" y1="205" x2="310" y2="150" stroke="#a0c878" stroke-width="3"/>
+                        <ellipse cx="310" cy="160" rx="22" ry="12" fill="#a0c878" transform="rotate(-30 310 160)"/>
+                        <ellipse cx="310" cy="150" rx="22" ry="12" fill="#b0d888" transform="rotate(30 310 150)"/>
+                    </svg>
+                </div>
+                <h4 class="to-empty-title">No time off</h4>
+                <p class="to-empty-sub">Record time off for your team members to have them reflected in timesheets and reports.</p>
+                <button class="to-btn-add" @onclick="OpenAddTimeOff">Add Time Off</button>
+            </div>
+        }
+        else
+        {
+            <div class="to-table-wrap">
+                <table class="to-table">
+                    <thead>
+                        <tr>
+                            <th>
+                                <input type="checkbox"
+                                       checked="@(selectedIds.Count == filteredRequests.Count && filteredRequests.Any())"
+                                       @onchange="ToggleSelectAll" />
+                            </th>
+                            <th>@filteredRequests.Count of @filteredRequests.Count time off</th>
+                            <th>Dates</th>
+                            <th>Duration <i class="bi bi-info-circle" style="font-size:.75rem;color:#aaa;"></i></th>
+                            <th>Time Off Policy</th>
+                            <th>Status</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var req in filteredRequests)
+                        {
+                            var r = req;
+                            var selectable = IsSelectableRow(r);
+                            var isChecked  = selectedIds.Contains(r.Id);
+                            <tr class="@(isChecked ? "to-row-selected" : "") @(!selectable ? "to-row-unselectable" : "")">
+                                <td>
+                                    @if (selectable)
+                                    {
+                                        <input type="checkbox" checked="@isChecked"
+                                               @onchange="() => ToggleRowSelect(r.Id)" />
+                                    }
+                                    else
+                                    {
+                                        <input type="checkbox" disabled style="opacity:0.3;cursor:not-allowed;" />
+                                    }
+                                </td>
+                                <td>
+                                    <div class="to-member-cell">
+                                        <div class="to-member-avatar">@(r.EmployeeName.Length > 0 ? r.EmployeeName[0].ToString().ToUpper() : "?")</div>
+                                        <span class="to-member-name">@r.EmployeeName</span>
+                                    </div>
+                                </td>
+                                <td class="to-dates-cell">@FormatDates(r)</td>
+                                <td class="to-duration-cell">@FormatDuration(r)</td>
+                                <td class="to-policy-cell">@r.PolicyName</td>
+                                <td>
+                                    <span class="to-status-badge to-status-@r.Status.ToLower()">
+                                        <span class="to-status-dot"></span>@r.Status
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="to-row-actions">
+                                        @if (r.Status == "Pending")
+                                        {
+                                            <button class="to-action-btn to-action-edit"    title="Edit"           @onclick="() => OpenEditRequest(r)"><i class="bi bi-pencil"></i></button>
+                                            <button class="to-action-btn to-action-delete"  title="Cancel request" @onclick='() => ConfirmDelete(r.Id)'><i class="bi bi-x-lg"></i></button>
+                                            <button class="to-action-btn to-action-approve" title="Approve"        @onclick='() => ConfirmApprove(r.Id)'><i class="bi bi-check-lg"></i></button>
+                                            <button class="to-action-btn to-action-reject"  title="Reject"         @onclick='() => ConfirmReject(r.Id)'><i class="bi bi-x-circle"></i></button>
+                                        }
+                                        else if (r.Status == "Approved")
+                                        {
+                                            <button class="to-action-btn to-action-cancel-req" title="Cancel request" @onclick='() => ConfirmCancel(r.Id)'><i class="bi bi-x-circle"></i></button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        } @* end !IsUserRole admin overview *@
+    }
+    else if (activeTab == "leaveRequests" && IsUserRole)
+    {
+        @* ════════════════════════════════════════════════════════
+           MY LEAVE REQUESTS — wired to api/leave-requests
+           ════════════════════════════════════════════════════════ *@
+        <div class="lr-section-card">
+            <div class="lr-section-header">
+                <span class="lr-section-title">My Leave Requests</span>
+                @if (!lrFormOpen)
+                {
+                    <button class="to-btn-add lr-apply-btn" @onclick="OpenLrForm">
+                        <i class="bi bi-plus"></i> Apply Leave
+                    </button>
+                }
+            </div>
+
+            @* ── Inline New Request Form ── *@
+            @if (lrFormOpen)
+            {
+                <div class="lr-form-card">
+                    <div class="lr-form-header">
+                        <span class="lr-form-title">New Leave Request</span>
+                        <button class="lr-form-close" @onclick="CloseLrForm"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                    <div class="lr-form-body">
+                        @* Date row *@
+                        <div class="lr-date-row">
+                            @* Start Date *@
+                            <div class="lr-field" style="position:relative;flex:1;">
+                                <label class="lr-label">Start Date</label>
+                                <div class="lr-date-box @(lrStartCalOpen ? "lr-date-box--open" : "") @(lrStartErr ? "lr-date-box--err" : "")"
+                                     @onclick="() => { lrStartCalOpen = !lrStartCalOpen; lrEndCalOpen = false; }">
+                                    <i class="bi bi-calendar3 lr-field-icon"></i>
+                                    <span class="@(lrStartDate.HasValue ? "lr-selected" : "lr-placeholder")">
+                                        @(lrStartDate.HasValue ? lrStartDate.Value.ToString("MMM dd, yyyy") : "Start date")
+                                    </span>
+                                </div>
+                                @if (lrStartErr) { <small class="lr-err">Start date is required.</small> }
+                                @if (lrStartCalOpen)
+                                {
+                                    <div class="lr-calendar" @onclick:stopPropagation>
+                                        <div class="lr-cal-head">
+                                            <button class="lr-cal-nav" @onclick="() => lrCalDate = lrCalDate.AddMonths(-1)">&#8249;</button>
+                                            <span class="lr-cal-label">@lrCalDate.ToString("MMMM yyyy")</span>
+                                            <button class="lr-cal-nav" @onclick="() => lrCalDate = lrCalDate.AddMonths(1)">&#8250;</button>
+                                        </div>
+                                        <div class="lr-cal-grid">
+                                            @foreach (var dn in new[]{"Mo","Tu","We","Th","Fr","Sa","Su"})
+                                            { <div class="lr-cal-dn">@dn</div> }
+                                            @{ int sb = LrCalBlank(); }
+                                            @for (int b = 0; b < sb; b++) { <div></div> }
+                                            @for (int d = 1; d <= DateTime.DaysInMonth(lrCalDate.Year, lrCalDate.Month); d++)
+                                            {
+                                                var day = d;
+                                                var td  = new DateTime(lrCalDate.Year, lrCalDate.Month, day);
+                                                var isSel   = lrStartDate.HasValue && td.Date == lrStartDate.Value.Date;
+                                                var inRange = lrStartDate.HasValue && lrEndDate.HasValue && td > lrStartDate.Value && td < lrEndDate.Value;
+                                                <div class="lr-cal-day @(isSel?"lr-cal-day--sel":"") @(inRange?"lr-cal-day--range":"") @(td.Date==DateTime.Today&&!isSel?"lr-cal-day--today":"")"
+                                                     @onclick="() => { lrStartDate = new DateTime(lrCalDate.Year, lrCalDate.Month, day); if(lrEndDate.HasValue && lrStartDate > lrEndDate) lrEndDate=null; lrStartCalOpen=false; lrStartErr=false; }">@day</div>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div style="position:fixed;inset:0;z-index:498;" @onclick="() => lrStartCalOpen=false"></div>
+                                }
+                            </div>
+
+                            <div class="lr-date-sep"><i class="bi bi-arrow-right" style="color:#9ca3af;"></i></div>
+
+                            @* End Date *@
+                            <div class="lr-field" style="position:relative;flex:1;">
+                                <label class="lr-label">End Date <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+                                <div class="lr-date-box @(lrEndCalOpen ? "lr-date-box--open" : "")"
+                                     @onclick="() => { lrEndCalOpen = !lrEndCalOpen; lrStartCalOpen = false; }">
+                                    <i class="bi bi-calendar3 lr-field-icon"></i>
+                                    <span class="@(lrEndDate.HasValue ? "lr-selected" : "lr-placeholder")">
+                                        @(lrEndDate.HasValue ? lrEndDate.Value.ToString("MMM dd, yyyy") : "End date (optional)")
+                                    </span>
+                                </div>
+                                @if (lrEndCalOpen)
+                                {
+                                    <div class="lr-calendar" @onclick:stopPropagation>
+                                        <div class="lr-cal-head">
+                                            <button class="lr-cal-nav" @onclick="() => lrCalDate = lrCalDate.AddMonths(-1)">&#8249;</button>
+                                            <span class="lr-cal-label">@lrCalDate.ToString("MMMM yyyy")</span>
+                                            <button class="lr-cal-nav" @onclick="() => lrCalDate = lrCalDate.AddMonths(1)">&#8250;</button>
+                                        </div>
+                                        <div class="lr-cal-grid">
+                                            @foreach (var dn in new[]{"Mo","Tu","We","Th","Fr","Sa","Su"})
+                                            { <div class="lr-cal-dn">@dn</div> }
+                                            @{ int sb2 = LrCalBlank(); }
+                                            @for (int b = 0; b < sb2; b++) { <div></div> }
+                                            @for (int d = 1; d <= DateTime.DaysInMonth(lrCalDate.Year, lrCalDate.Month); d++)
+                                            {
+                                                var day = d;
+                                                var td  = new DateTime(lrCalDate.Year, lrCalDate.Month, day);
+                                                var isSel   = lrEndDate.HasValue && td.Date == lrEndDate.Value.Date;
+                                                var inRange = lrStartDate.HasValue && lrEndDate.HasValue && td > lrStartDate.Value && td < lrEndDate.Value;
+                                                <div class="lr-cal-day @(isSel?"lr-cal-day--sel":"") @(inRange?"lr-cal-day--range":"") @(td.Date==DateTime.Today&&!isSel?"lr-cal-day--today":"")"
+                                                     @onclick="() => { lrEndDate = new DateTime(lrCalDate.Year, lrCalDate.Month, day); lrEndCalOpen=false; }">@day</div>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div style="position:fixed;inset:0;z-index:498;" @onclick="() => lrEndCalOpen=false"></div>
+                                }
+                            </div>
+                        </div>
+
+                        @* Type of Leave *@
+                        <div class="lr-field" style="position:relative;">
+                            <label class="lr-label">Type of Leave <span style="color:#ef4444;">*</span></label>
+                            <div class="lr-policy-box @(lrPolicyOpen ? "lr-policy-box--open" : "") @(lrPolicyErr ? "lr-date-box--err" : "")"
+                                 @onclick="() => { lrPolicyOpen = !lrPolicyOpen; lrStartCalOpen = false; lrEndCalOpen = false; }" @onclick:stopPropagation>
+                                <i class="bi bi-tag lr-field-icon"></i>
+                                <span class="@(lrSelectedPolicy != null ? "lr-selected" : "lr-placeholder")">
+                                    @(lrSelectedPolicy != null ? lrSelectedPolicy.Name : "Select leave type")
+                                </span>
+                                <i class="bi @(lrPolicyOpen ? "bi-chevron-up" : "bi-chevron-down") lr-policy-caret"></i>
+                            </div>
+                            @if (lrPolicyErr) { <small class="lr-err">Please select a leave type.</small> }
+                            @if (lrPolicyOpen)
+                            {
+                                <div class="lr-policy-dropdown" @onclick:stopPropagation>
+                                    <div class="lr-policy-search-wrap">
+                                        <i class="bi bi-search" style="color:#aaa;font-size:.8rem;"></i>
+                                        <input class="lr-policy-search-input" placeholder="Search leave types…"
+                                               @bind="lrPolicySearch" @bind:event="oninput" />
+                                    </div>
+                                    @{
+                                        var visiblePolicies = string.IsNullOrWhiteSpace(lrPolicySearch)
+                                            ? policies
+                                            : policies.Where(p => p.Name.Contains(lrPolicySearch, StringComparison.OrdinalIgnoreCase)).ToList();
+                                    }
+                                    @if (!visiblePolicies.Any())
+                                    {
+                                        <div class="lr-policy-empty">No leave types found</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var pol in visiblePolicies)
+                                        {
+                                            var p = pol;
+                                            var isActive = lrSelectedPolicy?.Id == p.Id;
+                                            <div class="lr-policy-option @(isActive ? "lr-policy-option--active" : "")"
+                                                 @onclick='() => { lrSelectedPolicy = p; lrPolicyOpen = false; lrPolicySearch = ""; lrPolicyErr = false; }'>
+                                                <span class="lr-policy-name">@p.Name</span>
+                                                <span class="lr-policy-days">@p.AnnualEntitlement days/yr</span>
+                                                @if (isActive) { <i class="bi bi-check2 lr-policy-check"></i> }
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                                <div style="position:fixed;inset:0;z-index:498;" @onclick="() => lrPolicyOpen=false"></div>
+                            }
+                        </div>
+
+                        @* Reason *@
+                        <div class="lr-field">
+                            <label class="lr-label">Reason <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+                            <div class="lr-textarea-wrap">
+                                <textarea class="lr-textarea" rows="4" placeholder="Add a reason or note for your leave..." @bind="lrReason"></textarea>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(lrSaveError))
+                        {
+                            <div class="lr-error-msg"><i class="bi bi-exclamation-circle"></i> @lrSaveError</div>
+                        }
+                    </div>
+                    <div class="lr-form-footer">
+                        <button class="lr-btn-cancel" @onclick="CloseLrForm">Cancel</button>
+                        <button class="lr-btn-submit" @onclick="SubmitLeaveRequest" disabled="@lrSaving">
+                            @if (lrSaving) { <span class="lr-mini-spin"></span> <span>Submitting...</span> }
+                            else { <span>Submit Request</span> }
+                        </button>
+                    </div>
+                </div>
+            }
+
+            @* ── Loading ── *@
+            @if (isLoadingLeaveRequests)
+            {
+                <div class="to-loading" style="padding:60px 0;"><div class="to-spinner"></div></div>
+            }
+            @* ── Empty state ── *@
+            else if (!myLeaveRequests.Any() && !lrFormOpen)
+            {
+                <div class="lr-empty-state">
+                    <div class="lr-empty-illustration">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 180" width="180" height="160">
+                            <ellipse cx="100" cy="168" rx="70" ry="10" fill="#e0e0e0" opacity="0.5"/>
+                            <rect x="30" y="20" width="120" height="140" rx="10" fill="#fff" stroke="#e8e8e8" stroke-width="1.5"/>
+                            <rect x="30" y="20" width="120" height="28" rx="10" fill="#fde8d8"/>
+                            <rect x="30" y="36" width="120" height="12" fill="#fde8d8"/>
+                            <rect x="46" y="66" width="88" height="8" rx="4" fill="#ebebeb"/>
+                            <rect x="46" y="82" width="70" height="8" rx="4" fill="#ebebeb"/>
+                            <rect x="46" y="98" width="80" height="8" rx="4" fill="#ebebeb"/>
+                            <rect x="46" y="114" width="55" height="8" rx="4" fill="#ebebeb"/>
+                            <circle cx="138" cy="132" r="18" fill="#f07820"/>
+                            <line x1="138" y1="123" x2="138" y2="141" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                            <line x1="129" y1="132" x2="147" y2="132" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+                    <h4 class="lr-empty-title">No leave requests found</h4>
+                    <p class="lr-empty-sub">You haven't submitted any leave requests yet. Apply for your first leave now.</p>
+                    <button class="to-btn-add lr-apply-btn" @onclick="OpenLrForm">
+                        <i class="bi bi-plus"></i> Apply Your First Leave
+                    </button>
+                </div>
+            }
+            @* ── Data table ── *@
+            else if (myLeaveRequests.Any())
+            {
+                <div class="lr-table-wrap">
+                    <table class="lr-table">
+                        <thead>
+                            <tr>
+                                <th class="lr-th">Date Range</th>
+                                <th class="lr-th">Leave Type</th>
+                                <th class="lr-th">Reason</th>
+                                <th class="lr-th">Status</th>
+                                <th class="lr-th">Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var req in myLeaveRequests)
+                            {
+                                var r = req;
+                                <tr class="lr-tr">
+                                    @* Date Range *@
+                                    <td class="lr-td">
+                                        <div class="lr-date-range">
+                                            <i class="bi bi-calendar3 lr-date-icon"></i>
+                                            <span>@r.DateRangeLabel</span>
+                                        </div>
+                                    </td>
+                                    @* Leave Type *@
+                                    <td class="lr-td">
+                                        @if (!string.IsNullOrWhiteSpace(r.LeaveTypeName))
+                                        {
+                                            <span class="lr-leave-type-badge">@r.LeaveTypeName</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="lr-td--muted">—</span>
+                                        }
+                                    </td>
+                                    @* Reason *@
+                                    <td class="lr-td lr-td--reason">
+                                        @if (!string.IsNullOrWhiteSpace(r.Reason))
+                                        {
+                                            @r.Reason
+                                        }
+                                        else
+                                        {
+                                            <span class="lr-td--muted">—</span>
+                                        }
+                                    </td>
+                                    @* Status badge *@
+                                    <td class="lr-td">
+                                        <span class="lr-badge @r.BadgeCss">
+                                            <span class="lr-badge-dot"></span>
+                                            @r.DisplayStatus
+                                        </span>
+                                    </td>
+                                    @* Remarks / Reject reason *@
+                                    <td class="lr-td lr-td--remarks">
+                                        @if (r.Status == "Rejected" && !string.IsNullOrWhiteSpace(r.RejectReason))
+                                        {
+                                            <span class="lr-reject-note">
+                                                <i class="bi bi-chat-left-text" style="margin-right:5px;color:#dc2626;"></i>@r.RejectReason
+                                            </span>
+                                        }
+                                        else if (r.Status == "Approved")
+                                        {
+                                            <span class="lr-approved-note">
+                                                <i class="bi bi-check-circle" style="margin-right:5px;color:#16a34a;"></i>Approved by @(r.ReviewedBy ?? "HR")
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="lr-td--muted">—</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+    else if (activeTab == "leave")
+    {
+        @* ════════════════════════════════════════════════════════
+           LEAVE BALANCE TAB — Zoho-style detailed leave overview
+           ════════════════════════════════════════════════════════ *@
+
+        <div class="lb-page">
+            @* ── TOP BAR: title + Apply Leave button ── *@
+            <div class="lb-top-bar">
+                <div class="lb-top-bar-left">
+                    <span class="lb-page-title">Leave Balance</span>
+                    <span class="lb-page-sub">@DateTime.Today.Year · @(policies.Count) leave @(policies.Count == 1 ? "type" : "types")</span>
+                </div>
+                <button class="lb-apply-btn" @onclick="OpenLrForm">
+                    <i class="bi bi-plus-circle-fill"></i>
+                    Apply Leave
+                </button>
+            </div>
+
+            @if (isLoadingLeaveRequests)
+            {
+                <div class="to-loading" style="padding:60px 0;"><div class="to-spinner"></div></div>
+            }
+            else if (!policies.Any())
+            {
+                <div class="lb-empty-state">
+                    <i class="bi bi-calendar2-x lb-empty-icon"></i>
+                    <p class="lb-empty-title">No leave policies configured</p>
+                    <p class="lb-empty-sub">Contact your HR administrator to set up leave types for your account.</p>
+                </div>
+            }
+            else
+            {
+                @* ── SECTION 1: Policy Cards Grid ── *@
+                <div class="lb-cards-grid">
+                    @for (int ci = 0; ci < policies.Count; ci++)
+                    {
+                        var pol      = policies[ci];
+                        var color    = LbColor(ci);
+                        var used     = LbUsed(pol.Id);
+                        var total    = pol.AnnualEntitlement;
+                        var remain   = Math.Max(0, total - used);
+                        var pct      = total > 0 ? Math.Min(100, (used / total) * 100) : 0;
+                        var carryFwd = pol.AllowCarryForward
+                            ? (pol.CarryForwardLimit.HasValue ? $"Up to {pol.CarryForwardLimit} days" : "Unlimited")
+                            : "Not allowed";
+
+                        <div class="lb-card" style="--lb-card-color:@color;">
+                            <div class="lb-card-header">
+                                <div class="lb-card-icon-wrap" style="background:@(color)18;">
+                                    <i class="bi bi-calendar2-check" style="color:@color;"></i>
+                                </div>
+                                <div class="lb-card-title-wrap">
+                                    <span class="lb-card-name">@pol.Name</span>
+                                    <span class="lb-card-type lb-card-type--@(pol.CompensationType.ToLower())">@pol.CompensationType</span>
+                                </div>
+                            </div>
+                            <div class="lb-card-stats">
+                                <div class="lb-card-stat">
+                                    <span class="lb-stat-val">@total</span>
+                                    <span class="lb-stat-lbl">Total</span>
+                                </div>
+                                <div class="lb-card-stat-divider"></div>
+                                <div class="lb-card-stat">
+                                    <span class="lb-stat-val lb-stat-used">@used</span>
+                                    <span class="lb-stat-lbl">Used</span>
+                                </div>
+                                <div class="lb-card-stat-divider"></div>
+                                <div class="lb-card-stat">
+                                    <span class="lb-stat-val lb-stat-remain" style="color:@color;">@remain</span>
+                                    <span class="lb-stat-lbl">Remaining</span>
+                                </div>
+                            </div>
+                            <div class="lb-card-progress-wrap">
+                                <div class="lb-card-progress-bar">
+                                    <div class="lb-card-progress-fill" style="width:@pct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%;background:@color;"></div>
+                                </div>
+                                <span class="lb-card-pct">@pct.ToString("F0")% used</span>
+                            </div>
+                            @if (pol.AllowCarryForward)
+                            {
+                                <div class="lb-card-carry">
+                                    <i class="bi bi-arrow-repeat" style="color:@color;font-size:.72rem;"></i>
+                                    <span>Carry forward: @carryFwd</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                @* ── SECTION 2+3: Table + Donut side by side ── *@
+                <div class="lb-mid-row">
+
+                    @* ── Left: Detailed Table ── *@
+                    <div class="lb-table-card">
+                        <div class="lb-section-header">
+                            <span class="lb-section-title">Leave Summary</span>
+                            <span class="lb-section-badge">@DateTime.Today.Year</span>
+                        </div>
+                        <div class="lb-table-wrap">
+                            <table class="lb-table">
+                                <thead>
+                                    <tr>
+                                        <th class="lb-th">Leave Type</th>
+                                        <th class="lb-th lb-th--num">Total</th>
+                                        <th class="lb-th lb-th--num">Used</th>
+                                        <th class="lb-th lb-th--num">Remaining</th>
+                                        <th class="lb-th lb-th--num">Carry Fwd</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (int ti = 0; ti < policies.Count; ti++)
+                                    {
+                                        var pol    = policies[ti];
+                                        var color  = LbColor(ti);
+                                        var used   = LbUsed(pol.Id);
+                                        var total  = pol.AnnualEntitlement;
+                                        var remain = Math.Max(0, total - used);
+                                        var cfVal  = pol.AllowCarryForward
+                                            ? (pol.CarryForwardLimit.HasValue ? pol.CarryForwardLimit.Value.ToString() : "∞")
+                                            : "—";
+
+                                        <tr class="lb-tr">
+                                            <td class="lb-td">
+                                                <div class="lb-td-type">
+                                                    <span class="lb-type-dot" style="background:@color;"></span>
+                                                    <span class="lb-type-name">@pol.Name</span>
+                                                    @if (pol.CompensationType == "Unpaid")
+                                                    {
+                                                        <span class="lb-unpaid-tag">Unpaid</span>
+                                                    }
+                                                </div>
+                                            </td>
+                                            <td class="lb-td lb-td--num">@total</td>
+                                            <td class="lb-td lb-td--num">
+                                                <span class="@(used > 0 ? "lb-used-val" : "")">@used</span>
+                                            </td>
+                                            <td class="lb-td lb-td--num">
+                                                <span class="lb-remain-pill" style="background:@(color)18;color:@color;">@remain</span>
+                                            </td>
+                                            <td class="lb-td lb-td--num lb-td--cf">@cfVal</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr class="lb-tfoot-row">
+                                        <td class="lb-td lb-tfoot-label">Total</td>
+                                        <td class="lb-td lb-td--num lb-tfoot-val">@LbTotalEntitlement</td>
+                                        <td class="lb-td lb-td--num lb-tfoot-val">@LbTotalUsed</td>
+                                        <td class="lb-td lb-td--num lb-tfoot-val">@LbTotalRemaining</td>
+                                        <td class="lb-td lb-td--num lb-tfoot-val">—</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+
+                    @* ── Right: Donut Chart ── *@
+                    <div class="lb-donut-card">
+                        <div class="lb-section-header">
+                            <span class="lb-section-title">Overall Usage</span>
+                        </div>
+                        <div class="lb-donut-wrap">
+                            <svg class="lb-donut-svg" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+                                <circle cx="90" cy="90" r="70" fill="none" stroke="#f3f4f6" stroke-width="18" />
+                                @if (LbRemainPct > 0)
+                                {
+                                    <circle cx="90" cy="90" r="70" fill="none" stroke="#10b981"
+                                            stroke-width="18"
+                                            stroke-dasharray="@LbRemainDashStr @LbCircStr"
+                                            stroke-dashoffset="@LbRemainOffsetStr"
+                                            stroke-linecap="round"
+                                            transform="rotate(-90 90 90)" />
+                                }
+                                @if (LbUsedPct > 0)
+                                {
+                                    <circle cx="90" cy="90" r="70" fill="none" stroke="#f07820"
+                                            stroke-width="18"
+                                            stroke-dasharray="@LbUsedDashStr @LbCircStr"
+                                            stroke-dashoffset="0"
+                                            stroke-linecap="round"
+                                            transform="rotate(-90 90 90)" />
+                                }
+                                <text x="90" y="84" text-anchor="middle" font-size="26" font-weight="700" fill="#111827">@LbTotalRemaining.ToString("F0")</text>
+                                <text x="90" y="102" text-anchor="middle" font-size="11" fill="#6b7280">days left</text>
+                            </svg>
+
+                            <div class="lb-donut-legend">
+                                <div class="lb-legend-item">
+                                    <span class="lb-legend-dot" style="background:#10b981;"></span>
+                                    <span class="lb-legend-label">Remaining</span>
+                                    <span class="lb-legend-val">@LbTotalRemaining days (@LbRemainPct.ToString("F0")%)</span>
+                                </div>
+                                <div class="lb-legend-item">
+                                    <span class="lb-legend-dot" style="background:#f07820;"></span>
+                                    <span class="lb-legend-label">Used</span>
+                                    <span class="lb-legend-val">@LbTotalUsed days (@LbUsedPct.ToString("F0")%)</span>
+                                </div>
+                                <div class="lb-legend-item lb-legend-item--total">
+                                    <span class="lb-legend-dot" style="background:#e5e7eb;"></span>
+                                    <span class="lb-legend-label">Total Entitlement</span>
+                                    <span class="lb-legend-val">@LbTotalEntitlement days</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        @* Per-policy mini bars *@
+                        <div class="lb-donut-policy-bars">
+                            @for (int pi = 0; pi < Math.Min(policies.Count, 5); pi++)
+                            {
+                                var pol   = policies[pi];
+                                var color = LbColor(pi);
+                                var used  = LbUsed(pol.Id);
+                                var tot   = pol.AnnualEntitlement;
+                                var p2    = tot > 0 ? Math.Min(100, (used / tot) * 100) : 0;
+
+                                <div class="lb-mini-bar-row">
+                                    <span class="lb-mini-bar-name">@pol.Name</span>
+                                    <div class="lb-mini-bar-track">
+                                        <div class="lb-mini-bar-fill" style="width:@p2.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%;background:@color;"></div>
+                                    </div>
+                                    <span class="lb-mini-bar-num">@used/@tot</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                @* ── SECTION 4: Collapsible Leave Policy Details ── *@
+                <div class="lb-policy-section">
+                    <button class="lb-policy-toggle" @onclick="LbTogglePolicy">
+                        <span class="lb-policy-toggle-left">
+                            <i class="bi bi-shield-check lb-policy-toggle-icon"></i>
+                            <span>Leave Policy Details</span>
+                            <span class="lb-policy-count">@policies.Count @(policies.Count == 1 ? "policy" : "policies")</span>
+                        </span>
+                        <i class="bi @(lbPolicyOpen ? "bi-chevron-up" : "bi-chevron-down") lb-policy-caret"></i>
+                    </button>
+
+                    @if (lbPolicyOpen)
+                    {
+                        <div class="lb-policy-body">
+                            @for (int pi2 = 0; pi2 < policies.Count; pi2++)
+                            {
+                                var pol   = policies[pi2];
+                                var color = LbColor(pi2);
+
+                                <div class="lb-policy-item">
+                                    <div class="lb-policy-item-header">
+                                        <div class="lb-policy-dot" style="background:@color;"></div>
+                                        <span class="lb-policy-item-name">@pol.Name</span>
+                                        <span class="lb-policy-comp lb-policy-comp--@(pol.CompensationType.ToLower())">@pol.CompensationType</span>
+                                    </div>
+                                    <div class="lb-policy-rules">
+                                        <div class="lb-rule">
+                                            <i class="bi bi-calendar3 lb-rule-icon"></i>
+                                            <span class="lb-rule-lbl">Annual Limit</span>
+                                            <span class="lb-rule-val">@pol.AnnualEntitlement @pol.Unit.ToLower()</span>
+                                        </div>
+                                        <div class="lb-rule">
+                                            <i class="bi bi-graph-up lb-rule-icon"></i>
+                                            <span class="lb-rule-lbl">Accrual</span>
+                                            <span class="lb-rule-val">@(pol.AccrualType == "None" ? "Instant (full entitlement)" : pol.AccrualType)</span>
+                                        </div>
+                                        <div class="lb-rule">
+                                            <i class="bi bi-arrow-repeat lb-rule-icon"></i>
+                                            <span class="lb-rule-lbl">Carry Forward</span>
+                                            <span class="lb-rule-val">
+                                                @if (!pol.AllowCarryForward)
+                                                {
+                                                    <span class="lb-rule-no">Not allowed</span>
+                                                }
+                                                else if (pol.CarryForwardLimit.HasValue)
+                                                {
+                                                    @($"Up to {pol.CarryForwardLimit} days")
+                                                    @if (pol.CarryForwardExpiryMonths.HasValue)
+                                                    {
+                                                        <span class="lb-rule-exp"> · Expires in @pol.CarryForwardExpiryMonths months</span>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    @("Unlimited")
+                                                    @if (pol.CarryForwardExpiryMonths.HasValue)
+                                                    {
+                                                        <span class="lb-rule-exp"> · Expires in @pol.CarryForwardExpiryMonths months</span>
+                                                    }
+                                                }
+                                            </span>
+                                        </div>
+                                        <div class="lb-rule">
+                                            <i class="bi bi-flag lb-rule-icon"></i>
+                                            <span class="lb-rule-lbl">Public Holidays</span>
+                                            <span class="lb-rule-val">@(pol.ExcludePublicHolidays ? "Excluded from leave count" : "Counted as leave days")</span>
+                                        </div>
+                                        <div class="lb-rule">
+                                            <i class="bi bi-moon lb-rule-icon"></i>
+                                            <span class="lb-rule-lbl">Non-working Days</span>
+                                            <span class="lb-rule-val">@(pol.ExcludeNonWorkingDays ? "Excluded from leave count" : "Counted as leave days")</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+</div>
+
+@* ── Add / Edit drawer ───────────────────────────────────────────── *@
+@if (addDrawerOpen)
+{
+    <div class="to-overlay" @onclick="CloseAddTimeOff"></div>
+    <div class="ato-panel" @onclick:stopPropagation>
+        <div class="ato-head">
+            <span class="ato-title">@(editingId.HasValue ? "Edit Time Off" : "Add Time Off")</span>
+            <button class="ato-close" @onclick="CloseAddTimeOff"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="ato-body">
+            <!-- Member -->
+            <div class="ato-field" style="position:relative;">
+                <label class="ato-label">Member</label>
+                @if (editingId.HasValue)
+                {
+                    @* Read-only in edit mode *@
+                    <div class="ato-select-box ato-select-box--readonly">
+                        <div class="ato-avatar" style="width:26px;height:26px;font-size:.75rem;">@(selectedMember?.FullName?.Length > 0 ? selectedMember.FullName[0].ToString().ToUpper() : "?")</div>
+                        <span class="ato-selected-val">@(selectedMember?.FullName ?? "")</span>
+                        <i class="bi bi-chevron-down ato-caret" style="opacity:.3;"></i>
+                    </div>
+                }
+                else
+                {
+                    <div class="ato-select-box @(memberOpen ? "ato-select-box--open" : "") @(addMemberErr ? "ato-select-box--err" : "")"
+                         @onclick="() => { memberOpen = !memberOpen; policyOpen = false; calOpen = null; }">
+                        <i class="bi bi-person ato-field-icon"></i>
+                        <span class="@(selectedMember != null ? "ato-selected-val" : "ato-placeholder")">@(selectedMember?.FullName ?? "Select a member")</span>
+                        <i class="bi @(memberOpen ? "bi-chevron-up" : "bi-chevron-down") ato-caret"></i>
+                    </div>
+                    @if (addMemberErr) { <small class="ato-err-msg">Please select a member.</small> }
+                    @if (memberOpen)
+                    {
+                        <div class="ato-dropdown" @onclick:stopPropagation>
+                            <div class="ato-dropdown-search">
+                                <i class="bi bi-search ato-dd-search-icon"></i>
+                                <input type="text" class="ato-dd-search-input" placeholder="Search members..." @bind="memberSearch" @bind:event="oninput" />
+                            </div>
+                            @{ var filtMembers = string.IsNullOrWhiteSpace(memberSearch) ? members : members.Where(m => m.FullName.Contains(memberSearch, StringComparison.OrdinalIgnoreCase)).ToList(); }
+                            @if (!filtMembers.Any()) { <div class="ato-dd-empty">No members found</div> }
+                            else
+                            {
+                                @foreach (var m in filtMembers)
+                                {
+                                    var cap = m;
+                                    <div class="ato-dd-row" @onclick="() => SelectMember(cap)">
+                                        <div class="ato-avatar">@(cap.FullName.Length > 0 ? cap.FullName[0].ToString().ToUpper() : "?")</div>
+                                        <span>@cap.FullName</span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <div style="position:fixed;inset:0;z-index:498;" @onclick="() => { memberOpen=false; memberSearch=string.Empty; }"></div>
+                    }
+                }
+            </div>
+
+            <!-- Policy -->
+            <div class="ato-field" style="position:relative; margin-top:12px;">
+                @if (editingId.HasValue)
+                {
+                    @* Read-only in edit mode *@
+                    <div class="ato-select-box ato-select-box--readonly">
+                        <i class="bi bi-briefcase ato-field-icon" style="opacity:.5;"></i>
+                        <span class="ato-selected-val">@(selectedPolicy?.Name ?? "")</span>
+                        <i class="bi bi-chevron-down ato-caret" style="opacity:.3;"></i>
+                    </div>
+                }
+                else
+                {
+                    <div class="ato-select-box @(policyOpen ? "ato-select-box--open" : "") @(addPolicyErr ? "ato-select-box--err" : "")"
+                         @onclick="() => { policyOpen = !policyOpen; memberOpen = false; calOpen = null; }">
+                        <i class="bi bi-briefcase ato-field-icon"></i>
+                        <span class="@(selectedPolicy != null ? "ato-selected-val" : "ato-placeholder")">@(selectedPolicy?.Name ?? "Select a policy")</span>
+                        <i class="bi @(policyOpen ? "bi-chevron-up" : "bi-chevron-down") ato-caret"></i>
+                    </div>
+                    @if (addPolicyErr) { <small class="ato-err-msg">What type of time off are they taking?</small> }
+                    @if (policyOpen)
+                    {
+                        <div class="ato-dropdown" @onclick:stopPropagation>
+                            @if (!policies.Any()) { <div class="ato-dd-empty">No policies available.</div> }
+                            else
+                            {
+                                @foreach (var p in policies)
+                                {
+                                    var cap = p;
+                                    <div class="ato-dd-row" @onclick="() => SelectPolicy(cap)">@cap.Name</div>
+                                }
+                            }
+                        </div>
+                        <div style="position:fixed;inset:0;z-index:498;" @onclick="() => policyOpen=false"></div>
+                    }
+                }
+            </div>
+
+            <!-- Days -->
+            <div class="ato-field" style="margin-top:20px;">
+                <div class="ato-days-header">
+                    <i class="bi bi-calendar3 ato-days-icon"></i>
+                    <span class="ato-days-label">Days</span>
+                </div>
+                <div class="ato-date-row">
+                    <div style="flex:1;position:relative;">
+                        <div class="ato-date-box @(addStartErr ? "ato-date-box--err" : "") @(calOpen == "start" ? "ato-date-box--open" : "")" @onclick="ToggleStartCal">
+                            <span class="@(startDate.HasValue ? "ato-selected-val" : "ato-placeholder")">@(startDate.HasValue ? startDate.Value.ToString("MMM dd, yyyy") : "Start date")</span>
+                            <i class="bi bi-calendar3 ato-date-icon"></i>
+                        </div>
+                        @if (addStartErr) { <small class="ato-err-msg">Start date is required.</small> }
+                        @if (calOpen == "start")
+                        {
+                            <div class="ato-calendar" @onclick:stopPropagation>
+                                <div class="ato-cal-header">
+                                    <button class="ato-cal-nav" @onclick="CalPrevMonth">&#8249;</button>
+                                    <span class="ato-cal-month">@calDate.ToString("MMMM")</span>
+                                    <button class="ato-cal-nav" @onclick="CalNextMonth">&#8250;</button>
+                                    <button class="ato-cal-nav" @onclick="CalPrevYear">&#8249;</button>
+                                    <span class="ato-cal-year">@calDate.Year</span>
+                                    <button class="ato-cal-nav" @onclick="CalNextYear">&#8250;</button>
+                                </div>
+                                <div class="ato-cal-grid">
+                                    @foreach (var dn in new[]{"Mon","Tue","Wed","Thu","Fri","Sat","Sun"}) { <div class="ato-cal-dayname">@dn</div> }
+                                    @for (int blank = 0; blank < CalStartBlank(); blank++) { <div></div> }
+                                    @for (int d = 1; d <= DateTime.DaysInMonth(calDate.Year, calDate.Month); d++)
+                                    {
+                                        var day = d;
+                                        var td = new DateTime(calDate.Year, calDate.Month, day);
+                                        var isSel = startDate.HasValue && td.Date == startDate.Value.Date;
+                                        var inRange = startDate.HasValue && endDate.HasValue && td > startDate.Value && td < endDate.Value;
+                                        <div class="ato-cal-day @(td.Date==DateTime.Today?"ato-cal-day--today":"") @(isSel?"ato-cal-day--selected":"") @(inRange?"ato-cal-day--range":"")" @onclick="() => PickStartDate(day)">@day</div>
+                                    }
+                                </div>
+                            </div>
+                            <div style="position:fixed;inset:0;z-index:498;" @onclick="() => calOpen=null"></div>
+                        }
+                    </div>
+                    <div style="flex:1;position:relative;">
+                        <div class="ato-date-box @(calOpen == "end" ? "ato-date-box--open" : "")" @onclick="ToggleEndCal">
+                            <span class="@(endDate.HasValue ? "ato-selected-val" : "ato-placeholder")">@(endDate.HasValue ? endDate.Value.ToString("MMM dd, yyyy") : "End date (optional)")</span>
+                            <i class="bi bi-calendar3 ato-date-icon"></i>
+                        </div>
+                        @if (calOpen == "end")
+                        {
+                            <div class="ato-calendar" @onclick:stopPropagation>
+                                <div class="ato-cal-header">
+                                    <button class="ato-cal-nav" @onclick="CalPrevMonth">&#8249;</button>
+                                    <span class="ato-cal-month">@calDate.ToString("MMMM")</span>
+                                    <button class="ato-cal-nav" @onclick="CalNextMonth">&#8250;</button>
+                                    <button class="ato-cal-nav" @onclick="CalPrevYear">&#8249;</button>
+                                    <span class="ato-cal-year">@calDate.Year</span>
+                                    <button class="ato-cal-nav" @onclick="CalNextYear">&#8250;</button>
+                                </div>
+                                <div class="ato-cal-grid">
+                                    @foreach (var dn in new[]{"Mon","Tue","Wed","Thu","Fri","Sat","Sun"}) { <div class="ato-cal-dayname">@dn</div> }
+                                    @for (int blank = 0; blank < CalStartBlank(); blank++) { <div></div> }
+                                    @for (int d = 1; d <= DateTime.DaysInMonth(calDate.Year, calDate.Month); d++)
+                                    {
+                                        var day = d;
+                                        var td = new DateTime(calDate.Year, calDate.Month, day);
+                                        var isSel = endDate.HasValue && td.Date == endDate.Value.Date;
+                                        var inRange = startDate.HasValue && endDate.HasValue && td > startDate.Value && td < endDate.Value;
+                                        <div class="ato-cal-day @(td.Date==DateTime.Today?"ato-cal-day--today":"") @(isSel?"ato-cal-day--selected":"") @(inRange?"ato-cal-day--range":"")" @onclick="() => PickEndDate(day)">@day</div>
+                                    }
+                                </div>
+                            </div>
+                            <div style="position:fixed;inset:0;z-index:498;" @onclick="() => calOpen=null"></div>
+                        }
+                    </div>
+                </div>
+                <div class="ato-halfday-row">
+                    <label class="ato-checkbox-label"><input type="checkbox" @bind="halfDay" /><span>Half day</span></label>
+                    @if (halfDay)
+                    {
+                        <div style="position:relative;flex:1;min-width:200px;">
+                            <div class="ato-halfday-select @(halfDayOpen ? "ato-select-box--open" : "")" @onclick="() => halfDayOpen = !halfDayOpen" @onclick:stopPropagation>
+                                <span class="@(halfDayOption != null ? "ato-selected-val" : "ato-placeholder")">@(halfDayOption ?? "Select time range (optional)")</span>
+                                <i class="bi @(halfDayOpen ? "bi-chevron-up" : "bi-chevron-down") ato-caret"></i>
+                            </div>
+                            @if (halfDayOpen)
+                            {
+                                <div class="ato-dropdown" @onclick:stopPropagation>
+                                    @foreach (var opt in new[]{"Beginning of the workday","Middle of the workday","End of the workday"})
+                                    { var o = opt; <div class="ato-dd-row" @onclick="() => { halfDayOption = o; halfDayOpen = false; }">@o</div> }
+                                </div>
+                                <div style="position:fixed;inset:0;z-index:498;" @onclick="() => halfDayOpen=false"></div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Reason -->
+            <div class="ato-field" style="margin-top:16px;">
+                <div class="ato-reason-wrap">
+                    <i class="bi bi-justify ato-reason-icon"></i>
+                    <textarea class="ato-reason-input" placeholder="Add a reason or note" rows="4" @bind="addReason"></textarea>
+                </div>
+            </div>
+        </div>
+        <div class="ato-footer">
+            @if (!string.IsNullOrEmpty(saveError)) { <span class="ato-save-error">@saveError</span> }
+            <button class="ato-btn-cancel" @onclick="CloseAddTimeOff">Cancel</button>
+            <button class="ato-btn-save" @onclick="SaveTimeOff" disabled="@addSaving">
+                @if (addSaving) { <span class="ato-mini-spin"></span> } else { <span>Save</span> }
+            </button>
+        </div>
+    </div>
+}
+
+@* ── Confirm: Approve ───────────────────────────────────────────── *@
+@if (confirmApproveId.HasValue)
+{
+    <div class="to-modal-overlay" @onclick="() => confirmApproveId = null"></div>
+    <div class="to-modal" @onclick:stopPropagation>
+        <div class="to-modal-head">
+            <span class="to-modal-title">Approve Time Off Request</span>
+            <button class="ato-close" @onclick="() => confirmApproveId = null"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="to-modal-body">
+            <p>Are you sure you want to approve @(confirmBulkCount > 1 ? $"{confirmBulkCount} time off requests" : "1 time off request")?</p>
+        </div>
+        <div class="to-modal-footer">
+            <button class="to-modal-btn-cancel" @onclick="() => confirmApproveId = null">Cancel</button>
+            <button class="to-modal-btn-confirm to-modal-btn-green" @onclick="ExecuteApprove">Confirm</button>
+        </div>
+    </div>
+}
+
+@* ── Confirm: Reject ────────────────────────────────────────────── *@
+@if (confirmRejectId.HasValue)
+{
+    <div class="to-modal-overlay" @onclick="() => confirmRejectId = null"></div>
+    <div class="to-modal" @onclick:stopPropagation>
+        <div class="to-modal-head">
+            <span class="to-modal-title">Reject Time Off Request</span>
+            <button class="ato-close" @onclick="() => confirmRejectId = null"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="to-modal-body">
+            <p>Are you sure you want to reject @rejectTargetName's request?</p>
+        </div>
+        <div class="to-modal-footer">
+            <button class="to-modal-btn-cancel" @onclick="() => confirmRejectId = null">Cancel</button>
+            <button class="to-modal-btn-confirm to-modal-btn-red" @onclick="ExecuteReject">Confirm</button>
+        </div>
+    </div>
+}
+
+@* ── Confirm: Cancel request (pending row) ───────────────────────── *@
+@if (confirmDeleteId.HasValue)
+{
+    <div class="to-modal-overlay" @onclick="() => confirmDeleteId = null"></div>
+    <div class="to-modal" @onclick:stopPropagation>
+        <div class="to-modal-head">
+            <span class="to-modal-title">Cancel Time Off Request</span>
+            <button class="ato-close" @onclick="() => confirmDeleteId = null"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="to-modal-body">
+            <p>Are you sure you want to cancel this time off request?</p>
+        </div>
+        <div class="to-modal-footer">
+            <button class="to-modal-btn-cancel" @onclick="() => confirmDeleteId = null">No, thanks</button>
+            <button class="to-modal-btn-confirm to-modal-btn-red" @onclick="ExecuteDelete">Confirm</button>
+        </div>
+    </div>
+}
+
+@* ── Confirm: Cancel (approved/rejected → cancelled) ───────────── *@
+@if (confirmCancelId.HasValue)
+{
+    <div class="to-modal-overlay" @onclick="() => confirmCancelId = null"></div>
+    <div class="to-modal" @onclick:stopPropagation>
+        <div class="to-modal-head">
+            <span class="to-modal-title">Cancel Time Off Request</span>
+            <button class="ato-close" @onclick="() => confirmCancelId = null"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="to-modal-body">
+            <p>Are you sure you want to cancel this time off request?</p>
+        </div>
+        <div class="to-modal-footer">
+            <button class="to-modal-btn-cancel" @onclick="() => confirmCancelId = null">No, thanks</button>
+            <button class="to-modal-btn-confirm to-modal-btn-red" @onclick="ExecuteCancel">Confirm</button>
+        </div>
+    </div>
+}
+
+@* ── Export panel ───────────────────────────────────────────────── *@
+@if (exportOpen)
+{
+    <div class="to-overlay" @onclick="() => exportOpen = false"></div>
+    <div class="ato-panel" style="width:420px;" @onclick:stopPropagation>
+        <div class="ato-head">
+            <span class="ato-title">Export Time Off Report</span>
+            <button class="ato-close" @onclick="() => exportOpen=false"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="ato-body">
+            <div class="ato-field">
+                <label class="ato-label">File Format</label>
+                <div class="tp-toggle-row"><button class="tp-toggle-btn tp-toggle-btn--sel">XLS</button></div>
+            </div>
+            <div class="ato-field" style="margin-top:16px;">
+                <label class="ato-label">Options</label>
+                <label class="ato-checkbox-label"><input type="checkbox" @bind="exportPerMember" /> Time off requests per member in individual tabs</label>
+            </div>
+            <div class="ato-field" style="margin-top:16px;">
+                <label class="ato-label">Date Range</label>
+                @foreach (var rv in new[]{"Day","Week","Month","Custom"})
+                {
+                    var rvv = rv;
+                    <label class="ato-checkbox-label" style="margin-top:8px;">
+                        <input type="radio" name="exportRange" value="@rvv.ToLower()" checked="@(exportRange == rvv.ToLower())" @onchange="() => exportRange = rvv.ToLower()" /> @rvv
+                    </label>
+                }
+            </div>
+        </div>
+        <div class="ato-footer">
+            <button class="ato-btn-cancel" @onclick="() => exportOpen=false">Cancel</button>
+            <button class="ato-btn-save">Export</button>
+        </div>
+    </div>
+}
+
+@code {
+    private string activeTab  = "overview";
+    private string searchText = "";
+
+    // ── User Overview Dashboard state ─────────────────────────────
+    private DateTime lovCalMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+
+    // ── Leave Balance Tab state ────────────────────────────────────
+    private bool lbPolicyOpen = false;
+
+    private static readonly string[] _lbColors = new[]
+        { "#f07820", "#6366f1", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6", "#ec4899" };
+
+    private string LbColor(int index) => _lbColors[index % _lbColors.Length];
+
+    private void LbTogglePolicy() => lbPolicyOpen = !lbPolicyOpen;
+
+    /// <summary>Days used per policy, computed from approved leave requests.</summary>
+    private double LbUsed(int policyId)
+    {
+        double total = 0;
+        foreach (var r in myLeaveRequests)
+        {
+            if (r.Status != "Approved") continue;
+            bool match = (r.LeaveTypeId.HasValue && r.LeaveTypeId.Value == policyId)
+                      || (!r.LeaveTypeId.HasValue && policies.Any(p =>
+                              p.Id == policyId &&
+                              string.Equals(p.Name, r.LeaveTypeName, StringComparison.OrdinalIgnoreCase)));
+            if (!match) continue;
+            var end = r.EndDate ?? r.StartDate;
+            total += (end.Date - r.StartDate.Date).Days + 1;
+        }
+        return total;
+    }
+
+    private double LbTotalEntitlement => policies.Sum(p => p.AnnualEntitlement);
+    private double LbTotalUsed        => policies.Sum(p => LbUsed(p.Id));
+    private double LbTotalRemaining   => Math.Max(0, LbTotalEntitlement - LbTotalUsed);
+
+    // ── Donut chart SVG values ─────────────────────────────────────
+    private double LbUsedPct    => LbTotalEntitlement > 0 ? Math.Min(100, (LbTotalUsed / LbTotalEntitlement) * 100) : 0;
+    private double LbRemainPct  => 100 - LbUsedPct;
+    private double LbCirc       => 2 * Math.PI * 70;
+    private string LbCircStr    => LbCirc.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+    private string LbUsedDashStr   => ((LbUsedPct / 100) * LbCirc).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+    private string LbRemainDashStr => ((LbRemainPct / 100) * LbCirc).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+    private string LbRemainOffsetStr => (-(LbUsedPct / 100) * LbCirc).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    // ── Role helpers ───────────────────────────────────────────────
+    /// <summary>True for roles that can submit leave requests (Employee, Team Lead, HR, User).</summary>
+    private bool IsUserRole =>
+        string.Equals(SessionService.ActiveOrgRole, "User",      StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(SessionService.ActiveOrgRole, "Employee",  StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(SessionService.ActiveOrgRole, "Team Lead", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(SessionService.ActiveOrgRole, "HR",        StringComparison.OrdinalIgnoreCase);
+
+    // ── My Leave Requests (User role — wired to LeaveRequestService) ─
+    private List<LeaveRequestVm> myLeaveRequests       = new();
+    private bool                 isLoadingLeaveRequests = false;
+
+    private async Task LoadMyLeaveRequestsAsync()
+    {
+        isLoadingLeaveRequests = true;
+        StateHasChanged();
+        myLeaveRequests        = await LeaveRequestService.GetMyRequestsAsync();
+        isLoadingLeaveRequests = false;
+        StateHasChanged();
+    }
+
+    // ── Inline Leave Request Form (User role) ──────────────────────
+    private bool      lrFormOpen      = false;
+    private DateTime? lrStartDate     = null;
+    private DateTime? lrEndDate       = null;
+    private bool      lrStartCalOpen  = false;
+    private bool      lrEndCalOpen    = false;
+    private bool      lrStartErr      = false;
+    private DateTime  lrCalDate       = DateTime.Today;
+    private string    lrReason        = "";
+    private bool      lrSaving        = false;
+    private string    lrSaveError     = "";
+
+    // Type of Leave dropdown
+    private TimeOffPolicyVm? lrSelectedPolicy  = null;
+    private bool             lrPolicyOpen      = false;
+    private bool             lrPolicyErr       = false;
+    private string           lrPolicySearch    = "";
+
+    private int LrCalBlank()
+    {
+        var first = new DateTime(lrCalDate.Year, lrCalDate.Month, 1).DayOfWeek;
+        return first == DayOfWeek.Sunday ? 6 : (int)first - 1;
+    }
+
+    private void OpenLrForm()
+    {
+        lrFormOpen = true; lrStartDate = null; lrEndDate = null;
+        lrStartCalOpen = false; lrEndCalOpen = false; lrStartErr = false;
+        lrCalDate = DateTime.Today; lrReason = ""; lrSaving = false; lrSaveError = "";
+        lrSelectedPolicy = null; lrPolicyOpen = false; lrPolicyErr = false; lrPolicySearch = "";
+        if (IsUserRole) activeTab = "leaveRequests";
+    }
+
+    private void CloseLrForm()
+    {
+        lrFormOpen = false; lrStartCalOpen = false; lrEndCalOpen = false; lrPolicyOpen = false;
+    }
+
+    /// <summary>
+    /// Submits a leave request via LeaveRequestService → POST api/leave-requests.
+    /// LeaveType (policy) is required.
+    /// </summary>
+    private async Task SubmitLeaveRequest()
+    {
+        lrStartErr  = !lrStartDate.HasValue;
+        lrPolicyErr = lrSelectedPolicy == null;
+        if (lrStartErr || lrPolicyErr) return;
+
+        lrSaving = true; lrSaveError = ""; StateHasChanged();
+
+        var (ok, error) = await LeaveRequestService.SubmitAsync(
+            startDate:     lrStartDate!.Value.ToString("yyyy-MM-dd"),
+            endDate:       lrEndDate?.ToString("yyyy-MM-dd") ?? lrStartDate!.Value.ToString("yyyy-MM-dd"),
+            reason:        string.IsNullOrWhiteSpace(lrReason) ? null : lrReason.Trim(),
+            leaveTypeId:   lrSelectedPolicy!.Id,
+            leaveTypeName: lrSelectedPolicy!.Name
+        );
+
+        if (ok)
+        {
+            CloseLrForm();
+            await LoadMyLeaveRequestsAsync();
+        }
+        else
+        {
+            lrSaveError = string.IsNullOrWhiteSpace(error)
+                ? "An error occurred while submitting." : error;
+        }
+
+        lrSaving = false;
+    }
+
+    // ── Filter date range — default to current month ──────────────
+    private DateTime filterStart   = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime filterEnd     = new DateTime(DateTime.Today.Year, DateTime.Today.Month,
+                                         DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
+    private DateTime filterCalDate = DateTime.Today;
+    private bool     datePickerOpen = false;
+    private bool     pickingStart   = true;
+
+    private string selectedPreset = "This month";
+    private bool   presetOpen     = false;
+
+    private void ToggleDatePicker() => datePickerOpen = !datePickerOpen;
+
+    private void ApplyPreset(string preset)
+    {
+        selectedPreset = preset;
+        presetOpen     = false;
+        var today      = DateTime.Today;
+        switch (preset)
+        {
+            case "Today":
+                filterStart = today; filterEnd = today; break;
+            case "Yesterday":
+                filterStart = today.AddDays(-1); filterEnd = today.AddDays(-1); break;
+            case "Last 7 days":
+                filterStart = today.AddDays(-6); filterEnd = today; break;
+            case "Last week":
+                int dow = (int)today.DayOfWeek; dow = dow == 0 ? 7 : dow;
+                filterStart = today.AddDays(-(dow - 1) - 7);
+                filterEnd   = filterStart.AddDays(6); break;
+            case "This week":
+                int dow2 = (int)today.DayOfWeek; dow2 = dow2 == 0 ? 7 : dow2;
+                filterStart = today.AddDays(-(dow2 - 1));
+                filterEnd   = filterStart.AddDays(6); break;
+            case "This month":
+                filterStart = new DateTime(today.Year, today.Month, 1);
+                filterEnd   = new DateTime(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)); break;
+            case "This year":
+                filterStart = new DateTime(today.Year, 1, 1);
+                filterEnd   = new DateTime(today.Year, 12, 31); break;
+            case "Last month":
+                var lm = today.AddMonths(-1);
+                filterStart = new DateTime(lm.Year, lm.Month, 1);
+                filterEnd   = new DateTime(lm.Year, lm.Month, DateTime.DaysInMonth(lm.Year, lm.Month)); break;
+            case "Custom":
+                datePickerOpen = true;
+                filterCalDate  = filterStart;
+                pickingStart   = true;
+                return; // don't reload yet
+        }
+        datePickerOpen = false;
+        pickingStart   = true;
+        _ = LoadRequests();
+    }
+
+    private void PickFilterDate(int day)
+    {
+        var picked = new DateTime(filterCalDate.Year, filterCalDate.Month, day);
+        if (pickingStart) { filterStart = picked; filterEnd = picked; pickingStart = false; }
+        else
+        {
+            if (picked < filterStart) { filterEnd = filterStart; filterStart = picked; }
+            else filterEnd = picked;
+            datePickerOpen = false; pickingStart = true;
+            _ = LoadRequests();
+        }
+    }
+
+    private void FilterCalPrev()     => filterCalDate = filterCalDate.AddMonths(-1);
+    private void FilterCalNext()     => filterCalDate = filterCalDate.AddMonths(1);
+    private void FilterCalPrevYear() => filterCalDate = filterCalDate.AddYears(-1);
+    private void FilterCalNextYear() => filterCalDate = filterCalDate.AddYears(1);
+
+    private int FilterCalStartBlank()
+    {
+        var first = new DateTime(filterCalDate.Year, filterCalDate.Month, 1).DayOfWeek;
+        return first == DayOfWeek.Sunday ? 6 : (int)first - 1;
+    }
+
+    // ── Data ───────────────────────────────────────────────────────
+    private List<TimeOffPolicyVm>  policies = new();
+    private List<MemberVm>         members  = new();
+    private List<TimeOffRequestVm> requests = new();
+    private bool isLoading = false;
+
+    // ── Filter dropdown state ──────────────────────────────────────
+    private bool            filterPoliciesOpen   = false;
+    private bool            filterStatusesOpen   = false;
+    private HashSet<int>    filterPolicyIds      = new();
+    private HashSet<string> filterStatuses       = new();
+    private string          filterPoliciesSearch = "";
+
+    private List<TimeOffRequestVm> filteredRequests => requests
+        .Where(r => (string.IsNullOrWhiteSpace(searchText)
+                     || r.EmployeeName.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                 && (!filterPolicyIds.Any() || filterPolicyIds.Contains(r.PolicyId))
+                 && (!filterStatuses.Any()  || filterStatuses.Contains(r.Status)))
+        .ToList();
+
+    private void CloseAllFilterDropdowns() { filterPoliciesOpen = false; filterStatusesOpen = false; }
+    private bool IsSelectableRow(TimeOffRequestVm r) => r.Status != "Cancelled" && r.Status != "Rejected";
+
+    // ── Selection ──────────────────────────────────────────────────
+    private HashSet<int> selectedIds = new();
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        var selectableIds = filteredRequests.Where(r => IsSelectableRow(r)).Select(r => r.Id).ToHashSet();
+        if ((bool?)e.Value == true) selectedIds = selectableIds;
+        else selectedIds.Clear();
+    }
+
+    private void ToggleRowSelect(int id)
+    {
+        var req = requests.FirstOrDefault(r => r.Id == id);
+        if (req != null && !IsSelectableRow(req)) return;
+        if (!selectedIds.Remove(id)) selectedIds.Add(id);
+    }
+
+    private void ClearSelection() => selectedIds.Clear();
+
+    private async Task BulkCancelRequest()
+    {
+        foreach (var id in selectedIds.ToList())
+        {
+            var req = requests.FirstOrDefault(r => r.Id == id);
+            if (req != null && (req.Status == "Pending" || req.Status == "Approved"))
+                await UpdateStatus(id, "Cancelled");
+        }
+        ClearSelection();
+    }
+
+    // ── Lifecycle ─────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        filterStart   = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        filterEnd     = new DateTime(DateTime.Today.Year, DateTime.Today.Month,
+                            DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
+        filterCalDate = DateTime.Today;
+        await LoadData();
+        if (IsUserRole)
+        {
+            activeTab = "overview"; // Show the Zoho-style dashboard on Overview tab
+            await LoadMyLeaveRequestsAsync();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        try { policies = await PolicyService.GetAllAsync(); } catch { policies = new(); }
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var res    = await client.GetAsync($"api/employees?organizationId={SessionService.ActiveOrganizationId}");
+            if (res.IsSuccessStatusCode)
+            {
+                var json = await res.Content.ReadAsStringAsync();
+                var arr  = JsonSerializer.Deserialize<JsonElement[]>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                members  = arr?.Select(e => new MemberVm {
+                    Id       = e.GetProperty("id").GetInt32(),
+                    FullName = e.GetProperty("fullName").GetString() ?? "",
+                    Email    = e.TryGetProperty("email", out var em) ? em.GetString() ?? "" : ""
+                }).ToList() ?? new();
+            }
+        }
+        catch { members = new(); }
+        await LoadRequests();
+    }
+
+    private async Task LoadRequests()
+    {
+        isLoading = true; StateHasChanged();
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var url    = $"api/time-off-requests?start={filterStart:yyyy-MM-dd}&end={filterEnd:yyyy-MM-dd}";
+            var res    = await client.GetAsync(url);
+            if (res.IsSuccessStatusCode)
+            {
+                var opts = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+                var arr  = JsonSerializer.Deserialize<JsonElement[]>(await res.Content.ReadAsStringAsync(), opts);
+                requests = arr?.Select(e => new TimeOffRequestVm
+                {
+                    Id           = e.GetProperty("id").GetInt32(),
+                    EmployeeId   = e.GetProperty("employeeId").GetInt32(),
+                    EmployeeName = e.GetProperty("employeeName").GetString() ?? "",
+                    PolicyId     = e.GetProperty("policyId").GetInt32(),
+                    PolicyName   = e.GetProperty("policyName").GetString() ?? "",
+                    StartDate    = DateTime.Parse(e.GetProperty("startDate").GetString() ?? DateTime.Today.ToString("yyyy-MM-dd")),
+                    EndDate      = e.TryGetProperty("endDate", out var ed) && ed.ValueKind != JsonValueKind.Null ? DateTime.Parse(ed.GetString()!) : null,
+                    IsHalfDay    = e.TryGetProperty("isHalfDay", out var hd) && hd.GetBoolean(),
+                    Status       = e.GetProperty("status").GetString() ?? "Pending"
+                }).ToList() ?? new();
+            }
+            else requests = new();
+        }
+        catch { requests = new(); }
+        finally { isLoading = false; StateHasChanged(); }
+    }
+
+    private void ResetFilters()
+    {
+        searchText           = "";
+        filterPolicyIds      = new();
+        filterStatuses       = new();
+        filterPoliciesSearch = "";
+        selectedPreset       = "This month";
+        CloseAllFilterDropdowns();
+        filterStart = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        filterEnd   = new DateTime(DateTime.Today.Year, DateTime.Today.Month,
+                          DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
+        _ = LoadRequests();
+    }
+
+    private string FormatDates(TimeOffRequestVm r)
+    {
+        if (!r.EndDate.HasValue || r.EndDate.Value.Date == r.StartDate.Date)
+            return r.StartDate.ToString("ddd, dd MMM");
+        return $"{r.StartDate:ddd, dd MMM} - {r.EndDate:ddd, dd MMM}";
+    }
+
+    private string FormatDuration(TimeOffRequestVm r)
+    {
+        if (r.IsHalfDay) return "0.5 day";
+        var end  = r.EndDate ?? r.StartDate;
+        var days = (end.Date - r.StartDate.Date).Days + 1;
+        return days == 1 ? "1 day" : $"{days} days";
+    }
+
+    // ── Drawer state ───────────────────────────────────────────────
+    private bool      addDrawerOpen  = false;
+    private int?      editingId      = null;
+    private bool      memberOpen     = false;
+    private string    memberSearch   = "";
+    private bool      policyOpen     = false;
+    private string?   calOpen        = null;
+    private DateTime  calDate        = DateTime.Today;
+    private MemberVm? selectedMember = null;
+    private TimeOffPolicyVm? selectedPolicy = null;
+    private DateTime? startDate      = null;
+    private DateTime? endDate        = null;
+    private bool      halfDay        = false;
+    private bool      halfDayOpen    = false;
+    private string?   halfDayOption  = null;
+    private string    addReason      = "";
+    private bool      addMemberErr   = false;
+    private bool      addPolicyErr   = false;
+    private bool      addStartErr    = false;
+    private bool      addSaving      = false;
+    private string    saveError      = "";
+
+    private void OpenAddTimeOff()
+    {
+        editingId = null; selectedMember = null; selectedPolicy = null;
+        startDate = null; endDate = null; halfDay = false; halfDayOption = null;
+        addReason = ""; memberSearch = ""; addMemberErr = false; addPolicyErr = false; addStartErr = false;
+        memberOpen = false; policyOpen = false; calOpen = null; calDate = DateTime.Today; saveError = "";
+        addDrawerOpen = true;
+    }
+
+    private void OpenEditRequest(TimeOffRequestVm r)
+    {
+        editingId      = r.Id;
+        selectedMember = members.FirstOrDefault(m => m.Id == r.EmployeeId);
+        selectedPolicy = policies.FirstOrDefault(p => p.Id == r.PolicyId);
+        startDate = r.StartDate; endDate = r.EndDate; halfDay = r.IsHalfDay;
+        halfDayOption = null; addReason = ""; memberSearch = "";
+        memberOpen = false; policyOpen = false; calOpen = null;
+        addMemberErr = false; addPolicyErr = false; addStartErr = false;
+        calDate = r.StartDate; saveError = "";
+        addDrawerOpen = true;
+    }
+
+    private void CloseAddTimeOff() { addDrawerOpen = false; memberOpen = false; policyOpen = false; calOpen = null; halfDayOpen = false; }
+    private void SelectMember(MemberVm m)        { selectedMember = m; memberOpen = false; memberSearch = ""; addMemberErr = false; }
+    private void SelectPolicy(TimeOffPolicyVm p) { selectedPolicy = p; policyOpen = false; addPolicyErr = false; }
+
+    private void PickStartDate(int day) { startDate = new DateTime(calDate.Year, calDate.Month, day); if (endDate.HasValue && startDate > endDate) endDate = null; addStartErr = false; calOpen = null; }
+    private void PickEndDate(int day)   { endDate = new DateTime(calDate.Year, calDate.Month, day); calOpen = null; }
+    private void CalPrevMonth()  => calDate = calDate.AddMonths(-1);
+    private void CalNextMonth()  => calDate = calDate.AddMonths(1);
+    private void CalPrevYear()   => calDate = calDate.AddYears(-1);
+    private void CalNextYear()   => calDate = calDate.AddYears(1);
+    private void ToggleStartCal() { calOpen = calOpen == "start" ? null : "start"; memberOpen = false; policyOpen = false; }
+    private void ToggleEndCal()   { calOpen = calOpen == "end"   ? null : "end";   memberOpen = false; policyOpen = false; }
+    private int CalStartBlank()   { var first = new DateTime(calDate.Year, calDate.Month, 1).DayOfWeek; return first == DayOfWeek.Sunday ? 6 : (int)first - 1; }
+
+    private async Task SaveTimeOff()
+    {
+        addMemberErr = selectedMember == null; addPolicyErr = selectedPolicy == null; addStartErr = !startDate.HasValue;
+        if (addMemberErr || addPolicyErr || addStartErr) return;
+        addSaving = true; saveError = "";
+        try
+        {
+            var client  = ClientFactory.CreateClient("API");
+            var payload = new {
+                employeeId  = selectedMember!.Id,
+                policyId    = selectedPolicy!.Id,
+                startDate   = startDate!.Value.ToString("yyyy-MM-dd"),
+                endDate     = endDate?.ToString("yyyy-MM-dd"),
+                isHalfDay   = halfDay,
+                halfDayPart = halfDayOption,
+                reason      = addReason
+            };
+            var res = editingId.HasValue
+                ? await client.PutAsJsonAsync($"api/time-off-requests/{editingId.Value}", payload)
+                : await client.PostAsJsonAsync("api/time-off-requests", payload);
+            if (res.IsSuccessStatusCode) { CloseAddTimeOff(); await LoadRequests(); }
+            else
+            {
+                try
+                {
+                    var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+                    saveError = doc.RootElement.TryGetProperty("message", out var msg) ? msg.GetString() ?? "Error." : "Error.";
+                }
+                catch { saveError = "An error occurred while saving."; }
+            }
+        }
+        catch { saveError = "An error occurred while saving."; }
+        addSaving = false;
+    }
+
+    // ── Confirm modals ─────────────────────────────────────────────
+    private int?   confirmApproveId = null;
+    private int?   confirmRejectId  = null;
+    private int?   confirmDeleteId  = null;
+    private int?   confirmCancelId  = null;
+    private string rejectTargetName = "";
+    private int    confirmBulkCount = 1;
+
+    private void ConfirmApprove(int id) { confirmApproveId = id; confirmBulkCount = 1; }
+    private void ConfirmReject(int id)
+    {
+        confirmRejectId  = id;
+        rejectTargetName = requests.FirstOrDefault(r => r.Id == id)?.EmployeeName ?? "this member";
+    }
+    private void ConfirmDelete(int id) => confirmDeleteId = id;
+    private void ConfirmCancel(int id) => confirmCancelId = id;
+
+    private void BulkApprove()
+    {
+        if (!selectedIds.Any()) return;
+        confirmBulkCount  = selectedIds.Count;
+        confirmApproveId  = -1; // sentinel for bulk
+    }
+    private void BulkReject()
+    {
+        if (!selectedIds.Any()) return;
+        confirmBulkCount  = selectedIds.Count;
+        rejectTargetName  = $"{confirmBulkCount} members";
+        confirmRejectId   = -1; // sentinel for bulk
+    }
+
+    private async Task ExecuteApprove()
+    {
+        if (confirmApproveId == -1)
+        {
+            foreach (var id in selectedIds.ToList())
+                await UpdateStatus(id, "Approved");
+            ClearSelection();
+        }
+        else if (confirmApproveId.HasValue)
+            await UpdateStatus(confirmApproveId.Value, "Approved");
+        confirmApproveId = null;
+    }
+
+    private async Task ExecuteReject()
+    {
+        if (confirmRejectId == -1)
+        {
+            foreach (var id in selectedIds.ToList())
+                await UpdateStatus(id, "Rejected");
+            ClearSelection();
+        }
+        else if (confirmRejectId.HasValue)
+            await UpdateStatus(confirmRejectId.Value, "Rejected");
+        confirmRejectId = null;
+    }
+
+    private async Task ExecuteDelete()
+    {
+        if (confirmDeleteId.HasValue)
+            await UpdateStatus(confirmDeleteId.Value, "Cancelled");
+        confirmDeleteId = null;
+    }
+
+    private async Task ExecuteCancel()
+    {
+        if (confirmCancelId.HasValue)
+            await UpdateStatus(confirmCancelId.Value, "Cancelled");
+        confirmCancelId = null;
+    }
+
+    private async Task UpdateStatus(int id, string status)
+    {
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            await client.PatchAsJsonAsync($"api/time-off-requests/{id}/status", new { status });
+            await LoadRequests();
+        }
+        catch { }
+    }
+
+    private async Task DeleteRequest(int id)
+    {
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            await client.DeleteAsync($"api/time-off-requests/{id}");
+            await LoadRequests();
+        }
+        catch { }
+    }
+
+    // ── Export ─────────────────────────────────────────────────────
+    private bool   exportOpen      = false;
+    private bool   exportPerMember = false;
+    private string exportRange     = "week";
+    private void   OpenExport()    => exportOpen = true;
+
+    // ── View models ────────────────────────────────────────────────
+    private record MemberVm { public int Id { get; init; } public string FullName { get; init; } = ""; public string Email { get; init; } = ""; }
+
+    private class TimeOffRequestVm
+    {
+        public int       Id           { get; set; }
+        public int       EmployeeId   { get; set; }
+        public string    EmployeeName { get; set; } = "";
+        public int       PolicyId     { get; set; }
+        public string    PolicyName   { get; set; } = "";
+        public DateTime  StartDate    { get; set; }
+        public DateTime? EndDate      { get; set; }
+        public bool      IsHalfDay    { get; set; }
+        public string    Status       { get; set; } = "Pending";
+    }
+}
+
+<style>
+    /* ── Core layout ── */
+    .timeoff-container { padding:28px 36px; background:#f5f6f8; min-height:100vh; font-family:inherit; }
+    .to-page-header { display:flex; justify-content:space-between; align-items:center; }
+    .to-title { font-size:1.55rem; font-weight:700; color:#111827; margin:0; }
+    .to-header-actions { display:flex; gap:8px; align-items:center; }
+    /* Export button — outlined, matches Jibble */
+    .to-btn-export { display:flex; align-items:center; gap:6px; background:#fff; color:#374151; border:1.5px solid #d1d5db; padding:8px 16px; border-radius:7px; font-size:.875rem; font-weight:500; cursor:pointer; font-family:inherit; transition:border-color .15s, box-shadow .15s; }
+    .to-btn-export:hover { border-color:#b0b7c0; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+    /* Add Time Off — orange filled, Jibble style */
+    .to-btn-add { background:#f07820; color:#fff; border:none; padding:9px 20px; border-radius:7px; font-size:.875rem; font-weight:600; cursor:pointer; font-family:inherit; transition:background .15s; }
+    .to-btn-add:hover { background:#d9691a; }
+    /* ── Tabs ── */
+    .to-tabs { display:flex; border-bottom:1.5px solid #e5e7eb; margin-top:22px; }
+    .to-tab { padding:10px 18px 10px 4px; margin-right:18px; font-size:.93rem; font-weight:500; color:#6b7280; cursor:pointer; border-bottom:2.5px solid transparent; margin-bottom:-1.5px; transition:color .15s; }
+    .to-tab:hover { color:#374151; }
+    .to-tab-active { color:#f07820; border-bottom:2.5px solid #f07820; font-weight:600; }
+    .to-filter-row { margin-top:22px; display:flex; align-items:center; gap:14px; }
+    .to-date-selector { display:flex; align-items:center; gap:10px; }
+    /* Preset trigger button */
+    .to-range-btn { display:inline-flex; align-items:center; gap:7px; background:#fff; border:1.5px solid #d1d5db; border-radius:8px; padding:8px 14px; font-size:.9rem; font-weight:600; color:#111827; cursor:pointer; white-space:nowrap; transition:border-color .15s, box-shadow .15s; }
+    .to-range-btn:hover, .to-range-btn--open { border-color:#f07820; box-shadow:0 0 0 3px rgba(240,120,32,.08); }
+    .to-range-caret { font-size:.75rem; color:#9ca3af; }
+    /* Date range display */
+    .to-range-display-wrap { display:flex; align-items:center; gap:8px; cursor:default; }
+    .to-range-display { font-size:.9rem; color:#374151; font-weight:500; white-space:nowrap; }
+    .to-range-cal-icon { color:#9ca3af; font-size:.95rem; cursor:pointer; padding:4px; border-radius:5px; transition:color .15s, background .15s; }
+    .to-range-cal-icon:hover { color:#f07820; background:#fff7ed; }
+    /* Preset dropdown popup */
+    .to-preset-popup { position:absolute; top:calc(100% + 6px); left:0; z-index:700; background:#fff; border:1.5px solid #e5e7eb; border-radius:10px; box-shadow:0 10px 36px rgba(0,0,0,.14); min-width:190px; overflow:hidden; animation:to-fade-in .12s ease; }
+    @@keyframes to-fade-in { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+    .to-preset-row { display:flex; align-items:center; justify-content:space-between; padding:11px 18px; font-size:.9rem; color:#374151; cursor:pointer; font-weight:500; transition:background .1s; }
+    .to-preset-row:hover { background:#f9fafb; color:#111827; }
+    .to-preset-row--active { color:#f07820; font-weight:700; }
+    .to-preset-row--active:hover { background:#fff7ed; }
+    .to-preset-check { color:#f07820; font-size:.9rem; font-weight:700; }
+    /* Calendar popup */
+    .to-datepicker-popup { position:absolute; top:calc(100% + 8px); left:0; z-index:700; background:#fff; border:1.5px solid #e5e7eb; border-radius:12px; box-shadow:0 10px 36px rgba(0,0,0,.14); padding:18px; width:300px; animation:to-fade-in .12s ease; }
+    .to-cal-header { display:flex; align-items:center; gap:4px; margin-bottom:14px; justify-content:center; }
+    .to-cal-nav { background:none; border:none; cursor:pointer; font-size:1.1rem; color:#6b7280; padding:4px 7px; border-radius:5px; transition:background .1s; }
+    .to-cal-nav:hover { background:#f3f4f6; color:#111; }
+    .to-cal-month-label { font-weight:700; font-size:.95rem; color:#111827; padding:0 5px; }
+    .to-cal-year-label  { font-weight:600; font-size:.875rem; color:#6b7280; padding:0 4px; }
+    .to-cal-pick-hint { font-size:.75rem; color:#f07820; font-weight:600; text-align:center; margin-bottom:10px; letter-spacing:.3px; }
+    .to-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+    .to-cal-dayname { font-size:.72rem; font-weight:700; color:#9ca3af; text-align:center; padding:4px 0; text-transform:uppercase; letter-spacing:.3px; }
+    .to-cal-day { text-align:center; padding:7px 3px; font-size:.85rem; color:#374151; border-radius:7px; cursor:pointer; transition:background .1s, color .1s; }
+    .to-cal-day:hover { background:#fff7ed; color:#f07820; }
+    .to-cal-day--today { font-weight:700; border:1.5px solid #f07820; color:#f07820; }
+    .to-cal-day--sel   { background:#f07820 !important; color:#fff !important; font-weight:700; border-radius:7px; }
+    .to-cal-day--range { background:#fff3e8; color:#c05010; }
+    .to-search-bar { display:flex; align-items:center; background:#fff; border:1.5px solid #e5e7eb; border-radius:10px; padding:0 14px; margin-top:18px; flex-wrap:wrap; box-shadow:0 1px 4px rgba(0,0,0,.05); }
+    .to-search-input-wrap { display:flex; align-items:center; gap:9px; padding:11px 0; min-width:220px; }
+    .to-search-icon { color:#9ca3af; font-size:1rem; }
+    .to-search-input { border:none; outline:none; font-size:.9rem; color:#111827; background:transparent; width:200px; font-family:inherit; }
+    .to-search-input::placeholder { color:#d1d5db; }
+    .to-filter-divider { width:1px; height:30px; background:#e5e7eb; margin:0 14px; }
+    .to-filter-group { display:flex; align-items:center; gap:2px; flex-wrap:wrap; padding:8px 0; }
+    .to-filter-btn { background:none; border:none; font-size:.875rem; color:#374151; font-weight:500; cursor:pointer; padding:7px 12px; border-radius:7px; display:flex; align-items:center; gap:5px; font-family:inherit; white-space:nowrap; transition:background .12s, color .12s; }
+    .to-filter-btn:hover { background:#f3f4f6; color:#111827; }
+    .to-filter-btn--active { color:#f07820; font-weight:700; background:#fff7ed; }
+    .to-filter-btn--active:hover { background:#feecd8; }
+    .to-reset-btn { background:none; border:none; font-size:.875rem; color:#9ca3af; cursor:pointer; padding:7px 10px; font-family:inherit; font-weight:500; transition:color .12s; }
+    .to-reset-btn:hover { color:#f07820; }
+    /* Filter dropdowns */
+    .to-filter-dd-wrap { position:relative; }
+    .to-filter-popup { position:absolute; top:calc(100% + 6px); left:0; z-index:600; background:#fff; border:1.5px solid #e5e7eb; border-radius:10px; box-shadow:0 8px 28px rgba(0,0,0,.13); min-width:200px; overflow:hidden; }
+    .to-filter-popup-search { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid #f3f4f6; }
+    .to-filter-popup-input { border:none; outline:none; font-size:.875rem; color:#111; font-family:inherit; background:transparent; flex:1; }
+    .to-filter-popup-row { display:flex; align-items:center; justify-content:space-between; padding:11px 16px; font-size:.875rem; color:#374151; cursor:pointer; border-bottom:1px solid #f9fafb; }
+    .to-filter-popup-row:last-child { border-bottom:none; }
+    .to-filter-popup-row:hover { background:#f9fafb; }
+    .to-filter-popup-empty { padding:14px 16px; font-size:.875rem; color:#9ca3af; text-align:center; }
+    .to-filter-popup-clear { padding:11px 16px; font-size:.875rem; color:#f07820; font-weight:600; cursor:pointer; border-top:1px solid #f3f4f6; }
+    .to-filter-popup-clear:hover { background:#fff7ed; }
+    /* Bulk bar */
+    .to-bulk-bar { display:flex; align-items:center; gap:10px; padding:10px 16px; background:#fff; border:1.5px solid #e0e0e0; border-radius:8px; margin-top:12px; }
+    .to-bulk-count { font-size:.875rem; font-weight:600; color:#374151; margin-right:4px; }
+    .to-bulk-btn { padding:7px 20px; border:none; border-radius:6px; font-size:.875rem; font-weight:600; cursor:pointer; font-family:inherit; }
+    .to-bulk-cancel-req { background:#374151; color:#fff; }
+    .to-bulk-cancel-req:hover { background:#1f2937; }
+    .to-bulk-cancel  { background:none; border:none; font-size:.875rem; color:#888; cursor:pointer; padding:7px 10px; font-family:inherit; }
+    .to-bulk-cancel:hover { color:#374151; }
+    /* Unselectable rows */
+    .to-row-unselectable { opacity:.75; }
+    .to-row-unselectable:hover { background:#fafafa !important; }
+    /* Loading */
+    .to-loading { display:flex; justify-content:center; padding:80px 0; }
+    .to-spinner { width:36px; height:36px; border-radius:50%; border:3px solid #f0e0d0; border-top-color:#f07820; animation:spin .7s linear infinite; }
+    @@keyframes spin { to { transform:rotate(360deg); } }
+    /* Empty */
+    .to-empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:60px 20px 40px; }
+    .to-empty-illustration { margin-bottom:16px; }
+    .to-empty-title { font-size:1.1rem; font-weight:700; color:#1a1a1a; margin-bottom:8px; }
+    .to-empty-sub { font-size:.9rem; color:#888; max-width:440px; margin-bottom:24px; }
+    /* Table */
+    .to-table-wrap { margin-top:16px; background:#fff; border-radius:8px; border:1px solid #e5e7eb; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.04); }
+    .to-table { width:100%; border-collapse:collapse; font-size:.9rem; }
+    .to-table thead tr { border-bottom:1px solid #f0f0f0; background:#fafafa; }
+    .to-table thead th { padding:11px 18px; text-align:left; font-size:.75rem; font-weight:600; color:#9ca3af; text-transform:uppercase; letter-spacing:.5px; white-space:nowrap; }
+    .to-table thead th:first-child { width:44px; padding-right:0; }
+    .to-table tbody tr { border-bottom:1px solid #f3f4f6; transition:background .1s; }
+    .to-table tbody tr:last-child { border-bottom:none; }
+    .to-table tbody tr:hover { background:#fafafa; }
+    .to-table tbody tr.to-row-selected { background:#fff8f2; }
+    .to-table tbody td { padding:14px 18px; color:#374151; vertical-align:middle; }
+    /* Member cell — avatar + name like Jibble */
+    .to-member-cell { display:flex; align-items:center; gap:10px; }
+    .to-member-avatar { width:32px; height:32px; border-radius:50%; background:#c7d2e8; color:#3b4f78; font-size:.8rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .to-member-name { font-weight:500; color:#111827; font-size:.88rem; }
+    /* Status badges — pill style matching Jibble */
+    .to-status-badge { display:inline-flex; align-items:center; gap:6px; font-size:.82rem; font-weight:600; padding:4px 10px; border-radius:16px; }
+    .to-status-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+    .to-status-pending   { background:#fff7ed; color:#ea6d10; } .to-status-pending   .to-status-dot { background:#f07820; }
+    .to-status-approved  { background:#f0fdf4; color:#16a34a; } .to-status-approved  .to-status-dot { background:#16a34a; }
+    .to-status-rejected  { background:#fef2f2; color:#dc2626; } .to-status-rejected  .to-status-dot { background:#dc2626; }
+    .to-status-cancelled { background:#f3f4f6; color:#6b7280; } .to-status-cancelled .to-status-dot { background:#9ca3af; }
+    /* Row actions */
+    .to-row-actions { display:flex; align-items:center; gap:4px; opacity:0; transition:opacity .15s; justify-content:flex-end; }
+    .to-table tbody tr:hover .to-row-actions { opacity:1; }
+    .to-action-btn { width:30px; height:30px; border:none; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:.85rem; transition:background .12s, transform .1s; }
+    .to-action-btn:hover { transform:scale(1.08); }
+    .to-action-edit    { background:#f3f4f6; color:#6b7280; } .to-action-edit:hover    { background:#e5e7eb; }
+    .to-action-delete  { background:#fef2f2; color:#dc2626; } .to-action-delete:hover  { background:#fee2e2; }
+    .to-action-approve { background:#f0fdf4; color:#16a34a; } .to-action-approve:hover { background:#dcfce7; }
+    .to-action-reject  { background:#fef2f2; color:#dc2626; } .to-action-reject:hover  { background:#fee2e2; }
+    .to-action-cancel-req { background:#f3f4f6; color:#6b7280; } .to-action-cancel-req:hover { background:#e5e7eb; }
+    /* Confirm modals */
+    .to-modal-overlay { position:fixed; inset:0; z-index:1060; background:rgba(0,0,0,.45); }
+    .to-modal { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1061; background:#fff; border-radius:12px; width:480px; max-width:calc(100vw - 32px); box-shadow:0 20px 60px rgba(0,0,0,.2); }
+    .to-modal-head { display:flex; align-items:center; justify-content:space-between; padding:22px 24px 16px; }
+    .to-modal-title { font-size:1.1rem; font-weight:700; color:#111827; }
+    .to-modal-body { padding:0 24px 20px; }
+    .to-modal-body p { font-size:.95rem; color:#374151; line-height:1.6; }
+    .to-modal-footer { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:16px 24px; border-top:1px solid #f0f0f0; }
+    .to-modal-btn-cancel { background:none; border:none; font-size:.9rem; font-weight:500; color:#374151; cursor:pointer; padding:10px 20px; border-radius:7px; font-family:inherit; }
+    .to-modal-btn-cancel:hover { background:#f3f4f6; }
+    .to-modal-btn-confirm { padding:10px 28px; border:none; border-radius:7px; font-size:.9rem; font-weight:600; cursor:pointer; font-family:inherit; color:#fff; }
+    .to-modal-btn-green { background:#16a34a; } .to-modal-btn-green:hover { background:#15803d; }
+    .to-modal-btn-red   { background:#dc2626; } .to-modal-btn-red:hover   { background:#b91c1c; }
+    .to-leave-balance { margin-top:30px; padding:20px; background:#fff; border-radius:8px; border:1px solid #e5e5e5; text-align:center; }
+    /* Drawer */
+    .to-overlay { position:fixed; inset:0; z-index:1050; background:rgba(0,0,0,.45); backdrop-filter:blur(1px); }
+    .ato-panel { position:fixed; top:0; right:0; bottom:0; width:580px; z-index:1051; background:#fff; box-shadow:-8px 0 48px rgba(0,0,0,.18); display:flex; flex-direction:column; animation:ato-slide-in .22s cubic-bezier(.4,0,.2,1); }
+    @@keyframes ato-slide-in { from { transform:translateX(100%); } to { transform:translateX(0); } }
+    .ato-head { display:flex; align-items:center; justify-content:space-between; padding:22px 28px 18px; border-bottom:1px solid #f0f0f0; flex-shrink:0; }
+    .ato-title { font-size:1.25rem; font-weight:700; color:#111827; }
+    .ato-close { width:34px; height:34px; border:none; background:transparent; border-radius:7px; cursor:pointer; color:#9ca3af; font-size:15px; display:flex; align-items:center; justify-content:center; }
+    .ato-close:hover { background:#f3f4f6; color:#374151; }
+    .ato-body { flex:1; overflow-y:auto; padding:0 28px 28px; scrollbar-width:thin; }
+    .ato-footer { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:16px 28px; border-top:1px solid #f0f0f0; flex-shrink:0; flex-wrap:wrap; }
+    .ato-save-error { color:#dc2626; font-size:.82rem; margin-right:auto; }
+    .ato-field { margin-top:22px; position:relative; }
+    .ato-label { display:block; font-size:.78rem; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.6px; margin-bottom:6px; }
+    .ato-select-box { display:flex; align-items:center; gap:10px; border:1.5px solid #e5e7eb; border-radius:9px; padding:13px 16px; cursor:pointer; background:#fff; }
+    .ato-select-box--readonly { background:#f9fafb; cursor:default; pointer-events:none; border-color:#e5e7eb; }
+    .ato-select-box:hover, .ato-select-box--open { border-color:#f07820; }
+    .ato-select-box--err { border-color:#ef4444 !important; }
+    .ato-field-icon { color:#9ca3af; font-size:1rem; flex-shrink:0; }
+    .ato-placeholder { color:#9ca3af; font-size:.9rem; flex:1; }
+    .ato-selected-val { color:#111827; font-size:.9rem; flex:1; font-weight:500; }
+    .ato-caret { margin-left:auto; font-size:.8rem; color:#6b7280; flex-shrink:0; }
+    .ato-err-msg { display:block; font-size:.8rem; color:#ef4444; margin-top:5px; }
+    .ato-dropdown { position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:500; background:#fff; border:1.5px solid #e5e7eb; border-radius:9px; box-shadow:0 8px 28px rgba(0,0,0,.12); max-height:240px; overflow-y:auto; scrollbar-width:thin; }
+    .ato-dropdown-search { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid #f3f4f6; position:sticky; top:0; background:#fff; }
+    .ato-dd-search-icon { color:#9ca3af; font-size:.9rem; flex-shrink:0; }
+    .ato-dd-search-input { border:none; outline:none; font-size:.875rem; color:#111827; font-family:inherit; background:transparent; flex:1; }
+    .ato-dd-row { display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer; font-size:.875rem; color:#374151; border-bottom:1px solid #f9fafb; }
+    .ato-dd-row:last-child { border-bottom:none; }
+    .ato-dd-row:hover { background:#f9fafb; }
+    .ato-dd-empty { padding:16px; text-align:center; font-size:.875rem; color:#9ca3af; }
+    .ato-avatar { width:30px; height:30px; border-radius:50%; background:#e5e7eb; color:#374151; font-size:.8rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .ato-days-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+    .ato-days-icon { color:#9ca3af; }
+    .ato-days-label { font-size:.85rem; font-weight:600; color:#374151; }
+    .ato-date-row { display:flex; gap:12px; }
+    .ato-date-box { display:flex; align-items:center; justify-content:space-between; border:1.5px solid #e5e7eb; border-radius:8px; padding:11px 14px; cursor:pointer; background:#fff; }
+    .ato-date-box:hover, .ato-date-box--open { border-color:#f07820; }
+    .ato-date-box--err { border-color:#ef4444; }
+    .ato-date-icon { color:#9ca3af; font-size:.9rem; flex-shrink:0; }
+    .ato-calendar { position:absolute; left:0; top:calc(100% + 6px); z-index:600; background:#fff; border:1.5px solid #e5e7eb; border-radius:10px; box-shadow:0 8px 28px rgba(0,0,0,.12); padding:16px; width:280px; }
+    .ato-cal-header { display:flex; align-items:center; gap:4px; margin-bottom:12px; justify-content:center; }
+    .ato-cal-nav { background:none; border:none; cursor:pointer; font-size:1.1rem; color:#6b7280; padding:2px 5px; border-radius:4px; }
+    .ato-cal-nav:hover { background:#f3f4f6; }
+    .ato-cal-month { font-weight:700; font-size:.9rem; color:#111; }
+    .ato-cal-year  { font-weight:600; font-size:.875rem; color:#4b5563; }
+    .ato-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+    .ato-cal-dayname { font-size:.7rem; font-weight:600; color:#9ca3af; text-align:center; padding:4px 0; }
+    .ato-cal-day { text-align:center; padding:6px 2px; font-size:.8rem; color:#374151; border-radius:6px; cursor:pointer; }
+    .ato-cal-day:hover { background:#fff7ed; color:#f07820; }
+    .ato-cal-day--today    { font-weight:700; border:1.5px solid #f07820; color:#f07820; }
+    .ato-cal-day--selected { background:#f07820 !important; color:#fff !important; font-weight:700; }
+    .ato-cal-day--range    { background:#fff7ed; color:#f07820; }
+    .ato-halfday-row { display:flex; align-items:center; gap:14px; margin-top:12px; flex-wrap:wrap; }
+    .ato-checkbox-label { display:flex; align-items:center; gap:8px; font-size:.875rem; color:#374151; cursor:pointer; }
+    .ato-checkbox-label input[type=checkbox] { width:16px; height:16px; accent-color:#f07820; cursor:pointer; }
+    .ato-halfday-select { display:flex; align-items:center; justify-content:space-between; border:1.5px solid #e5e7eb; border-radius:8px; padding:9px 12px; cursor:pointer; background:#fff; font-size:.875rem; }
+    .ato-halfday-select:hover { border-color:#f07820; }
+    .ato-reason-wrap { display:flex; align-items:flex-start; gap:10px; border:1.5px solid #e5e7eb; border-radius:9px; padding:12px 14px; background:#fff; }
+    .ato-reason-wrap:focus-within { border-color:#f07820; }
+    .ato-reason-icon { color:#9ca3af; margin-top:2px; font-size:.9rem; flex-shrink:0; }
+    .ato-reason-input { flex:1; border:none; outline:none; font-size:.875rem; color:#111827; font-family:inherit; resize:vertical; background:transparent; line-height:1.5; }
+    .ato-reason-input::placeholder { color:#d1d5db; }
+    .ato-btn-cancel { padding:10px 24px; border:none; background:none; font-size:.9rem; font-weight:600; color:#f07820; cursor:pointer; font-family:inherit; border-radius:7px; }
+    .ato-btn-cancel:hover { background:#fff7ed; }
+    .ato-btn-save { padding:10px 32px; border:none; background:#f07820; color:#fff; font-size:.9rem; font-weight:700; cursor:pointer; font-family:inherit; border-radius:7px; display:flex; align-items:center; gap:8px; }
+    .ato-btn-save:hover:not(:disabled) { background:#d9691a; }
+    .ato-btn-save:disabled { background:#fbd5a7; cursor:not-allowed; }
+    .ato-mini-spin { width:14px; height:14px; border-radius:50%; border:2px solid rgba(255,255,255,.4); border-top-color:#fff; animation:ato-spin .6s linear infinite; display:inline-block; }
+    @@keyframes ato-spin { to { transform:rotate(360deg); } }
+    .tp-toggle-row { display:flex; border-radius:8px; border:1.5px solid #e5e7eb; overflow:hidden; }
+    .tp-toggle-btn { flex:1; padding:12px 0; border:none; background:#fff; font-size:.875rem; font-weight:500; color:#374151; cursor:pointer; font-family:inherit; }
+    .tp-toggle-btn--sel { background:#fff7ed; color:#f07820; font-weight:700; }
+    @@media (max-width:640px) { .ato-panel { width:100%; } .to-modal { width:calc(100vw - 32px); } }
+    /* ── Leave Requests Tab (User role) ── */
+    .lr-empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:80px 20px 60px; }
+    .lr-empty-illustration { margin-bottom:24px; }
+    .lr-empty-title { font-size:1.1rem; font-weight:700; color:#111827; margin:0 0 10px; }
+    .lr-empty-sub { font-size:.9rem; color:#888; max-width:420px; margin:0 0 28px; line-height:1.6; }
+    .lr-apply-btn { display:inline-flex; align-items:center; gap:6px; font-size:.9rem; padding:11px 28px; }
+    .to-btn-new-request { display:inline-flex; align-items:center; gap:6px; }
+    /* ── Inline form card ── */
+    .lr-form-card { background:#fff; border:1.5px solid #e5e7eb; border-radius:14px; box-shadow:0 4px 24px rgba(0,0,0,.08); margin-top:24px; overflow:visible; animation:lr-fade-in .18s ease; }
+    @@keyframes lr-fade-in { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+    .lr-form-header { display:flex; align-items:center; justify-content:space-between; padding:20px 24px 16px; border-bottom:1px solid #f3f4f6; }
+    .lr-form-title { font-size:1.05rem; font-weight:700; color:#111827; }
+    .lr-form-close { width:32px; height:32px; border:none; background:transparent; border-radius:7px; cursor:pointer; color:#9ca3af; font-size:14px; display:flex; align-items:center; justify-content:center; }
+    .lr-form-close:hover { background:#f3f4f6; color:#374151; }
+    .lr-form-body { padding:20px 24px; display:flex; flex-direction:column; gap:18px; }
+    .lr-form-footer { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:16px 24px; border-top:1px solid #f3f4f6; }
+    .lr-field { display:flex; flex-direction:column; gap:6px; }
+    .lr-label { font-size:.75rem; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.5px; }
+    .lr-select { display:flex; align-items:center; gap:10px; border:1.5px solid #e5e7eb; border-radius:9px; padding:11px 14px; cursor:pointer; background:#fff; transition:border-color .15s; }
+    .lr-select:hover, .lr-select--open { border-color:#f07820; box-shadow:0 0 0 3px rgba(240,120,32,.07); }
+    .lr-select--err { border-color:#ef4444 !important; }
+    .lr-date-row { display:flex; align-items:flex-start; gap:10px; }
+    .lr-date-sep { display:flex; align-items:center; padding-top:32px; }
+    .lr-date-box { display:flex; align-items:center; gap:10px; border:1.5px solid #e5e7eb; border-radius:9px; padding:11px 14px; cursor:pointer; background:#fff; transition:border-color .15s; }
+    .lr-date-box:hover, .lr-date-box--open { border-color:#f07820; box-shadow:0 0 0 3px rgba(240,120,32,.07); }
+    .lr-date-box--err { border-color:#ef4444 !important; }
+    .lr-field-icon { color:#9ca3af; font-size:.95rem; flex-shrink:0; }
+    .lr-placeholder { color:#9ca3af; font-size:.9rem; flex:1; }
+    .lr-selected { color:#111827; font-size:.9rem; font-weight:500; flex:1; }
+    .lr-caret { margin-left:auto; font-size:.8rem; color:#6b7280; }
+    .lr-err { font-size:.78rem; color:#ef4444; }
+    .lr-dropdown { position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:600; background:#fff; border:1.5px solid #e5e7eb; border-radius:9px; box-shadow:0 8px 28px rgba(0,0,0,.12); overflow:hidden; }
+    .lr-dd-row { padding:11px 16px; font-size:.875rem; color:#374151; cursor:pointer; border-bottom:1px solid #f9fafb; display:flex; align-items:center; transition:background .1s; }
+    .lr-dd-row:last-child { border-bottom:none; }
+    .lr-dd-row:hover { background:#f9fafb; }
+    .lr-dd-row--active { color:#f07820; font-weight:600; background:#fff7ed; }
+    .lr-dd-empty { padding:14px 16px; font-size:.875rem; color:#9ca3af; text-align:center; }
+    .lr-calendar { position:absolute; top:calc(100% + 6px); left:0; z-index:600; background:#fff; border:1.5px solid #e5e7eb; border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,.12); padding:16px; width:272px; }
+    .lr-cal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .lr-cal-nav { background:none; border:none; cursor:pointer; font-size:1.2rem; color:#6b7280; padding:2px 6px; border-radius:5px; line-height:1; }
+    .lr-cal-nav:hover { background:#f3f4f6; color:#111; }
+    .lr-cal-label { font-weight:700; font-size:.9rem; color:#111827; }
+    .lr-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+    .lr-cal-dn { font-size:.7rem; font-weight:700; color:#9ca3af; text-align:center; padding:3px 0; text-transform:uppercase; }
+    .lr-cal-day { text-align:center; padding:7px 2px; font-size:.82rem; color:#374151; border-radius:7px; cursor:pointer; transition:background .1s; }
+    .lr-cal-day:hover { background:#fff7ed; color:#f07820; }
+    .lr-cal-day--today { font-weight:700; border:1.5px solid #f07820; color:#f07820; }
+    .lr-cal-day--sel { background:#f07820 !important; color:#fff !important; font-weight:700; }
+    .lr-cal-day--range { background:#fff3e8; color:#c05010; }
+    .lr-textarea-wrap { border:1.5px solid #e5e7eb; border-radius:9px; padding:12px 14px; background:#fff; transition:border-color .15s; }
+    .lr-textarea-wrap:focus-within { border-color:#f07820; box-shadow:0 0 0 3px rgba(240,120,32,.07); }
+    .lr-textarea { width:100%; border:none; outline:none; font-size:.9rem; color:#111827; font-family:inherit; resize:vertical; background:transparent; line-height:1.6; min-height:90px; }
+    .lr-textarea::placeholder { color:#c9cdd4; }
+    .lr-error-msg { display:flex; align-items:center; gap:6px; font-size:.85rem; color:#dc2626; background:#fef2f2; border:1px solid #fecaca; border-radius:7px; padding:10px 14px; }
+    .lr-btn-cancel { padding:10px 22px; border:none; background:none; font-size:.9rem; font-weight:600; color:#6b7280; cursor:pointer; font-family:inherit; border-radius:7px; }
+    .lr-btn-cancel:hover { background:#f3f4f6; color:#374151; }
+    .lr-btn-submit { display:inline-flex; align-items:center; gap:8px; padding:10px 28px; border:none; background:#f07820; color:#fff; font-size:.9rem; font-weight:700; cursor:pointer; font-family:inherit; border-radius:7px; transition:background .15s; }
+    .lr-btn-submit:hover:not(:disabled) { background:#d9691a; }
+    .lr-btn-submit:disabled { background:#fbd5a7; cursor:not-allowed; }
+    .lr-mini-spin { width:14px; height:14px; border-radius:50%; border:2px solid rgba(255,255,255,.4); border-top-color:#fff; animation:ato-spin .6s linear infinite; display:inline-block; flex-shrink:0; }
+
+    /* ── My Leave Requests section card ── */
+    .lr-section-card { background:#fff; border:1.5px solid #e5e7eb; border-radius:14px; box-shadow:0 2px 12px rgba(0,0,0,.05); margin-top:24px; overflow:hidden; }
+    .lr-section-header { display:flex; align-items:center; justify-content:space-between; padding:20px 24px 18px; border-bottom:1px solid #f3f4f6; }
+    .lr-section-title { font-size:1.1rem; font-weight:700; color:#111827; }
+
+    /* ── Leave Requests table ── */
+    .lr-table-wrap { overflow-x:auto; }
+    .lr-table { width:100%; border-collapse:collapse; font-size:.9rem; }
+    .lr-table thead tr { background:#fafafa; border-bottom:1.5px solid #f0f0f0; }
+    .lr-th { padding:13px 20px; text-align:left; font-size:.72rem; font-weight:700; color:#9ca3af; text-transform:uppercase; letter-spacing:.5px; white-space:nowrap; }
+    .lr-tr { border-bottom:1px solid #f3f4f6; transition:background .1s; }
+    .lr-tr:last-child { border-bottom:none; }
+    .lr-tr:hover { background:#fafafa; }
+    .lr-td { padding:16px 20px; color:#374151; vertical-align:middle; }
+    .lr-td--reason { max-width:260px; font-size:.875rem; color:#374151; }
+    .lr-td--remarks { max-width:260px; font-size:.875rem; }
+    .lr-td--muted { color:#c4c9d4; font-size:.875rem; }
+
+    /* Date range cell */
+    .lr-date-range { display:flex; align-items:center; gap:8px; white-space:nowrap; font-weight:500; color:#111827; }
+    .lr-date-icon { color:#9ca3af; font-size:.9rem; flex-shrink:0; }
+
+    /* ── Status badges ── */
+    .lr-badge { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:20px; font-size:.8rem; font-weight:700; white-space:nowrap; }
+    .lr-badge-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+
+    /* In Progress — Pending_TeamLead or Pending_HR */
+    .lr-badge--inprogress { background:#fef9ec; color:#b45309; }
+    .lr-badge--inprogress .lr-badge-dot { background:#f59e0b; }
+
+    /* Approved */
+    .lr-badge--approved { background:#f0fdf4; color:#166534; }
+    .lr-badge--approved .lr-badge-dot { background:#16a34a; }
+
+    /* Rejected */
+    .lr-badge--rejected { background:#fef2f2; color:#991b1b; }
+    .lr-badge--rejected .lr-badge-dot { background:#dc2626; }
+
+    .lr-badge--pending { background:#eff6ff; color:#1d4ed8; }
+    .lr-badge--pending .lr-badge-dot { background:#3b82f6; }
+
+    /* Remarks column */
+    .lr-reject-note { color:#dc2626; font-size:.85rem; display:flex; align-items:flex-start; gap:4px; }
+    .lr-approved-note { color:#16a34a; font-size:.85rem; display:flex; align-items:center; gap:4px; }
+
+    /* ── Type of Leave dropdown ── */
+    .lr-policy-box {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 14px;
+        height: 44px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 9px;
+        background: #fff;
+        cursor: pointer;
+        transition: border-color .15s, box-shadow .15s;
+        user-select: none;
+    }
+    .lr-policy-box:hover { border-color: #f07820; }
+    .lr-policy-box--open { border-color: #f07820; box-shadow: 0 0 0 3px rgba(240,120,32,.1); }
+    .lr-policy-caret { margin-left:auto; color:#9ca3af; font-size:.85rem; }
+
+    .lr-policy-dropdown {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0; right: 0;
+        background: #fff;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 10px;
+        box-shadow: 0 8px 28px rgba(0,0,0,.12);
+        z-index: 500;
+        overflow: hidden;
+        animation: lr-fade-in .15s ease;
+    }
+    .lr-policy-search-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid #f3f4f6;
+    }
+    .lr-policy-search-input {
+        border: none;
+        outline: none;
+        flex: 1;
+        font-size: .85rem;
+        color: #111827;
+        background: transparent;
+        font-family: inherit;
+    }
+    .lr-policy-option {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        cursor: pointer;
+        transition: background .12s;
+    }
+    .lr-policy-option:hover { background: #fff8f3; }
+    .lr-policy-option--active { background: #fff3e8; }
+    .lr-policy-name { flex: 1; font-size: .875rem; font-weight: 500; color: #111827; }
+    .lr-policy-days { font-size: .75rem; color: #9ca3af; }
+    .lr-policy-check { color: #f07820; font-weight: 700; font-size: .9rem; }
+    .lr-policy-empty { padding: 14px; font-size: .85rem; color: #9ca3af; text-align: center; }
+
+    /* ── Leave type badge in table ── */
+    .lr-leave-type-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 10px;
+        border-radius: 99px;
+        font-size: .75rem;
+        font-weight: 600;
+        background: #fff3e8;
+        color: #c05a0e;
+        border: 1px solid #fbd5a7;
+        white-space: nowrap;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       LEAVE BALANCE TAB  —  Zoho-style layout
+       ══════════════════════════════════════════════════════════════ */
+
+    /* ── Page wrapper ── */
+    .lb-page { padding-top:20px; animation:lb-fade .22s ease; }
+    @@keyframes lb-fade { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+    /* ── Top bar ── */
+    .lb-top-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:22px; }
+    .lb-top-bar-left { display:flex; flex-direction:column; gap:2px; }
+    .lb-page-title { font-size:1.18rem; font-weight:700; color:#111827; }
+    .lb-page-sub { font-size:.82rem; color:#9ca3af; font-weight:500; }
+
+    /* ── Apply Leave button ── */
+    .lb-apply-btn { display:inline-flex; align-items:center; gap:8px; background:#f07820; color:#fff; border:none; padding:10px 20px; border-radius:8px; font-size:.88rem; font-weight:700; cursor:pointer; font-family:inherit; transition:background .15s, box-shadow .15s; box-shadow:0 2px 8px rgba(240,120,32,.28); letter-spacing:.2px; }
+    .lb-apply-btn:hover { background:#d9691a; box-shadow:0 4px 16px rgba(240,120,32,.36); }
+
+    /* ── Cards Grid ── */
+    .lb-cards-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; margin-bottom:24px; }
+
+    /* ── Single Card ── */
+    .lb-card { background:#fff; border-radius:14px; border:1.5px solid #f0f0f0; padding:18px 20px 14px; box-shadow:0 1px 8px rgba(0,0,0,.05); transition:box-shadow .18s, transform .18s; position:relative; overflow:hidden; }
+    .lb-card:hover { box-shadow:0 6px 24px rgba(0,0,0,.1); transform:translateY(-2px); }
+    .lb-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--lb-card-color,#f07820); border-radius:14px 14px 0 0; }
+    .lb-card-header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+    .lb-card-icon-wrap { width:36px; height:36px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:1rem; flex-shrink:0; }
+    .lb-card-title-wrap { flex:1; min-width:0; }
+    .lb-card-name { display:block; font-size:.9rem; font-weight:700; color:#111827; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .lb-card-type { display:inline-block; margin-top:2px; font-size:.68rem; font-weight:600; padding:1px 7px; border-radius:99px; text-transform:uppercase; letter-spacing:.4px; }
+    .lb-card-type--paid { background:#dcfce7; color:#15803d; }
+    .lb-card-type--unpaid { background:#fee2e2; color:#dc2626; }
+
+    /* ── Card Stats ── */
+    .lb-card-stats { display:flex; align-items:center; gap:0; margin-bottom:14px; }
+    .lb-card-stat { flex:1; text-align:center; }
+    .lb-card-stat-divider { width:1px; height:32px; background:#f3f4f6; }
+    .lb-stat-val { display:block; font-size:1.45rem; font-weight:800; color:#111827; line-height:1.1; }
+    .lb-stat-used { color:#6b7280; }
+    .lb-stat-remain { font-weight:800; }
+    .lb-stat-lbl { display:block; font-size:.68rem; font-weight:600; color:#9ca3af; text-transform:uppercase; letter-spacing:.4px; margin-top:1px; }
+
+    /* ── Progress bar ── */
+    .lb-card-progress-wrap { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+    .lb-card-progress-bar { flex:1; height:7px; background:#f3f4f6; border-radius:99px; overflow:hidden; }
+    .lb-card-progress-fill { height:100%; border-radius:99px; transition:width .6s cubic-bezier(.4,0,.2,1); }
+    .lb-card-pct { font-size:.7rem; font-weight:600; color:#9ca3af; white-space:nowrap; }
+
+    /* ── Carry forward tag on card ── */
+    .lb-card-carry { display:flex; align-items:center; gap:5px; font-size:.72rem; color:#6b7280; font-weight:500; border-top:1px solid #f3f4f6; padding-top:8px; margin-top:4px; }
+
+    /* ── Empty state ── */
+    .lb-empty-state { display:flex; flex-direction:column; align-items:center; gap:10px; padding:72px 0; }
+    .lb-empty-icon { font-size:3rem; color:#d1d5db; }
+    .lb-empty-title { font-size:1.08rem; font-weight:700; color:#374151; margin:0; }
+    .lb-empty-sub { font-size:.88rem; color:#9ca3af; margin:0; text-align:center; }
+
+    /* ── Middle row: table + donut ── */
+    .lb-mid-row { display:grid; grid-template-columns:1fr 360px; gap:18px; margin-bottom:20px; align-items:start; }
+    @@media (max-width:900px) { .lb-mid-row { grid-template-columns:1fr; } }
+
+    /* ── Section card shell ── */
+    .lb-table-card, .lb-donut-card { background:#fff; border-radius:14px; border:1.5px solid #f0f0f0; box-shadow:0 1px 8px rgba(0,0,0,.05); overflow:hidden; }
+    .lb-section-header { display:flex; align-items:center; gap:10px; padding:16px 20px 0; margin-bottom:12px; }
+    .lb-section-title { font-size:.95rem; font-weight:700; color:#111827; }
+    .lb-section-badge { font-size:.72rem; font-weight:700; background:#f3f4f6; color:#6b7280; padding:2px 9px; border-radius:99px; }
+
+    /* ── Leave Summary Table ── */
+    .lb-table-wrap { overflow-x:auto; }
+    .lb-table { width:100%; border-collapse:collapse; font-size:.875rem; }
+    .lb-th { padding:10px 18px; text-align:left; font-size:.7rem; font-weight:700; color:#9ca3af; text-transform:uppercase; letter-spacing:.5px; background:#fafafa; border-bottom:1px solid #f3f4f6; white-space:nowrap; }
+    .lb-th--num { text-align:center; }
+    .lb-tr { border-bottom:1px solid #f9fafb; transition:background .1s; }
+    .lb-tr:last-child { border-bottom:none; }
+    .lb-tr:hover { background:#fafafa; }
+    .lb-td { padding:13px 18px; color:#374151; vertical-align:middle; }
+    .lb-td--num { text-align:center; font-weight:600; color:#374151; }
+    .lb-td--cf { color:#9ca3af; }
+    .lb-td-type { display:flex; align-items:center; gap:8px; }
+    .lb-type-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .lb-type-name { font-weight:600; color:#111827; }
+    .lb-unpaid-tag { font-size:.65rem; font-weight:700; background:#fee2e2; color:#dc2626; padding:1px 6px; border-radius:99px; text-transform:uppercase; letter-spacing:.3px; }
+    .lb-used-val { color:#f07820; font-weight:700; }
+    .lb-remain-pill { display:inline-block; padding:2px 10px; border-radius:99px; font-weight:700; font-size:.82rem; }
+    .lb-tfoot-row { border-top:2px solid #f0f0f0; background:#fafafa; }
+    .lb-tfoot-label { font-weight:700; color:#111827; font-size:.85rem; }
+    .lb-tfoot-val { font-weight:800; color:#111827; font-size:.92rem; }
+
+    /* ── Donut Chart ── */
+    .lb-donut-wrap { padding:16px 20px 10px; }
+    .lb-donut-svg { display:block; width:150px; height:150px; margin:0 auto 18px; }
+    .lb-donut-legend { display:flex; flex-direction:column; gap:8px; margin-bottom:18px; padding:0 4px; }
+    .lb-legend-item { display:flex; align-items:center; gap:8px; }
+    .lb-legend-item--total { opacity:.7; }
+    .lb-legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .lb-legend-label { font-size:.82rem; color:#374151; font-weight:600; flex:1; }
+    .lb-legend-val { font-size:.82rem; color:#6b7280; font-weight:500; text-align:right; white-space:nowrap; }
+
+    /* ── Per-policy mini bars in donut card ── */
+    .lb-donut-policy-bars { border-top:1px solid #f3f4f6; padding:14px 20px 18px; display:flex; flex-direction:column; gap:9px; }
+    .lb-mini-bar-row { display:flex; align-items:center; gap:8px; }
+    .lb-mini-bar-name { font-size:.75rem; color:#6b7280; font-weight:500; width:90px; flex-shrink:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .lb-mini-bar-track { flex:1; height:6px; background:#f3f4f6; border-radius:99px; overflow:hidden; }
+    .lb-mini-bar-fill { height:100%; border-radius:99px; transition:width .5s ease; }
+    .lb-mini-bar-num { font-size:.72rem; color:#374151; font-weight:700; width:36px; text-align:right; flex-shrink:0; }
+
+    /* ── Leave Policy Details (collapsible) ── */
+    .lb-policy-section { background:#fff; border-radius:14px; border:1.5px solid #f0f0f0; box-shadow:0 1px 8px rgba(0,0,0,.05); overflow:hidden; margin-bottom:8px; }
+    .lb-policy-toggle { width:100%; display:flex; align-items:center; justify-content:space-between; padding:16px 22px; background:none; border:none; cursor:pointer; font-family:inherit; transition:background .12s; }
+    .lb-policy-toggle:hover { background:#fafafa; }
+    .lb-policy-toggle-left { display:flex; align-items:center; gap:10px; }
+    .lb-policy-toggle-icon { font-size:1rem; color:#f07820; }
+    .lb-policy-toggle-left > span:nth-child(2) { font-size:.95rem; font-weight:700; color:#111827; }
+    .lb-policy-count { font-size:.72rem; font-weight:700; background:#fff7ed; color:#f07820; border:1px solid #fde8c9; padding:1px 9px; border-radius:99px; }
+    .lb-policy-caret { color:#9ca3af; font-size:.85rem; transition:transform .2s; }
+
+    /* ── Policy detail body ── */
+    .lb-policy-body { border-top:1px solid #f3f4f6; display:flex; flex-direction:column; gap:0; }
+    .lb-policy-item { padding:16px 22px; border-bottom:1px solid #f9fafb; }
+    .lb-policy-item:last-child { border-bottom:none; }
+    .lb-policy-item-header { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .lb-policy-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .lb-policy-item-name { font-size:.9rem; font-weight:700; color:#111827; flex:1; }
+    .lb-policy-comp { font-size:.68rem; font-weight:700; padding:2px 8px; border-radius:99px; text-transform:uppercase; letter-spacing:.3px; }
+    .lb-policy-comp--paid { background:#dcfce7; color:#15803d; }
+    .lb-policy-comp--unpaid { background:#fee2e2; color:#dc2626; }
+    .lb-policy-rules { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:6px 20px; }
+    .lb-rule { display:flex; align-items:center; gap:7px; padding:5px 0; }
+    .lb-rule-icon { font-size:.8rem; color:#9ca3af; width:14px; flex-shrink:0; }
+    .lb-rule-lbl { font-size:.78rem; font-weight:600; color:#6b7280; min-width:100px; flex-shrink:0; }
+    .lb-rule-val { font-size:.78rem; color:#374151; font-weight:500; }
+    .lb-rule-no { color:#dc2626; font-weight:600; }
+    .lb-rule-exp { color:#9ca3af; font-style:italic; }
+</style>

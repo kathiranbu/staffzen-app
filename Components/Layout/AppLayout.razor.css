@@ -1,0 +1,29 @@
+/* Layout container */
+.layout-container {
+    display: flex;
+    min-height: 100vh;
+}
+
+.main-content {
+    flex: 1;
+    margin-left: 260px;
+    transition: margin-left 0.3s ease;
+    min-height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.main-content.sidebar-collapsed {
+    margin-left: 90px;
+}
+
+/* Mobile/Tablet - No left margin */
+@media (max-width: 1024px) {
+    .main-content {
+        margin-left: 0 !important;
+    }
+
+    .main-content.sidebar-collapsed {
+        margin-left: 0 !important;
+    }
+}

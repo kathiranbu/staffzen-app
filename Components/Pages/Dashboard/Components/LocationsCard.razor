@@ -1,0 +1,251 @@
+@namespace APM.StaffZen.Blazor.Components.Pages.Dashboard.Components
+
+<div class="locations-card">
+    <div class="card-header">
+        <h5 class="card-title">LOCATIONS</h5>
+        <a href="/locations" class="card-link">
+            Go to locations
+            <i class="bi bi-box-arrow-up-right"></i>
+        </a>
+    </div>
+    
+    <div class="card-body">
+        <div class="map-container">
+            <div class="map-placeholder">
+                <div class="map-overlay">
+                    <div class="location-marker" style="top: 30%; left: 40%;">
+                        <i class="bi bi-stopwatch-fill"></i>
+                    </div>
+                    <div class="location-marker" style="top: 60%; left: 65%;">
+                        <i class="bi bi-stopwatch-fill"></i>
+                    </div>
+                </div>
+                <div class="map-text">LONDON</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .locations-card {
+        background: white;
+        border-radius: 14px;
+        padding: 28px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .card-title {
+        font-size: 11px;
+        font-weight: 700;
+        color: #111827;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        margin: 0;
+    }
+
+    .card-link {
+        font-size: 13px;
+        color: #2563eb;
+        text-decoration: none;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        transition: color 0.2s;
+        white-space: nowrap;
+    }
+
+    .card-link:hover {
+        color: #1d4ed8;
+    }
+
+    .card-link i {
+        font-size: 11px;
+    }
+
+    .map-container {
+        width: 100%;
+        height: 280px;
+        overflow: hidden;
+        border-radius: 10px;
+    }
+
+    .map-placeholder {
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .map-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    .location-marker {
+        position: absolute;
+        width: 48px;
+        height: 48px;
+        background: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        color: #ff7a00;
+        font-size: 20px;
+        transition: transform 0.2s;
+    }
+
+    .location-marker:hover {
+        transform: scale(1.1);
+    }
+
+    .map-text {
+        font-size: 48px;
+        font-weight: 700;
+        color: rgba(0,0,0,0.05);
+        letter-spacing: 4px;
+        user-select: none;
+    }
+
+    /* Large tablets */
+    @@media (max-width: 1199px) {
+        .locations-card {
+            padding: 26px;
+        }
+
+        .map-container {
+            height: 260px;
+        }
+
+        .location-marker {
+            width: 44px;
+            height: 44px;
+            font-size: 18px;
+        }
+
+        .map-text {
+            font-size: 44px;
+        }
+    }
+
+    /* Tablets */
+    @@media (max-width: 991px) {
+        .locations-card {
+            padding: 24px;
+        }
+
+        .map-container {
+            height: 240px;
+        }
+
+        .location-marker {
+            width: 42px;
+            height: 42px;
+            font-size: 17px;
+        }
+
+        .map-text {
+            font-size: 40px;
+        }
+    }
+
+    /* Small tablets and large phones */
+    @@media (max-width: 768px) {
+        .locations-card {
+            padding: 22px;
+            margin-bottom: 14px;
+        }
+
+        .card-header {
+            margin-bottom: 20px;
+        }
+
+        .map-container {
+            height: 220px;
+        }
+
+        .location-marker {
+            width: 40px;
+            height: 40px;
+            font-size: 16px;
+        }
+
+        .map-text {
+            font-size: 36px;
+        }
+    }
+
+    /* Mobile phones */
+    @@media (max-width: 576px) {
+        .locations-card {
+            padding: 20px 16px;
+            margin-bottom: 12px;
+        }
+
+        .card-header {
+            margin-bottom: 18px;
+        }
+
+        .card-title {
+            font-size: 10px;
+        }
+
+        .card-link {
+            font-size: 12px;
+        }
+
+        .map-container {
+            height: 200px;
+        }
+
+        .location-marker {
+            width: 38px;
+            height: 38px;
+            font-size: 15px;
+        }
+
+        .map-text {
+            font-size: 32px;
+            letter-spacing: 3px;
+        }
+    }
+
+    /* Small mobile phones */
+    @@media (max-width: 400px) {
+        .locations-card {
+            padding: 18px 14px;
+        }
+
+        .map-container {
+            height: 180px;
+        }
+
+        .location-marker {
+            width: 36px;
+            height: 36px;
+            font-size: 14px;
+        }
+
+        .map-text {
+            font-size: 28px;
+        }
+    }
+</style>

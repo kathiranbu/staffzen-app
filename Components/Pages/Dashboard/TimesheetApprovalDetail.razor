@@ -1,0 +1,1757 @@
+@* ═══════════════════════════════════════════════════════════════════════════
+   TimesheetApprovalDetail.razor
+   Opened when a manager clicks a row in the Approvals tab.
+
+   Navigation flow:
+     Timesheets → Approvals tab → click row → ApvOpenEmployee()
+       → sets currentView = "approval-detail"  (new view string)
+       → renders this component via <TimesheetApprovalDetail ... />
+
+   Drop this file into:
+     APM-StaffZen.Blazor/Components/Pages/Dashboard/TimesheetApprovalDetail.razor
+
+   Usage in Timesheets.razor  (replace the tev-shell block or add a new else-if):
+
+     else if (currentView == "approval-detail" && apvDetailRow != null)
+     {
+         <TimesheetApprovalDetail
+             Row="@apvDetailRow"
+             EmployeeId="@apvDetailRow.EmployeeId"
+             PeriodStart="@apvMonthStart"
+             PeriodEnd="@apvMonthEnd"
+             OnBack="@(() => { currentView = \"list\"; activeTab = \"approvals\"; StateHasChanged(); })" />
+     }
+
+   Required additions to Timesheets.State.cs:
+     private RangeTimesheetRow? apvDetailRow = null;
+
+   Required change to ApvOpenEmployee() in Timesheets.ListData.cs:
+     private void ApvOpenEmployee(RangeTimesheetRow row)
+     {
+         apvDetailRow = row;
+         currentView  = "approval-detail";
+         StateHasChanged();
+     }
+════════════════════════════════════════════════════════════════════════════ *@
+
+@using APM.StaffZen.Blazor.Services
+@inject AttendanceService AttendanceService
+@inject SessionService SessionService
+
+<div class="apd-shell">
+
+    @* ══════════════════════════════════
+       LEFT SIDEBAR — period + employee summary
+    ══════════════════════════════════ *@
+    <div class="apd-sidebar">
+
+        @* Prev / Next employee nav + period label *@
+        <div class="apd-sb-nav-row">
+            <button class="apd-sb-nav-btn" @onclick="NavPrevEmployee" disabled="@(!HasPrevEmployee)" title="Previous employee">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+            <button class="apd-sb-nav-btn @(HasNextEmployee ? "apd-sb-nav-btn--next" : "")"
+                    @onclick="NavNextEmployee" disabled="@(!HasNextEmployee)" title="Next employee">
+                <i class="bi bi-chevron-right"></i>
+            </button>
+            @if (HasNextEmployee)
+            {
+                <span class="apd-sb-next-tip">Next</span>
+            }
+        </div>
+
+        @* Period header *@
+        <div class="apd-sb-period">
+            @PeriodStart.ToString("d MMM").ToUpper() – @PeriodEnd.ToString("d MMM").ToUpper()
+        </div>
+
+        @* Employee row *@
+        <div class="apd-sb-employee">
+            <div class="apd-sb-av">
+                @Initials
+                @if (isLoading)
+                {
+                    <span class="apd-sb-av-spinner"></span>
+                }
+                else
+                {
+                    <span class="apd-sb-av-dot"></span>
+                }
+            </div>
+            <div class="apd-sb-emp-name">@(Row?.FullName?.ToUpper() ?? "")</div>
+        </div>
+
+        @* Timezone / split-time meta *@
+        <div class="apd-sb-meta">
+            <div class="apd-sb-meta-row">
+                <span class="apd-sb-meta-k">Timesheet Timezone <i class="bi bi-info-circle" style="font-size:10px;"></i></span>
+                <span class="apd-sb-meta-v">Asia/Calcutta (GMT+5:30)</span>
+            </div>
+            <div class="apd-sb-meta-row">
+                <span class="apd-sb-meta-k">Split Time</span>
+                <span class="apd-sb-meta-v">12:00 am</span>
+            </div>
+        </div>
+
+        <div class="apd-sb-divider"></div>
+
+        @* Tracked Hours section *@
+        <div class="apd-sb-section">
+            <div class="apd-sb-section-title">Tracked Hours</div>
+            <div class="apd-sb-stat-row">
+                <span class="apd-sb-stat-lbl">Tracked hours</span>
+                <span class="apd-sb-stat-val apd-sb-stat-val--bold">@periodTracked</span>
+            </div>
+            <div class="apd-sb-stat-row">
+                <span class="apd-sb-stat-lbl">Worked hours</span>
+                <span class="apd-sb-stat-val">@periodWorked</span>
+            </div>
+            <div class="apd-sb-stat-row">
+                <span class="apd-sb-stat-lbl">
+                    Breaks <span class="apd-paid-badge">PAID</span>
+                </span>
+                <span class="apd-sb-stat-val">@periodBreaks</span>
+            </div>
+        </div>
+
+        <div class="apd-sb-divider"></div>
+
+        @* Payroll Hours section *@
+        <div class="apd-sb-section">
+            <div class="apd-sb-section-title">Payroll Hours</div>
+            <div class="apd-sb-stat-row">
+                <span class="apd-sb-stat-lbl">Payroll hours</span>
+                <span class="apd-sb-stat-val apd-sb-stat-val--bold">@periodTracked</span>
+            </div>
+            <div class="apd-sb-stat-row">
+                <span class="apd-sb-stat-lbl">Regular hours</span>
+                <span class="apd-sb-stat-val">@periodTracked</span>
+            </div>
+            <div class="apd-sb-stat-row">
+                <span class="apd-sb-stat-lbl">Daily OT</span>
+                <span class="apd-sb-stat-val apd-sb-stat-val--dash">-</span>
+            </div>
+            <div class="apd-sb-stat-row">
+                <span class="apd-sb-stat-lbl">Daily double OT</span>
+                <span class="apd-sb-stat-val apd-sb-stat-val--dash">-</span>
+            </div>
+            <div class="apd-sb-stat-row">
+                <span class="apd-sb-stat-lbl">Time Off</span>
+                <span class="apd-sb-stat-val apd-sb-stat-val--dash">-</span>
+            </div>
+        </div>
+
+        <div style="height:20px;"></div>
+    </div>
+
+    @* ══════════════════════════════════
+       RIGHT MAIN PANEL
+    ══════════════════════════════════ *@
+    <div class="apd-main">
+
+        @* ── Top bar: back + title + Add Time Entry ── *@
+        <div class="apd-topbar">
+            <div class="apd-topbar-left">
+                <button class="apd-back-btn" @onclick="HandleBack">
+                    <i class="bi bi-arrow-left"></i>
+                </button>
+                <div>
+                    <div class="apd-topbar-title">Time Entries</div>
+                    <div class="apd-topbar-sub">Detailed list of clocked work hours and breaks</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button class="apd-add-btn" @onclick="OpenAddTimeEntry">
+                    <i class="bi bi-plus-lg"></i> Add Time Entry
+                </button>
+                <button class="apd-icon-btn" title="Columns"><i class="bi bi-layout-three-columns"></i></button>
+                <button class="apd-icon-btn" title="Help"><i class="bi bi-question-circle"></i></button>
+            </div>
+        </div>
+
+        @* ── Week date-navigation strip ── *@
+        <div class="apd-week-nav">
+            <button class="apd-week-arrow" @onclick="PrevWeek"><i class="bi bi-chevron-left"></i></button>
+
+            <div class="apd-days-strip">
+                @foreach (var day in WeekDays)
+                {
+                    bool isSel  = day.Date == selectedDate.Date;
+                    var dayHol  = GetHolidayForDate(day);
+                    bool isRest = IsRestDay(day);
+                    var dayDur  = DayDuration(day);
+                    bool hasHrs = dayDur > TimeSpan.Zero;
+
+                    <button class="apd-day @(isSel ? "apd-day--sel" : "") @(isRest ? "apd-day--rest" : "")"
+                            @onclick="() => SelectDay(day)">
+                        @if (!string.IsNullOrEmpty(dayHol))
+                        {
+                            <span class="apd-day-badge apd-day-badge--holiday">Public Holiday</span>
+                        }
+                        else if (isRest)
+                        {
+                            <span class="apd-day-badge apd-day-badge--rest">Rest day</span>
+                        }
+                        <span class="apd-day-name">@day.ToString("ddd")</span>
+                        <span class="apd-day-num @(isSel ? "apd-day-num--sel" : "")">@day.Day</span>
+                        <span class="apd-day-dur @(hasHrs ? "apd-day-dur--has" : "")">
+                            @(hasHrs ? FmtSpan(dayDur) : "-")
+                        </span>
+                    </button>
+                }
+            </div>
+
+            <button class="apd-week-arrow" @onclick="NextWeek"><i class="bi bi-chevron-right"></i></button>
+        </div>
+
+        @* ── Content area ── *@
+        <div class="apd-content">
+
+            @if (isLoading)
+            {
+                <div class="apd-loading">
+                    <div class="apd-spinner"></div>
+                    <span>Loading entries…</span>
+                </div>
+            }
+            else if (IsRestDay(selectedDate))
+            {
+                @* ── Rest day empty state ── *@
+                <div class="apd-empty-state">
+                    <div class="apd-empty-card">
+                        <i class="bi bi-tree apd-empty-icon-rest"></i>
+                        Rest day
+                    </div>
+                    <div class="apd-clock-wrap">
+                        <svg width="110" height="110" viewBox="0 0 110 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <ellipse cx="32" cy="72" rx="26" ry="15" fill="#f0f0f0"/>
+                            <ellipse cx="20" cy="66" rx="16" ry="11" fill="#ebebeb"/>
+                            <ellipse cx="80" cy="68" rx="20" ry="12" fill="#e8e8e8"/>
+                            <circle cx="55" cy="50" r="24" fill="#e8eaed"/>
+                            <circle cx="55" cy="50" r="19" fill="#fff"/>
+                            <line x1="55" y1="34" x2="55" y2="39" stroke="#d1d5db" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="55" y1="61" x2="55" y2="66" stroke="#d1d5db" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="38" y1="50" x2="43" y2="50" stroke="#d1d5db" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="67" y1="50" x2="72" y2="50" stroke="#d1d5db" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="55" y1="50" x2="55" y2="40" stroke="#9ca3af" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="55" y1="50" x2="62" y2="55" stroke="#9ca3af" stroke-width="2" stroke-linecap="round"/>
+                            <circle cx="55" cy="50" r="2.5" fill="#9ca3af"/>
+                            <rect x="48" y="74" width="14" height="5" rx="2.5" fill="#d1d5db"/>
+                            <rect x="43" y="78" width="24" height="4" rx="2" fill="#c9cdd4"/>
+                        </svg>
+                    </div>
+                    <div class="apd-empty-title">Tick tock goes the clock</div>
+                    <div class="apd-empty-sub">There are no time entries on this day.</div>
+                </div>
+            }
+            else if (!dayEntries.Any())
+            {
+                @* ── No entries empty state ── *@
+                <div class="apd-empty-state">
+                    <div class="apd-clock-wrap">
+                        <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                            <circle cx="40" cy="40" r="40" fill="#fff7ed"/>
+                            <rect x="20" y="25" width="40" height="35" rx="6" fill="#fff" stroke="#fed7aa" stroke-width="1.5"/>
+                            <rect x="20" y="25" width="40" height="11" rx="6" fill="#fed7aa"/>
+                            <rect x="20" y="32" width="40" height="4" fill="#fed7aa"/>
+                            <rect x="29" y="20" width="4" height="10" rx="2" fill="#f97316"/>
+                            <rect x="47" y="20" width="4" height="10" rx="2" fill="#f97316"/>
+                            <circle cx="40" cy="48" r="9" fill="#ff7a00"/>
+                            <line x1="40" y1="44" x2="40" y2="48" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+                            <line x1="40" y1="48" x2="44" y2="51" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+                    <div class="apd-empty-title">No entries for this day</div>
+                    <div class="apd-empty-sub">@selectedDate.ToString("dddd, dd MMMM yyyy")</div>
+                    <button class="apd-add-btn" style="margin-top:12px;" @onclick="OpenAddTimeEntry">
+                        <i class="bi bi-plus-lg"></i> Add Time Entry
+                    </button>
+                </div>
+            }
+            else
+            {
+                @* ── Time entry rows ── *@
+                @foreach (var e in dayEntries)
+                {
+                    bool open       = e.ClockOut == null;
+                    var  captured   = e;
+
+                    @if (e.IsHourEntry)
+                    {
+                        <div class="apd-entry-row apd-entry-row--hour">
+                            <div class="apd-er-av apd-er-av--hour"><i class="bi bi-plus-lg"></i></div>
+                            <div class="apd-er-time apd-er-time--hour">Added</div>
+                            <div class="apd-er-badges">
+                                <span class="apd-badge apd-badge--hour"><i class="bi bi-clock-history"></i> Added hours</span>
+                                <span class="apd-badge apd-badge--manual">M</span>
+                            </div>
+                            <div class="apd-er-dur">@(e.WorkedHours ?? "—")</div>
+                            <div class="apd-er-acts">
+                                <button class="apd-er-act-btn" title="View"><i class="bi bi-eye"></i></button>
+                                <button class="apd-er-act-btn apd-er-act-btn--del" title="Delete"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </div>
+                        <div class="apd-entry-sep"></div>
+                    }
+                    else if (e.IsBreakEntry)
+                    {
+                        <div class="apd-entry-row apd-entry-row--break">
+                            <div class="apd-er-av apd-er-av--break"><i class="bi bi-cup-hot"></i></div>
+                            <div class="apd-er-time">
+                                @e.ClockIn.ToString("h:mm")<span class="apd-er-ampm">@e.ClockIn.ToString("tt").ToLower()</span>
+                            </div>
+                            <div class="apd-er-badges">
+                                <span class="apd-badge apd-badge--break"><i class="bi bi-cup-hot"></i> Break</span>
+                                @if (e.IsManual) { <span class="apd-badge apd-badge--manual">Manual</span> }
+                            </div>
+                            <div class="apd-er-dur">@(string.IsNullOrWhiteSpace(e.WorkedHours) ? "—" : e.WorkedHours)</div>
+                            <div class="apd-er-acts">
+                                <button class="apd-er-act-btn" title="View"><i class="bi bi-eye"></i></button>
+                                <button class="apd-er-act-btn apd-er-act-btn--del" title="Delete"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </div>
+                        <div class="apd-entry-sep"></div>
+                    }
+                    else
+                    {
+                        @* Clock-In row *@
+                        <div class="apd-entry-row">
+                            <div class="apd-er-av @(open ? "apd-er-av--live" : "")">@Initials</div>
+                            <div class="apd-er-time">
+                                @e.ClockIn.ToString("h:mm")<span class="apd-er-ampm">@e.ClockIn.ToString("tt").ToLower()</span>
+                            </div>
+                            <div class="apd-er-badges">
+                                <span class="apd-badge apd-badge--in"><i class="bi bi-box-arrow-in-right"></i> Clock in</span>
+                                @if (e.IsManual) { <span class="apd-badge apd-badge--manual">Manual</span> }
+                            </div>
+                            <div class="apd-er-dur">
+                                @if (open) { <span class="apd-er-dur--live">Live</span> }
+                                else if (!string.IsNullOrWhiteSpace(e.WorkedHours)) { @e.WorkedHours }
+                                else { <span class="apd-er-dur--dash">—</span> }
+                            </div>
+                            <div class="apd-er-acts">
+                                <button class="apd-er-act-btn" title="View"><i class="bi bi-eye"></i></button>
+                                <button class="apd-er-act-btn apd-er-act-btn--del" title="Delete"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </div>
+
+                        @* Clock-Out row *@
+                        @if (!open)
+                        {
+                            <div class="apd-entry-row apd-entry-row--out">
+                                <div class="apd-er-av">@Initials</div>
+                                <div class="apd-er-time">
+                                    @e.ClockOut!.Value.ToString("h:mm")<span class="apd-er-ampm">@e.ClockOut!.Value.ToString("tt").ToLower()</span>
+                                </div>
+                                <div class="apd-er-badges">
+                                    <span class="apd-badge apd-badge--out"><i class="bi bi-box-arrow-right"></i> Clock out</span>
+                                    @if (e.IsManual) { <span class="apd-badge apd-badge--manual">Manual</span> }
+                                </div>
+                                <div class="apd-er-dur"><span class="apd-er-dur--dash">—</span></div>
+                                <div class="apd-er-acts">
+                                    <button class="apd-er-act-btn" title="View"><i class="bi bi-eye"></i></button>
+                                    <button class="apd-er-act-btn apd-er-act-btn--del" title="Delete"><i class="bi bi-trash"></i></button>
+                                </div>
+                            </div>
+                        }
+                        <div class="apd-entry-sep"></div>
+                    }
+                }
+            }
+
+            @* ── Bottom accordion panels ── *@
+            <div class="apd-accordions">
+
+                @* TRACKED HOURS accordion *@
+                <div class="apd-accordion">
+                    <button class="apd-accordion-hdr" @onclick="() => trackedExpanded = !trackedExpanded">
+                        <div class="apd-acc-hdr-left">
+                            <span class="apd-acc-title">TRACKED HOURS</span>
+                            <span class="apd-acc-sub">Include worked hours, break hours and any auto deductions.</span>
+                        </div>
+                        <div class="apd-acc-hdr-right">
+                            <span class="apd-acc-val">@dayTrackedDisplay</span>
+                            <i class="bi bi-chevron-@(trackedExpanded ? "up" : "down") apd-acc-chevron"></i>
+                        </div>
+                    </button>
+                    @if (trackedExpanded)
+                    {
+                        <div class="apd-acc-body">
+                            <div class="apd-acc-row"><span class="apd-acc-lbl">Worked Hours</span><span class="apd-acc-val--green">@dayTrackedDisplay</span></div>
+                            <div class="apd-acc-row"><span class="apd-acc-lbl">Break Hours</span><span class="apd-acc-dash">—</span></div>
+                            <div class="apd-acc-row"><span class="apd-acc-lbl">Auto Deductions</span><span class="apd-acc-dash">—</span></div>
+                            <div class="apd-acc-row apd-acc-row--total">
+                                <span class="apd-acc-lbl-total">Total Tracked</span>
+                                <span class="apd-acc-val-total">@dayTrackedDisplay</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @* PAYROLL HOURS accordion *@
+                <div class="apd-accordion">
+                    <button class="apd-accordion-hdr" @onclick="() => payrollExpanded = !payrollExpanded">
+                        <div class="apd-acc-hdr-left">
+                            <span class="apd-acc-title">PAYROLL HOURS</span>
+                            <span class="apd-acc-sub">Include regular hours, paid breaks, overtime hours and paid time off.</span>
+                        </div>
+                        <div class="apd-acc-hdr-right">
+                            <span class="apd-acc-val">@dayTrackedDisplay</span>
+                            <i class="bi bi-chevron-@(payrollExpanded ? "up" : "down") apd-acc-chevron"></i>
+                        </div>
+                    </button>
+                    @if (payrollExpanded)
+                    {
+                        <div class="apd-acc-body">
+                            <div class="apd-acc-row"><span class="apd-acc-lbl">Regular Hours</span><span class="apd-acc-val--green">@dayTrackedDisplay</span></div>
+                            <div class="apd-acc-row"><span class="apd-acc-lbl">Paid Breaks</span><span class="apd-acc-dash">—</span></div>
+                            <div class="apd-acc-row"><span class="apd-acc-lbl">Overtime Hours</span><span class="apd-acc-dash">—</span></div>
+                            <div class="apd-acc-row"><span class="apd-acc-lbl">Paid Time Off</span><span class="apd-acc-dash">—</span></div>
+                            <div class="apd-acc-row apd-acc-row--total">
+                                <span class="apd-acc-lbl-total">Total Payroll</span>
+                                <span class="apd-acc-val-total">@dayTrackedDisplay</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @* CHANGE HISTORY accordion *@
+                <div class="apd-accordion">
+                    <button class="apd-accordion-hdr" @onclick="() => historyExpanded = !historyExpanded">
+                        <div class="apd-acc-hdr-left">
+                            <span class="apd-acc-title">CHANGE HISTORY</span>
+                            <span class="apd-acc-sub">View a history log of time entries that are manually added or changed.</span>
+                        </div>
+                        <div class="apd-acc-hdr-right">
+                            @if (changeHistory.Count > 0)
+                            {
+                                <span class="apd-hist-badge">@changeHistory.Count</span>
+                            }
+                            <i class="bi bi-chevron-@(historyExpanded ? "up" : "down") apd-acc-chevron"></i>
+                        </div>
+                    </button>
+                    @if (historyExpanded)
+                    {
+                        <div class="apd-hist-body">
+                            @if (!changeHistory.Any())
+                            {
+                                <div class="apd-hist-empty">
+                                    <i class="bi bi-clock-history"></i>
+                                    <span>No manual changes recorded for this day.</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="apd-hist-hdr">
+                                    <span class="apd-hist-hdr-cell">Change made</span>
+                                    <span class="apd-hist-hdr-cell">Reason for change</span>
+                                    <span class="apd-hist-hdr-cell">Timestamp</span>
+                                </div>
+                                @foreach (var h in changeHistory)
+                                {
+                                    var av = string.IsNullOrEmpty(h.ChangedByName) ? "?" : h.ChangedByName[0].ToString().ToUpper();
+                                    <div class="apd-hist-row">
+                                        <div class="apd-hist-cell apd-hist-cell--change">
+                                            <div class="apd-hist-av">@av</div>
+                                            <div class="apd-hist-who">
+                                                <div class="apd-hist-name-row">
+                                                    <span class="apd-hist-name">@h.ChangedByName</span>
+                                                    <span class="apd-hist-action">@GetHistoryActionLabel(h)</span>
+                                                </div>
+                                                @if (h.NewClockIn.HasValue)
+                                                {
+                                                    <div class="apd-hist-time-row">
+                                                        <i class="bi bi-box-arrow-in-right apd-hist-icon apd-hist-icon--in"></i>
+                                                        <span class="apd-hist-newtime">@h.NewClockIn.Value.ToString("ddd, MMM d, h:mm tt").ToLower()</span>
+                                                    </div>
+                                                }
+                                                @if (h.OldClockIn.HasValue && h.NewClockIn.HasValue)
+                                                {
+                                                    <div class="apd-hist-time-row">
+                                                        <i class="bi bi-box-arrow-in-right apd-hist-icon apd-hist-icon--in apd-hist-icon--faded"></i>
+                                                        <span class="apd-hist-oldtime">@h.OldClockIn.Value.ToString("ddd, MMM d, h:mm tt").ToLower()</span>
+                                                    </div>
+                                                }
+                                                else if (h.OldClockIn.HasValue && !h.NewClockIn.HasValue)
+                                                {
+                                                    <div class="apd-hist-time-row">
+                                                        <i class="bi bi-box-arrow-in-right apd-hist-icon apd-hist-icon--in"></i>
+                                                        <span class="apd-hist-newtime">@h.OldClockIn.Value.ToString("ddd, MMM d, h:mm tt").ToLower()</span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                        <div class="apd-hist-cell apd-hist-cell--reason">
+                                            @if (!string.IsNullOrWhiteSpace(h.ReasonForChange))
+                                            { <span class="apd-hist-reason">@h.ReasonForChange</span> }
+                                            else { <span class="apd-hist-dash">—</span> }
+                                        </div>
+                                        <div class="apd-hist-cell apd-hist-cell--ts">
+                                            <span class="apd-hist-ts">@h.ChangedAt.ToString("MMM d, h:mm tt") (GMT+5:30)</span>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+
+            </div>@* /apd-accordions *@
+
+        </div>@* /apd-content *@
+
+    </div>@* /apd-main *@
+
+</div>@* /apd-shell *@
+
+
+@* ══════════════════════════════════
+   ADD TIME ENTRY PANEL (slide-in)
+══════════════════════════════════ *@
+@if (showAddEntry)
+{
+    <div class="apd-amt-backdrop" @onclick="CloseAddEntry">
+        <div class="apd-amt-panel" @onclick:stopPropagation="true">
+            <div class="apd-amt-header">
+                <span class="apd-amt-title">Add Manual Time Entry</span>
+                <button class="apd-amt-close" @onclick="CloseAddEntry"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="apd-amt-body">
+                <div class="apd-amt-profile">
+                    <div class="apd-amt-av">@Initials</div>
+                    <div>
+                        <div class="apd-amt-name">@(Row?.FullName?.ToUpper() ?? "")</div>
+                        <div class="apd-amt-sub">Clocking from GMT+5:30</div>
+                        <div class="apd-amt-sub">Split time: 12:00 am</div>
+                    </div>
+                </div>
+                <hr class="apd-amt-divider"/>
+                <div style="padding:40px 0;text-align:center;color:#9ca3af;font-size:13px;">
+                    <i class="bi bi-info-circle" style="font-size:24px;margin-bottom:8px;display:block;"></i>
+                    Time entry form — connect to AddEntry logic from Timesheets.AddEntry.cs
+                </div>
+            </div>
+            <div class="apd-amt-footer">
+                <div></div>
+                <div style="display:flex;gap:10px;">
+                    <button class="apd-amt-cancel" @onclick="CloseAddEntry">Cancel</button>
+                    <button class="apd-amt-save">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+
+@code {
+    // ── Parameters ────────────────────────────────────────────────────
+    [Parameter] public RangeTimesheetRow?       Row            { get; set; }
+    [Parameter] public int                      EmployeeId     { get; set; }
+    [Parameter] public DateTime                 PeriodStart    { get; set; }
+    [Parameter] public DateTime                 PeriodEnd      { get; set; }
+    [Parameter] public EventCallback            OnBack         { get; set; }
+    /// <summary>Full list of approval rows — used for Prev / Next employee navigation</summary>
+    [Parameter] public List<RangeTimesheetRow>  EmployeeList   { get; set; } = new();
+
+    // ── Local state ───────────────────────────────────────────────────
+    private bool isLoading           = false;
+    private bool showAddEntry        = false;
+    private bool trackedExpanded     = false;
+    private bool payrollExpanded     = false;
+    private bool historyExpanded     = false;
+    // Tracks last loaded employee — prevents OnParametersSetAsync from
+    // reloading data on every parent StateHasChanged (was causing blinking)
+    private int  lastLoadedEmployeeId = 0;
+
+    private DateTime weekStart;
+    private DateTime selectedDate;
+
+    private List<TimeEntryRecord>    weekEntries   = new();
+    private List<TimeEntryRecord>    dayEntries    = new();
+    private List<ChangeHistoryEntry> changeHistory = new();
+
+    private string dayTrackedDisplay = "0h 0m";
+    private string periodTracked     = "0h 0m";
+    private string periodWorked      = "0h 0m";
+    private string periodBreaks      = "—";
+
+    // ── Data model (mirrors Timesheets.State.cs ChangeHistoryEntry) ──
+    public class ChangeHistoryEntry
+    {
+        public string    ChangedByName   { get; set; } = "";
+        public string    Action          { get; set; } = "";
+        public DateTime? OldClockIn      { get; set; }
+        public DateTime? OldClockOut     { get; set; }
+        public DateTime? NewClockIn      { get; set; }
+        public DateTime? NewClockOut     { get; set; }
+        public string?   ReasonForChange { get; set; }
+        public DateTime  ChangedAt       { get; set; }
+        public bool      IsHourEntry     => Action == "AddedHour";
+        public bool      IsBreakEntry    => Action == "AddedBreak";
+    }
+
+    // ── Computed ──────────────────────────────────────────────────────
+    private string Initials =>
+        string.IsNullOrEmpty(Row?.FullName) ? "?" : Row.FullName[0].ToString().ToUpper();
+
+    private IEnumerable<DateTime> WeekDays =>
+        Enumerable.Range(0, 7).Select(i => weekStart.AddDays(i));
+
+    // ── Lifecycle ─────────────────────────────────────────────────────
+    // Use OnInitializedAsync so this fires ONCE when the component mounts.
+    // OnParametersSetAsync fires on every parent StateHasChanged — that caused
+    // the continuous blinking / reload loop.
+    protected override async Task OnInitializedAsync()
+    {
+        // Initialise week/day from the period start
+        selectedDate = PeriodStart;
+        int dow = (int)selectedDate.DayOfWeek;
+        weekStart = selectedDate.AddDays(-(dow == 0 ? 6 : dow - 1));
+
+        // Populate sidebar totals from the row passed in
+        if (Row != null)
+        {
+            // Don't use Row.TotalHours — it's the single-day value from the org API.
+            // LoadWeekAndDay() will compute the correct weekly total from actual entries.
+            periodTracked = "…";
+            periodWorked  = "…";
+            periodBreaks  = "—";
+        }
+
+        await LoadWeekAndDay();
+    }
+
+    // Called when the parent switches to a different employee via prev/next
+    protected override async Task OnParametersSetAsync()
+    {
+        // Only reload if the employee actually changed — prevents blinking
+        // on every parent StateHasChanged while viewing the same employee
+        if (EmployeeId != lastLoadedEmployeeId && EmployeeId != 0)
+        {
+            selectedDate = PeriodStart;
+            int dow = (int)selectedDate.DayOfWeek;
+            weekStart = selectedDate.AddDays(-(dow == 0 ? 6 : dow - 1));
+
+            if (Row != null)
+            {
+                // Don't use Row.TotalHours — LoadWeekAndDay() computes correct weekly total.
+                periodTracked = "…";
+                periodWorked  = "…";
+                periodBreaks  = "—";
+            }
+
+            trackedExpanded = payrollExpanded = historyExpanded = false;
+            await LoadWeekAndDay();
+        }
+    }
+
+    // ── Data loading ──────────────────────────────────────────────────
+    private async Task LoadWeekAndDay()
+    {
+        if (EmployeeId == 0) return;
+        lastLoadedEmployeeId = EmployeeId;   // ← record so OnParametersSetAsync skips re-load
+        isLoading = true; StateHasChanged();
+        try
+        {
+            weekEntries = await AttendanceService.GetHistoryByWeekAsync(EmployeeId, weekStart, SessionService.ActiveOrganizationId);
+            dayEntries  = weekEntries.Where(e => e.ClockIn.Date == selectedDate.Date).ToList();
+            dayTrackedDisplay = ComputeTracked(dayEntries);
+
+            // Recompute weekly totals from actual entries (not from Row.TotalHours which
+            // only covers the single selected day from the org-level API).
+            var weekTotal = ComputeWeekTracked(weekEntries);
+            periodTracked = weekTotal;
+            periodWorked  = weekTotal;
+
+            await BuildChangeHistory();
+        }
+        catch { /* silently handle — show empty state */ }
+        finally { isLoading = false; StateHasChanged(); }
+    }
+
+    private async Task BuildChangeHistory()
+    {
+        try
+        {
+            var logs = await AttendanceService.GetChangeLogByDateAsync(EmployeeId, selectedDate);
+            changeHistory = logs.Select(l => new ChangeHistoryEntry
+            {
+                ChangedByName   = l.ChangedByName,
+                Action          = l.Action,
+                OldClockIn      = l.OldClockIn,
+                OldClockOut     = l.OldClockOut,
+                NewClockIn      = l.NewClockIn,
+                NewClockOut     = l.NewClockOut,
+                ReasonForChange = l.ReasonForChange,
+                ChangedAt       = l.ChangedAt
+            }).ToList();
+        }
+        catch { changeHistory = new(); }
+    }
+
+    // ── Navigation ────────────────────────────────────────────────────
+    private async Task SelectDay(DateTime day)
+    {
+        selectedDate     = day;
+        trackedExpanded  = payrollExpanded = historyExpanded = false;
+        dayEntries       = weekEntries.Where(e => e.ClockIn.Date == day.Date).ToList();
+        dayTrackedDisplay = ComputeTracked(dayEntries);
+        await BuildChangeHistory();
+        StateHasChanged();
+    }
+
+    private async Task PrevWeek()
+    {
+        weekStart    = weekStart.AddDays(-7);
+        selectedDate = weekStart;
+        await LoadWeekAndDay();
+    }
+
+    private async Task NextWeek()
+    {
+        weekStart    = weekStart.AddDays(7);
+        selectedDate = weekStart;
+        await LoadWeekAndDay();
+    }
+
+    private async Task HandleBack() => await OnBack.InvokeAsync();
+
+    // ── Add entry ─────────────────────────────────────────────────────
+    private void OpenAddTimeEntry() { showAddEntry = true; StateHasChanged(); }
+    private void CloseAddEntry()    { showAddEntry = false; StateHasChanged(); }
+
+    // ── Prev / Next employee ───────────────────────────────────────────
+    private int CurrentEmployeeIndex =>
+        EmployeeList.FindIndex(r => r.EmployeeId == EmployeeId);
+
+    private bool HasPrevEmployee => CurrentEmployeeIndex > 0;
+    private bool HasNextEmployee => CurrentEmployeeIndex >= 0 && CurrentEmployeeIndex < EmployeeList.Count - 1;
+
+    private async Task NavPrevEmployee()
+    {
+        int idx = CurrentEmployeeIndex;
+        if (idx <= 0) return;
+        await SwitchToEmployee(EmployeeList[idx - 1]);
+    }
+
+    private async Task NavNextEmployee()
+    {
+        int idx = CurrentEmployeeIndex;
+        if (idx < 0 || idx >= EmployeeList.Count - 1) return;
+        await SwitchToEmployee(EmployeeList[idx + 1]);
+    }
+
+    private async Task SwitchToEmployee(RangeTimesheetRow newRow)
+    {
+        // Update local binding — parent will propagate via parameter on next render,
+        // but we reset lastLoadedEmployeeId so OnParametersSetAsync picks it up
+        lastLoadedEmployeeId = 0;
+        Row        = newRow;
+        EmployeeId = newRow.EmployeeId;
+
+        selectedDate = PeriodStart;
+        int dow = (int)selectedDate.DayOfWeek;
+        weekStart = selectedDate.AddDays(-(dow == 0 ? 6 : dow - 1));
+
+        // Don't pre-fill from newRow.TotalHours — LoadWeekAndDay will compute
+        // correct totals from actual weekEntries (including live sessions).
+        periodTracked = "…";
+        periodWorked  = "…";
+        periodBreaks  = "—";
+
+        trackedExpanded = payrollExpanded = historyExpanded = false;
+        await LoadWeekAndDay();
+    }
+
+    // ── Static helpers (mirror Timesheets.ListData.cs) ────────────────
+    private static string GetHolidayForDate(DateTime date)
+    {
+        var cals = APM.StaffZen.Blazor.Components.Pages.TimeOff.HolidaysTabState.SharedCalendars;
+        if (cals == null) return "";
+        foreach (var cal in cals)
+        {
+            var h = cal.Holidays.FirstOrDefault(h => h.Date.Date == date.Date);
+            if (h != null) return h.Name;
+        }
+        return "";
+    }
+
+    private static bool IsRestDay(DateTime date)
+        => APM.StaffZen.Blazor.Services.WorkScheduleState.IsRestDay(date);
+
+    private TimeSpan DayDuration(DateTime day)
+    {
+        var entries = weekEntries.Where(e => e.ClockIn.Date == day.Date).ToList();
+        var total   = TimeSpan.Zero;
+        foreach (var e in entries)
+        {
+            if (e.IsBreakEntry) continue;
+            DateTime effectiveOut;
+            if (e.ClockOut.HasValue)
+            {
+                effectiveOut = e.ClockOut.Value;
+            }
+            else if (!e.IsManual && !e.IsHourEntry && day.Date == DateTime.Today)
+            {
+                // Live session — use current time as effective clock-out
+                effectiveOut = DateTime.Now;
+            }
+            else
+            {
+                continue; // open manual / past-day open → skip
+            }
+            var dur = effectiveOut - e.ClockIn;
+            if (dur > TimeSpan.Zero) total += dur;
+        }
+        return total;
+    }
+
+    private static string ComputeTracked(List<TimeEntryRecord> src)
+    {
+        var total   = src.Where(e => e.ClockOut != null)
+                         .Aggregate(TimeSpan.Zero, (acc, e) => acc + (e.ClockOut!.Value - e.ClockIn));
+        var running = src.FirstOrDefault(e => e.ClockOut == null && !e.IsManual);
+        if (running != null)
+        {
+            var elapsed = DateTime.Now - running.ClockIn;
+            if (elapsed > TimeSpan.Zero) total += elapsed;
+        }
+        return FmtSpan(total);
+    }
+
+    /// <summary>
+    /// Compute total tracked hours for the entire week from raw weekEntries,
+    /// properly handling live (ongoing) sessions so the weekly summary panel
+    /// always shows accurate totals even when someone is currently clocked in.
+    /// </summary>
+    private static string ComputeWeekTracked(List<TimeEntryRecord> src)
+    {
+        var total = TimeSpan.Zero;
+        foreach (var e in src)
+        {
+            if (e.IsBreakEntry) continue;
+            if (e.ClockOut.HasValue)
+            {
+                var dur = e.ClockOut.Value - e.ClockIn;
+                if (dur > TimeSpan.Zero) total += dur;
+            }
+            else if (!e.IsManual && !e.IsHourEntry)
+            {
+                // Live session — use current time as effective clock-out
+                var elapsed = DateTime.Now - e.ClockIn;
+                if (elapsed > TimeSpan.Zero) total += elapsed;
+            }
+        }
+        return FmtSpan(total);
+    }
+
+    private static string FmtSpan(TimeSpan ts)
+    {
+        if (ts <= TimeSpan.Zero) return "0h 0m";
+        int h = (int)ts.TotalHours, m = ts.Minutes;
+        return h > 0 ? $"{h}h {m}m" : $"{m}m";
+    }
+
+    private static string GetHistoryActionLabel(ChangeHistoryEntry h) => h.Action switch
+    {
+        "AddedBreak" => "added a break entry",
+        "AddedHour"  => "added an hour entry",
+        "Added"      => "added a time entry",
+        "Edited"     => "edited a time entry",
+        "Deleted"    => "deleted a time entry",
+        _            => h.Action.ToLower()
+    };
+}
+
+
+<style>
+    /* ═══════════════════════════════════════════════════════════════════
+       TIMESHEET APPROVAL DETAIL  (apd-)
+       Scoped to this component — all classes prefixed apd-
+    ═══════════════════════════════════════════════════════════════════ */
+
+    /* ── Shell ── */
+    .apd-shell {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #f8f9fb;
+    }
+
+    /* ════════════════════════
+       LEFT SIDEBAR
+    ════════════════════════ */
+    .apd-sidebar {
+        width: 260px;
+        flex-shrink: 0;
+        background: #fff;
+        border-right: 1px solid #e8eaed;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+
+    /* ── Prev / Next employee navigation row ── */
+    .apd-sb-nav-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 16px 20px 0;
+        position: relative;
+    }
+
+    .apd-sb-nav-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        border: 1.5px solid #e0e0e0;
+        background: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 11px;
+        color: #374151;
+        flex-shrink: 0;
+        transition: border-color .15s, color .15s, background .15s;
+    }
+
+    .apd-sb-nav-btn:hover:not(:disabled) {
+        border-color: #ff7a00;
+        color: #ff7a00;
+    }
+
+    .apd-sb-nav-btn:disabled {
+        opacity: .4;
+        cursor: not-allowed;
+    }
+
+    /* "Next" dark tooltip label — matches image exactly */
+    .apd-sb-next-tip {
+        position: absolute;
+        top: calc(100% - 4px);
+        left: 34px;
+        background: #1f2937;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 6px;
+        white-space: nowrap;
+        pointer-events: none;
+        z-index: 10;
+        box-shadow: 0 2px 8px rgba(0,0,0,.18);
+    }
+
+    .apd-sb-next-tip::before {
+        content: '';
+        position: absolute;
+        top: -5px;
+        left: 10px;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-bottom: 5px solid #1f2937;
+    }
+
+    .apd-sb-period {
+        padding: 20px 20px 0;
+        font-size: 13px;
+        font-weight: 800;
+        color: #111827;
+        letter-spacing: .3px;
+    }
+
+    .apd-sb-employee {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 20px 0;
+    }
+
+    .apd-sb-av {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: #e5e7eb;
+        color: #6b7280;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        font-weight: 700;
+        flex-shrink: 0;
+        position: relative;
+    }
+
+    .apd-sb-av-dot {
+        position: absolute;
+        bottom: 1px;
+        right: 1px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #f97316;
+        border: 2px solid #fff;
+    }
+
+    .apd-sb-av-spinner {
+        position: absolute;
+        bottom: -2px;
+        right: -2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 2px solid #f3f4f6;
+        border-top-color: #ff7a00;
+        animation: apd-spin .7s linear infinite;
+    }
+
+    .apd-sb-emp-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .apd-sb-meta {
+        padding: 14px 20px 0;
+    }
+
+    .apd-sb-meta-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 4px 0;
+        gap: 6px;
+    }
+
+    .apd-sb-meta-k {
+        font-size: 11px;
+        color: #9ca3af;
+        font-weight: 500;
+    }
+
+    .apd-sb-meta-v {
+        font-size: 11px;
+        color: #374151;
+        font-weight: 600;
+        text-align: right;
+    }
+
+    .apd-sb-divider {
+        height: 1px;
+        background: #f3f4f6;
+        margin: 14px 20px 0;
+    }
+
+    .apd-sb-section {
+        padding: 14px 20px 0;
+    }
+
+    .apd-sb-section-title {
+        font-size: 11px;
+        font-weight: 700;
+        color: #ff7a00;
+        letter-spacing: .6px;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+    }
+
+    .apd-sb-stat-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 7px 0;
+        border-bottom: 1px solid #f9fafb;
+    }
+
+    .apd-sb-stat-row:last-child { border-bottom: none; }
+
+    .apd-sb-stat-lbl {
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .apd-sb-stat-val {
+        font-size: 13px;
+        font-weight: 600;
+        color: #111827;
+    }
+
+    .apd-sb-stat-val--bold {
+        font-weight: 800;
+        color: #ff7a00;
+    }
+
+    .apd-sb-stat-val--dash {
+        color: #d1d5db !important;
+        font-weight: 400 !important;
+    }
+
+    .apd-paid-badge {
+        display: inline-block;
+        padding: 1px 5px;
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        font-size: 9px;
+        font-weight: 700;
+        color: #6b7280;
+        margin-left: 3px;
+        vertical-align: middle;
+    }
+
+    /* ════════════════════════
+       MAIN PANEL
+    ════════════════════════ */
+    .apd-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: #f8f9fb;
+        overflow: hidden;
+        min-width: 0;
+    }
+
+    /* ── Top bar ── */
+    .apd-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 24px;
+        background: #fff;
+        border-bottom: 1px solid #e8eaed;
+        flex-shrink: 0;
+    }
+
+    .apd-topbar-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .apd-back-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border: 1.5px solid #e0e0e0;
+        border-radius: 6px;
+        background: #fff;
+        font-size: 13px;
+        color: #374151;
+        cursor: pointer;
+        transition: border-color .15s, color .15s;
+    }
+
+    .apd-back-btn:hover { border-color: #ff7a00; color: #ff7a00; }
+
+    .apd-topbar-title { font-size: 15px; font-weight: 700; color: #111827; }
+    .apd-topbar-sub   { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+
+    .apd-add-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 18px;
+        border-radius: 8px;
+        border: none;
+        background: #ff7a00;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background .15s;
+    }
+
+    .apd-add-btn:hover { background: #e66c00; }
+
+    .apd-icon-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        border: 1.5px solid #e8eaed;
+        background: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        color: #9ca3af;
+        cursor: pointer;
+    }
+
+    /* ── Week date strip ── */
+    .apd-week-nav {
+        display: flex;
+        align-items: stretch;
+        background: #fff;
+        border-bottom: 1px solid #e8eaed;
+        flex-shrink: 0;
+    }
+
+    .apd-week-arrow {
+        width: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        color: #6b7280;
+        font-size: 13px;
+        flex-shrink: 0;
+    }
+
+    .apd-week-arrow:hover { color: #ff7a00; }
+
+    .apd-days-strip {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    .apd-day {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 8px 4px;
+        cursor: pointer;
+        border: none;
+        background: transparent;
+        border-bottom: 2.5px solid transparent;
+        font-family: inherit;
+        transition: background .12s;
+        position: relative;
+        min-width: 0;
+    }
+
+    .apd-day:hover { background: #f9fafb; }
+
+    .apd-day--sel {
+        border-bottom-color: #ff7a00;
+        background: #fff8f2;
+    }
+
+    .apd-day--rest { background: #f9fafb; }
+
+    .apd-day-badge {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 9px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 0 0 4px 4px;
+        white-space: nowrap;
+        letter-spacing: .3px;
+    }
+
+    .apd-day-badge--holiday { background: #6b7280; color: #fff; }
+    .apd-day-badge--rest    { background: #6b7280; color: #fff; }
+
+    .apd-day-name {
+        font-size: 10px;
+        color: #9ca3af;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .4px;
+        margin-top: 14px;
+    }
+
+    .apd-day--sel .apd-day-name { color: #ff7a00; }
+
+    .apd-day-num {
+        font-size: 15px;
+        font-weight: 700;
+        color: #374151;
+        line-height: 1.1;
+        margin-top: 2px;
+    }
+
+    .apd-day-num--sel {
+        width: 26px;
+        height: 26px;
+        background: #ff7a00;
+        color: #fff !important;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    .apd-day-dur {
+        font-size: 10px;
+        color: #d1d5db;
+        font-weight: 400;
+        margin-top: 2px;
+    }
+
+    .apd-day-dur--has {
+        color: #ff7a00;
+        font-weight: 700;
+    }
+
+    .apd-day--sel .apd-day-dur--has { color: #ff7a00; }
+
+    /* ── Content scroll area ── */
+    .apd-content {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        background: #fff;
+        scrollbar-width: thin;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* ── Loading ── */
+    .apd-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 60px;
+        color: #9ca3af;
+        font-size: 14px;
+    }
+
+    .apd-spinner {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 2.5px solid #f3f4f6;
+        border-top-color: #ff7a00;
+        animation: apd-spin .7s linear infinite;
+    }
+
+    @@keyframes apd-spin { to { transform: rotate(360deg); } }
+
+    /* ── Empty states ── */
+    .apd-empty-state {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 24px;
+        gap: 10px;
+        text-align: center;
+    }
+
+    .apd-empty-card {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #6b7280;
+    }
+
+    .apd-empty-icon-rest { font-size: 18px; color: #9ca3af; }
+
+    .apd-clock-wrap { margin: 8px 0; }
+    .apd-empty-title { font-size: 16px; font-weight: 700; color: #374151; }
+    .apd-empty-sub   { font-size: 13px; color: #9ca3af; }
+
+    /* ── Entry rows ── */
+    .apd-entry-row {
+        display: flex;
+        align-items: center;
+        padding: 14px 20px 14px 16px;
+        border-bottom: 1px solid #f3f4f6;
+        cursor: pointer;
+        transition: background .12s;
+        position: relative;
+    }
+
+    .apd-entry-row:hover { background: #fafafa; }
+    .apd-entry-row--out  { background: #fafafa; }
+    .apd-entry-row--break { background: #fffbeb; }
+    .apd-entry-row--break:hover { background: #fef3c7 !important; }
+    .apd-entry-row--hour  { background: #faf5ff; }
+    .apd-entry-row--hour:hover  { background: #f3e8ff !important; }
+
+    .apd-er-av {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #ff7a00, #ff9a3c);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 700;
+        flex-shrink: 0;
+        margin-right: 14px;
+    }
+
+    .apd-er-av--live  { background: linear-gradient(135deg, #bbf7d0, #dcfce7); color: #166534; }
+    .apd-er-av--break { background: linear-gradient(135deg, #f59e0b, #fbbf24); color: #fff; font-size: 15px; }
+    .apd-er-av--hour  { background: linear-gradient(135deg, #7c3aed, #a78bfa); color: #fff; font-size: 12px; }
+
+    .apd-er-time {
+        width: 90px;
+        flex-shrink: 0;
+        font-size: 15px;
+        font-weight: 700;
+        color: #111827;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .apd-er-time--hour {
+        font-size: 13px;
+        font-weight: 600;
+        color: #7c3aed;
+    }
+
+    .apd-er-ampm {
+        font-size: 11px;
+        font-weight: 500;
+        color: #6b7280;
+        margin-left: 2px;
+    }
+
+    .apd-er-badges {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .apd-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 700;
+        border: 1px solid;
+    }
+
+    .apd-badge--in     { color: #166534; background: #f0fdf4; border-color: #86efac; }
+    .apd-badge--out    { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+    .apd-badge--break  { color: #92400e; background: #fffbeb; border-color: #fcd34d; }
+    .apd-badge--hour   { color: #5b21b6; background: #f5f3ff; border-color: #ddd6fe; }
+    .apd-badge--manual {
+        color: #374151;
+        background: #f3f4f6;
+        border-color: #d1d5db;
+        font-size: 10px;
+        padding: 2px 7px;
+    }
+
+    .apd-er-dur {
+        width: 80px;
+        text-align: right;
+        flex-shrink: 0;
+        font-size: 13px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .apd-er-dur--live { font-weight: 700; color: #16a34a; }
+    .apd-er-dur--dash { color: #d1d5db; font-weight: 400; }
+
+    .apd-er-acts {
+        width: 64px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+        opacity: 0;
+        transition: opacity .15s;
+    }
+
+    .apd-entry-row:hover .apd-er-acts { opacity: 1; }
+
+    .apd-er-act-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        border: 1.5px solid #e8eaed;
+        background: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 12px;
+        color: #6b7280;
+        transition: border-color .15s, color .15s;
+    }
+
+    .apd-er-act-btn:hover         { border-color: #ff7a00; color: #ff7a00; }
+    .apd-er-act-btn--del:hover    { border-color: #ef4444; color: #ef4444; }
+
+    .apd-entry-sep { height: 6px; background: #f8f9fb; }
+
+    /* ════════════════════════
+       ACCORDIONS
+    ════════════════════════ */
+    .apd-accordions { border-top: 2px solid #f3f4f6; background: #fff; }
+
+    .apd-accordion { border-bottom: 1px solid #e8eaed; }
+
+    .apd-accordion-hdr {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 16px 24px;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+        text-align: left;
+        transition: background .15s;
+    }
+
+    .apd-accordion-hdr:hover { background: #fafafa; }
+
+    .apd-acc-hdr-left  { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+    .apd-acc-title     { font-size: 12px; font-weight: 800; color: #111827; letter-spacing: .4px; }
+    .apd-acc-sub       { font-size: 11px; color: #9ca3af; }
+    .apd-acc-hdr-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .apd-acc-val       { font-size: 15px; font-weight: 800; color: #111827; font-variant-numeric: tabular-nums; }
+    .apd-acc-chevron   { font-size: 12px; color: #9ca3af; }
+
+    .apd-acc-body {
+        padding: 4px 24px 18px;
+        background: #fafafa;
+        border-top: 1px solid #f3f4f6;
+    }
+
+    .apd-acc-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #f3f4f6;
+    }
+
+    .apd-acc-row:last-child  { border-bottom: none; }
+    .apd-acc-row--total      { border-top: 1.5px solid #e8eaed; margin-top: 4px; padding-top: 10px; border-bottom: none; }
+    .apd-acc-lbl             { font-size: 12px; color: #6b7280; }
+    .apd-acc-lbl-total       { font-size: 12px; font-weight: 700; color: #374151; }
+    .apd-acc-val--green      { font-size: 13px; font-weight: 600; color: #16a34a; }
+    .apd-acc-val-total       { font-size: 15px; font-weight: 800; color: #ff7a00; }
+    .apd-acc-dash            { font-size: 13px; color: #d1d5db; }
+
+    /* ── History badge ── */
+    .apd-hist-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #374151;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .apd-hist-body   { padding: 0; }
+    .apd-hist-empty  { display: flex; align-items: center; gap: 10px; padding: 20px; color: #9ca3af; font-size: 13px; }
+
+    .apd-hist-hdr {
+        display: grid;
+        grid-template-columns: 1fr 160px 200px;
+        padding: 10px 20px;
+        background: #f8f9fb;
+        border-bottom: 1px solid #e8eaed;
+        border-top: 1px solid #e8eaed;
+    }
+
+    .apd-hist-hdr-cell {
+        font-size: 10px;
+        font-weight: 700;
+        color: #9ca3af;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+    }
+
+    .apd-hist-row {
+        display: grid;
+        grid-template-columns: 1fr 160px 200px;
+        padding: 14px 20px;
+        border-bottom: 1px solid #f3f4f6;
+        align-items: start;
+    }
+
+    .apd-hist-row:last-child { border-bottom: none; }
+    .apd-hist-row:hover      { background: #fafafa; }
+
+    .apd-hist-cell           { display: flex; align-items: flex-start; }
+    .apd-hist-cell--change   { gap: 10px; }
+    .apd-hist-cell--reason   { padding-top: 2px; }
+    .apd-hist-cell--ts       { padding-top: 2px; }
+
+    .apd-hist-av {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        background: linear-gradient(135deg, #ff7a00, #ff9a3c);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .apd-hist-who       { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+    .apd-hist-name-row  { display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+    .apd-hist-name      { font-size: 13px; font-weight: 700; color: #111827; }
+    .apd-hist-action    { font-size: 12px; color: #6b7280; }
+    .apd-hist-time-row  { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+    .apd-hist-newtime   { font-size: 12px; font-weight: 600; color: #111827; }
+    .apd-hist-oldtime   { font-size: 12px; color: #9ca3af; text-decoration: line-through; font-style: italic; }
+
+    .apd-hist-icon         { font-size: 13px; flex-shrink: 0; }
+    .apd-hist-icon--in     { color: #16a34a; }
+    .apd-hist-icon--out    { color: #d97706; }
+    .apd-hist-icon--faded  { color: #d1d5db !important; }
+
+    .apd-hist-reason { font-size: 13px; color: #374151; font-weight: 500; }
+    .apd-hist-dash   { font-size: 13px; color: #d1d5db; }
+    .apd-hist-ts     { font-size: 12px; color: #6b7280; font-weight: 500; }
+
+    /* ════════════════════════
+       ADD TIME ENTRY PANEL
+    ════════════════════════ */
+    .apd-amt-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1400;
+        background: rgba(0, 0, 0, .4);
+        display: flex;
+        align-items: flex-start;
+        justify-content: flex-end;
+    }
+
+    .apd-amt-panel {
+        width: 420px;
+        max-width: 100vw;
+        height: 100vh;
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+        box-shadow: -6px 0 40px rgba(0, 0, 0, .18);
+        animation: apd-slide .22s cubic-bezier(.4, 0, .2, 1);
+    }
+
+    @@keyframes apd-slide {
+        from { transform: translateX(100%); }
+        to   { transform: translateX(0); }
+    }
+
+    .apd-amt-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 22px 24px 18px;
+        flex-shrink: 0;
+    }
+
+    .apd-amt-title { font-size: 20px; font-weight: 700; color: #111827; }
+
+    .apd-amt-close {
+        width: 32px;
+        height: 32px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-size: 18px;
+        color: #9ca3af;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+    }
+
+    .apd-amt-close:hover { color: #374151; }
+
+    .apd-amt-body {
+        flex: 1;
+        padding: 0 24px 8px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+
+    .apd-amt-profile {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        margin-bottom: 20px;
+        padding: 4px 0;
+    }
+
+    .apd-amt-av {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: #e5e7eb;
+        color: #6b7280;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+
+    .apd-amt-name { font-size: 14px; font-weight: 700; color: #111827; }
+    .apd-amt-sub  { font-size: 12px; color: #6b7280; line-height: 1.5; }
+    .apd-amt-divider { border: none; border-top: 1px solid #ebebeb; margin: 0; }
+
+    .apd-amt-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px 18px;
+        border-top: 1px solid #ebebeb;
+        flex-shrink: 0;
+        background: #fff;
+    }
+
+    .apd-amt-cancel {
+        padding: 10px 24px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 8px;
+        background: transparent;
+        font-size: 14px;
+        font-weight: 600;
+        color: #374151;
+        cursor: pointer;
+        font-family: inherit;
+    }
+
+    .apd-amt-save {
+        padding: 10px 32px;
+        border: none;
+        border-radius: 8px;
+        background: #f97316;
+        color: #fff;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        font-family: inherit;
+    }
+
+    .apd-amt-save:hover { background: #ea6c00; }
+</style>

@@ -1,0 +1,1440 @@
+@page "/attendance/dashboard"
+@rendermode RenderMode.InteractiveServer
+@inject SessionService SessionService
+@inject AttendanceCorrectionService CorrectionService
+@inject IHttpClientFactory Http
+@using System.Net.Http.Json
+@using APM.StaffZen.Blazor.Services
+@implements IDisposable
+
+<BasePage Title="Attendance Dashboard" OnClockAction="LoadDashboard">
+
+    <div class="ad-page">
+
+        @* ── Header ── *@
+        <div class="ad-header">
+            <div class="ad-header-left">
+                <h1 class="ad-title">Attendance Dashboard</h1>
+                <p class="ad-subtitle">Real-time attendance status for your organisation</p>
+            </div>
+            <div class="ad-header-right">
+                <input type="date" class="ad-date-input"
+                       value="@_selectedDate.ToString("yyyy-MM-dd")"
+                       @onchange="OnDateChanged" />
+                <button class="ad-btn-refresh" @onclick="LoadDashboard">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="ad-loading">
+                <div class="ad-spinner"></div>
+                <span>Loading attendance data…</span>
+            </div>
+        }
+        else if (_dashboard == null)
+        {
+            <div class="ad-empty">
+                <i class="bi bi-exclamation-circle" style="font-size:40px;color:#d1d5db;"></i>
+                <p>Could not load attendance data. Please try again.</p>
+            </div>
+        }
+        else
+        {
+            @* ── Summary Cards ── *@
+            <div class="ad-summary-grid">
+                <div class="ad-summary-card ad-summary-card--present @(_statusFilter == "Present" ? "ad-summary-card--active" : "")"
+                     @onclick='() => SetFilter("Present")'>
+                    <div class="ad-summary-icon"><i class="bi bi-check-circle-fill"></i></div>
+                    <div class="ad-summary-body">
+                        <span class="ad-summary-count">@_dashboard.Summary.Present</span>
+                        <span class="ad-summary-label">Present</span>
+                    </div>
+                </div>
+                <div class="ad-summary-card ad-summary-card--late @(_statusFilter == "Late" ? "ad-summary-card--active" : "")"
+                     @onclick='() => SetFilter("Late")'>
+                    <div class="ad-summary-icon"><i class="bi bi-clock-fill"></i></div>
+                    <div class="ad-summary-body">
+                        <span class="ad-summary-count">@_dashboard.Summary.Late</span>
+                        <span class="ad-summary-label">Late</span>
+                    </div>
+                </div>
+                <div class="ad-summary-card ad-summary-card--absent @(_statusFilter == "Absent" ? "ad-summary-card--active" : "")"
+                     @onclick='() => SetFilter("Absent")'>
+                    <div class="ad-summary-icon"><i class="bi bi-x-circle-fill"></i></div>
+                    <div class="ad-summary-body">
+                        <span class="ad-summary-count">@_dashboard.Summary.Absent</span>
+                        <span class="ad-summary-label">Absent</span>
+                    </div>
+                </div>
+                <div class="ad-summary-card ad-summary-card--unmarked @(_statusFilter == "Unmarked" ? "ad-summary-card--active" : "")"
+                     @onclick='() => SetFilter("Unmarked")'>
+                    <div class="ad-summary-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+                    <div class="ad-summary-body">
+                        <span class="ad-summary-count">@_dashboard.Summary.Unmarked</span>
+                        <span class="ad-summary-label">Unmarked</span>
+                    </div>
+                    @if (_dashboard.Summary.Unmarked > 0)
+                    {
+                        <span class="ad-priority-badge">ACTION NEEDED</span>
+                    }
+                </div>
+            </div>
+
+            @* ── Filter Bar ── *@
+            <div class="ad-filter-bar">
+                <div class="ad-filter-tabs">
+                    @foreach (var f in new[] { "All", "Present", "Late", "Absent", "Unmarked" })
+                    {
+                        <button class="ad-filter-tab @(_statusFilter == f ? "ad-filter-tab--active" : "")"
+                                @onclick='() => SetFilter(f)'>
+                            @f
+                            @if (f == "Unmarked" && _dashboard.Summary.Unmarked > 0)
+                            {
+                                <span class="ad-tab-badge">@_dashboard.Summary.Unmarked</span>
+                            }
+                        </button>
+                    }
+                </div>
+                <div class="ad-search-box">
+                    <i class="bi bi-search ad-search-icon"></i>
+                    <input class="ad-search-input" placeholder="Search employee…"
+                           @bind="_searchQuery" @bind:event="oninput" />
+                </div>
+            </div>
+
+            @* ── Employee Table ── *@
+            @if (!FilteredRows().Any())
+            {
+                <div class="ad-empty">
+                    <i class="bi bi-people" style="font-size:40px;color:#d1d5db;"></i>
+                    <p>No employees match the current filter.</p>
+                </div>
+            }
+            else
+            {
+                var rows = FilteredRows();
+                <div class="ad-table-wrap">
+                    <table class="ad-table">
+                        <thead>
+                            <tr>
+                                <th>Employee</th>
+                                <th>Department</th>
+                                <th>Clock In</th>
+                                <th>Clock Out</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in rows)
+                            {
+                                <tr class="@(row.AttendanceStatus is "Unmarked" or "Pending" ? "ad-row--highlight" : row.AttendanceStatus == "Active" ? "ad-row--active" : "")">
+                                    <td>
+                                        <div class="ad-emp-cell">
+                                            <div class="ad-avatar">
+                                                @if (!string.IsNullOrEmpty(row.ProfileImageUrl))
+                                                {
+                                                    <img src="@row.ProfileImageUrl" alt="@row.EmployeeName" />
+                                                }
+                                                else
+                                                {
+                                                    <span>@(row.EmployeeName.Length > 0 ? row.EmployeeName[0].ToString().ToUpper() : "?")</span>
+                                                }
+                                            </div>
+                                            <div class="ad-emp-info">
+                                                <span class="ad-emp-name">@row.EmployeeName</span>
+                                                @if (!string.IsNullOrEmpty(row.MemberCode))
+                                                {
+                                                    <span class="ad-emp-code">@row.MemberCode</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td><span class="ad-dept">@(row.DepartmentName ?? "—")</span></td>
+                                    <td>
+                                        @if (row.ClockIn.HasValue)
+                                        {
+                                            <span class="ad-time">@row.ClockIn.Value.ToString("hh:mm tt")</span>
+                                        }
+                                        else { <span class="ad-na">—</span> }
+                                    </td>
+                                    <td>
+                                        @if (row.ClockOut.HasValue)
+                                        {
+                                            <span class="ad-time">@row.ClockOut.Value.ToString("hh:mm tt")</span>
+                                        }
+                                        else if (row.AttendanceStatus == "Active")
+                                        {
+                                            <span class="ad-active-pulse">● Still Active</span>
+                                        }
+                                        else { <span class="ad-na">—</span> }
+                                    </td>
+                                    <td>
+                                        <span class="ad-status-badge ad-status-badge--@row.AttendanceStatus.ToLower()">
+                                            @StatusIcon(row.AttendanceStatus) @row.AttendanceStatus
+                                        </span>
+                                    </td>
+                                    <td>
+                                        @if (row.AttendanceStatus is "Unmarked" or "Pending" || row.HasPendingRequest)
+                                        {
+                                            <button class="ad-btn-review" @onclick="() => OpenReviewPanel(row)">
+                                                <i class="bi bi-pencil-square"></i> Review
+                                            </button>
+                                        }
+                                        else { <span class="ad-no-action">—</span> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+
+        @* ── Correction Requests Panel ── *@
+        @if (_showCorrectionPanel)
+        {
+            <div class="ad-panel-overlay" @onclick="ClosePanel"></div>
+            <div class="ad-panel">
+
+                @* ── Panel Header ── *@
+                <div class="ad-panel-header">
+                    <div>
+                        <h2 class="ad-panel-title">
+                            @if (_panelEmployee != null)
+                            { @_panelEmployee.EmployeeName }
+                            else { <text>Attendance Review</text> }
+                        </h2>
+                        <p class="ad-panel-sub">@_selectedDate.ToString("dddd, MMMM d, yyyy")</p>
+                    </div>
+                    <button class="ad-panel-close" @onclick="ClosePanel">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+
+                @* ── Panel Tabs ── *@
+                <div class="ad-panel-tabs">
+                    <button class="ad-panel-tab @(_panelTab == "requests" ? "ad-panel-tab--active" : "")"
+                            @onclick='() => _panelTab = "requests"'>
+                        <i class="bi bi-inbox"></i> Correction Requests
+                        @if (_pendingRequests.Any())
+                        {
+                            <span class="ad-tab-count">@_pendingRequests.Count</span>
+                        }
+                    </button>
+                    <button class="ad-panel-tab @(_panelTab == "manual" ? "ad-panel-tab--active" : "")"
+                            @onclick='() => _panelTab = "manual"'>
+                        <i class="bi bi-pencil-square"></i> Manual Edit
+                    </button>
+                </div>
+
+                @* ══ TAB 1: Correction Requests ══ *@
+                @if (_panelTab == "requests")
+                {
+                    @if (_panelLoading)
+                    {
+                        <div class="ad-panel-loading">Loading requests…</div>
+                    }
+                    else if (!_pendingRequests.Any())
+                    {
+                        <div class="ad-panel-empty">
+                            <i class="bi bi-inbox" style="font-size:32px;color:#d1d5db;"></i>
+                            <p>No pending correction requests for this employee on this date.</p>
+                            <p style="font-size:12px;color:#9ca3af;">Use the Manual Edit tab to directly set attendance.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var req in _pendingRequests)
+                        {
+                            <div class="ad-req-card">
+                                <div class="ad-req-row">
+                                    <span class="ad-req-label">Date</span>
+                                    <span class="ad-req-val">@req.AttendanceDate.ToString("dd MMM yyyy")</span>
+                                </div>
+                                <div class="ad-req-row">
+                                    <span class="ad-req-label">Clock In</span>
+                                    <span class="ad-req-val">@(req.ClockIn.HasValue ? req.ClockIn.Value.ToString("hh:mm tt") : "—")</span>
+                                </div>
+                                <div class="ad-req-row">
+                                    <span class="ad-req-label">Requested Clock Out</span>
+                                    <span class="ad-req-val ad-req-val--highlight">@req.RequestedClockOut.ToString("hh:mm tt")</span>
+                                </div>
+                                @if (!string.IsNullOrEmpty(req.Reason))
+                                {
+                                    <div class="ad-req-row">
+                                        <span class="ad-req-label">Reason</span>
+                                        <span class="ad-req-val">@req.Reason</span>
+                                    </div>
+                                }
+
+                                <div class="ad-req-override">
+                                    <label class="ad-req-label">Override Clock Out (optional)</label>
+                                    <input type="time" class="ad-time-input"
+                                           value="@(_overrideTimes.GetValueOrDefault(req.Id, ""))"
+                                           @onchange="e => SetOverride(req.Id, e.Value?.ToString())" />
+                                </div>
+
+                                <input type="text" class="ad-note-input" style="margin-top:8px;"
+                                       placeholder="Admin note (optional)"
+                                       value="@(_adminNotes.GetValueOrDefault(req.Id, ""))"
+                                       @onchange="e => SetNote(req.Id, e.Value?.ToString())" />
+
+                                <div class="ad-req-actions">
+                                    <button class="ad-btn-approve" @onclick="() => ApproveRequest(req)"
+                                            disabled="@_actionBusy"
+                                            title="Approve with auto-calculated status (Present or Late)">
+                                        @if (_actionBusy) { <span class="ad-spinner-sm"></span> }
+                                        else { <i class="bi bi-check-circle"></i> }
+                                        Approve
+                                    </button>
+                                    <button class="ad-btn-present" @onclick="() => ApproveAsPresent(req)"
+                                            disabled="@_actionBusy"
+                                            title="Mark as Present regardless of clock-in time">
+                                        <i class="bi bi-check2-circle"></i> Mark Present
+                                    </button>
+                                    <button class="ad-btn-late" @onclick="() => ApproveAsLate(req)"
+                                            disabled="@_actionBusy"
+                                            title="Mark as Late">
+                                        <i class="bi bi-clock"></i> Mark Late
+                                    </button>
+                                    <button class="ad-btn-absent" @onclick="() => ApproveAsAbsent(req)"
+                                            disabled="@_actionBusy"
+                                            title="Mark this day as Absent for the employee">
+                                        <i class="bi bi-person-x"></i> Mark Absent
+                                    </button>
+                                    <button class="ad-btn-reject" @onclick="() => RejectRequest(req)"
+                                            disabled="@_actionBusy">
+                                        <i class="bi bi-x-circle"></i> Reject
+                                    </button>
+                                </div>
+
+                                @if (_requestErrors.TryGetValue(req.Id, out var reqErr))
+                                {
+                                    <div class="ad-req-error">@reqErr</div>
+                                }
+                            </div>
+                        }
+                    }
+                }
+
+                @* ══ TAB 2: Manual Edit ══ *@
+                @if (_panelTab == "manual")
+                {
+                    <div class="ad-manual-section">
+                        <p class="ad-manual-desc">
+                            Directly override this employee's attendance for
+                            <strong>@_selectedDate.ToString("dd MMM yyyy")</strong>.
+                            This does not require a correction request from the employee.
+                            All changes are logged for audit.
+                        </p>
+
+                        @* Current Entry Info *@
+                        @if (_panelEmployee != null)
+                        {
+                            <div class="ad-manual-current">
+                                <div class="ad-manual-row">
+                                    <span class="ad-req-label">Current Clock In</span>
+                                    <span class="ad-req-val">
+                                        @(_panelEmployee.ClockIn.HasValue
+                                            ? _panelEmployee.ClockIn.Value.ToString("hh:mm tt")
+                                            : "— No record")
+                                    </span>
+                                </div>
+                                <div class="ad-manual-row">
+                                    <span class="ad-req-label">Current Clock Out</span>
+                                    <span class="ad-req-val">
+                                        @(_panelEmployee.ClockOut.HasValue
+                                            ? _panelEmployee.ClockOut.Value.ToString("hh:mm tt")
+                                            : "— Not clocked out")
+                                    </span>
+                                </div>
+                                <div class="ad-manual-row">
+                                    <span class="ad-req-label">Current Status</span>
+                                    <span class="ad-status-badge ad-status-badge--@(_panelEmployee.AttendanceStatus.ToLower())">
+                                        @StatusIcon(_panelEmployee.AttendanceStatus) @_panelEmployee.AttendanceStatus
+                                    </span>
+                                </div>
+                            </div>
+                        }
+
+                        <div class="ad-manual-divider"></div>
+
+                        @* Override Form *@
+                        <div class="ad-manual-form">
+                            <div class="ad-manual-field">
+                                <label class="ad-req-label">Set Clock In Time</label>
+                                <input type="time" class="ad-time-input"
+                                       value="@_manualClockIn"
+                                       @onchange="e => _manualClockIn = e.Value?.ToString() ?? string.Empty" />
+                            </div>
+                            <div class="ad-manual-field">
+                                <label class="ad-req-label">Set Clock Out Time</label>
+                                <input type="time" class="ad-time-input"
+                                       value="@_manualClockOut"
+                                       @onchange="e => _manualClockOut = e.Value?.ToString() ?? string.Empty" />
+                            </div>
+                            <div class="ad-manual-field" style="grid-column: 1 / -1;">
+                                <label class="ad-req-label">Reason / Note (required)</label>
+                                <input type="text" class="ad-note-input"
+                                       placeholder="e.g. System error, manual correction per manager approval…"
+                                       value="@_manualNote"
+                                       @onchange="e => _manualNote = e.Value?.ToString() ?? string.Empty" />
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_manualError))
+                        {
+                            <div class="ad-req-error" style="margin-top:8px;">@_manualError</div>
+                        }
+                        @if (!string.IsNullOrEmpty(_manualSuccess))
+                        {
+                            <div class="ad-req-success" style="margin-top:8px;">@_manualSuccess</div>
+                        }
+
+                        <div class="ad-req-actions" style="margin-top:16px;">
+                            <button class="ad-btn-approve" style="flex:2;"
+                                    @onclick="SaveManualEdit" disabled="@_actionBusy">
+                                @if (_actionBusy) { <span class="ad-spinner-sm"></span> }
+                                else { <i class="bi bi-floppy"></i> }
+                                Save Override
+                            </button>
+                            <button class="ad-btn-reject" style="background:#6b7280;"
+                                    @onclick="ClearManualForm" disabled="@_actionBusy">
+                                <i class="bi bi-x"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                }
+
+            </div>
+        }
+
+    </div>
+
+</BasePage>
+
+@code {
+    private DateTime   _selectedDate        = DateTime.Today;
+    private string     _statusFilter        = "All";
+    private string     _searchQuery         = "";
+    private bool       _loading             = true;
+    private bool       _showCorrectionPanel = false;
+    private bool       _panelLoading        = false;
+    private bool       _actionBusy          = false;
+
+    private AttendanceDashboardVm?   _dashboard;
+    private DashboardRowVm?          _panelEmployee;
+    private List<AdminCorrectionVm>  _pendingRequests = new();
+
+    private Dictionary<int, string> _overrideTimes = new();
+    private Dictionary<int, string> _adminNotes    = new();
+    private Dictionary<int, string> _requestErrors = new();
+
+    // Panel tab state
+    private string _panelTab       = "requests";
+
+    // Manual Edit fields
+    private string _manualClockIn  = "";
+    private string _manualClockOut = "";
+    private string _manualNote     = "";
+    private string _manualError    = "";
+    private string _manualSuccess  = "";
+    private string _adminNote      = "";
+
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboard();
+        // Silent background refresh every 30 s — updates Unmarked count & data without spinner
+        _refreshTimer = new System.Threading.Timer(async _ =>
+        {
+            try { await InvokeAsync(SilentRefresh); }
+            catch { }
+        }, null, 30_000, 30_000);
+    }
+
+    public void Dispose() => _refreshTimer?.Dispose();
+
+    /// <summary>Background refresh — reloads dashboard data without showing the loading spinner.</summary>
+    private async Task SilentRefresh()
+    {
+        var orgId = SessionService.OrganizationId;
+        if (!orgId.HasValue || orgId.Value <= 0) return;
+        var fresh = await CorrectionService.GetDashboardAsync(orgId.Value, _selectedDate);
+        if (fresh != null)
+        {
+            _dashboard = fresh;
+            // Already on the Blazor circuit (called via InvokeAsync from the timer),
+            // so call StateHasChanged directly — a nested InvokeAsync would deadlock.
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadDashboard()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var orgId = SessionService.OrganizationId;
+        if (orgId.HasValue && orgId.Value > 0)
+        {
+            _dashboard = await CorrectionService.GetDashboardAsync(orgId.Value, _selectedDate);
+        }
+
+        _loading = false;
+    }
+
+    private async Task OnDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var d))
+        {
+            _selectedDate = d;
+            await LoadDashboard();
+        }
+    }
+
+    private void SetFilter(string f)
+    {
+        _statusFilter = _statusFilter == f ? "All" : f;
+    }
+
+    private List<DashboardRowVm> FilteredRows()
+    {
+        if (_dashboard == null) return new();
+
+        var rows = _dashboard.Employees.AsEnumerable();
+
+        if (_statusFilter != "All")
+        {
+            // Req 1 & 3: "Present" shows everyone who physically clocked in —
+            //            including Late (after grace) and Unmarked (forgot clock-out).
+            rows = _statusFilter == "Unmarked"
+                ? rows.Where(r => r.AttendanceStatus is "Unmarked" or "Pending")
+                : _statusFilter == "Late"
+                    ? rows.Where(r => r.AttendanceStatus == "Late")
+                    : _statusFilter == "Present"
+                        ? rows.Where(r => r.AttendanceStatus is "Present" or "Active" or "Late" or "Unmarked" or "Pending")
+                        : rows.Where(r => r.AttendanceStatus == _statusFilter);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            var q = _searchQuery.Trim().ToLower();
+            rows = rows.Where(r =>
+                r.EmployeeName.ToLower().Contains(q) ||
+                (r.Email?.ToLower().Contains(q) ?? false) ||
+                (r.DepartmentName?.ToLower().Contains(q) ?? false) ||
+                (r.MemberCode?.ToLower().Contains(q) ?? false));
+        }
+
+        return rows.ToList();
+    }
+
+    private async Task OpenReviewPanel(DashboardRowVm row)
+    {
+        _panelEmployee       = row;
+        _showCorrectionPanel = true;
+        _panelLoading        = true;
+        _pendingRequests     = new();
+        _overrideTimes       = new();
+        _adminNotes          = new();
+        _requestErrors       = new();
+        _panelTab            = "requests";
+        _manualClockIn       = "";
+        _manualClockOut      = "";
+        _manualNote          = "";
+        _manualError         = "";
+        _manualSuccess       = "";
+        _adminNote           = "";
+
+        // Pre-fill manual edit times from current row data
+        if (row.ClockIn.HasValue)
+            _manualClockIn  = row.ClockIn.Value.ToString("HH:mm");
+        if (row.ClockOut.HasValue)
+            _manualClockOut = row.ClockOut.Value.ToString("HH:mm");
+
+        StateHasChanged();
+
+        var orgId = SessionService.OrganizationId;
+        if (orgId.HasValue)
+        {
+            var all = await CorrectionService.GetAllAsync(orgId.Value);
+            _pendingRequests = all
+                .Where(r => r.EmployeeId   == row.EmployeeId &&
+                            r.AttendanceDate.Date == _selectedDate.Date &&
+                            r.Status       == "Pending")
+                .ToList();
+        }
+
+        _panelLoading = false;
+    }
+
+    private async Task SaveManualEdit()
+    {
+        _manualError   = "";
+        _manualSuccess = "";
+
+        if (string.IsNullOrWhiteSpace(_manualNote))
+        {
+            _manualError = "A reason/note is required for manual edits.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_manualClockIn) && string.IsNullOrWhiteSpace(_manualClockOut))
+        {
+            _manualError = "Please set at least one of Clock In or Clock Out.";
+            return;
+        }
+        if (_panelEmployee == null)
+        {
+            _manualError = "No employee selected.";
+            return;
+        }
+
+        _actionBusy = true;
+        StateHasChanged();
+
+        try
+        {
+            var client = Http.CreateClient("API");
+
+            // Build the ISO datetime strings for the selected date + entered times
+            var dateStr = _selectedDate.ToString("yyyy-MM-dd");
+
+            string? newClockIn  = string.IsNullOrWhiteSpace(_manualClockIn)  ? null
+                : DateTime.Parse($"{dateStr} {_manualClockIn}").ToString("o");
+            string? newClockOut = string.IsNullOrWhiteSpace(_manualClockOut) ? null
+                : DateTime.Parse($"{dateStr} {_manualClockOut}").ToString("o");
+
+            // Find the time entry for this employee on this date
+            var histUrl = $"api/Attendance/history/{_panelEmployee.EmployeeId}/bydate?date={dateStr}";
+            var histResp = await client.GetAsync(histUrl);
+
+            if (!histResp.IsSuccessStatusCode)
+            {
+                _manualError = "Could not load time entries for this employee.";
+                _actionBusy = false;
+                return;
+            }
+
+            var histJson = await histResp.Content.ReadAsStringAsync();
+            var arr = System.Text.Json.JsonDocument.Parse(histJson).RootElement;
+
+            int? entryId = null;
+            string? existingClockIn = null;
+
+            foreach (var item in arr.EnumerateArray())
+            {
+                bool isManual    = item.TryGetProperty("isManual",    out var im) && im.GetBoolean();
+                bool isHourEntry = item.TryGetProperty("isHourEntry", out var ih) && ih.GetBoolean();
+                bool isBreak     = item.TryGetProperty("isBreakEntry",out var ib) && ib.GetBoolean();
+                if (isHourEntry || isBreak) continue;
+
+                entryId        = item.GetProperty("id").GetInt32();
+                existingClockIn = item.GetProperty("clockIn").GetString();
+                break;
+            }
+
+            if (entryId == null)
+            {
+                // No existing entry — create a manual entry
+                if (string.IsNullOrWhiteSpace(_manualClockIn))
+                {
+                    _manualError = "No clock-in entry exists for this date. Please provide a Clock In time.";
+                    _actionBusy = false;
+                    return;
+                }
+
+                var payload = new
+                {
+                    employeeId = _panelEmployee.EmployeeId,
+                    entryType  = "in",
+                    date       = dateStr,
+                    time       = _manualClockIn
+                };
+                var createResp = await client.PostAsJsonAsync("api/Attendance/entry/manual", payload);
+                if (!createResp.IsSuccessStatusCode)
+                {
+                    _manualError = "Failed to create clock-in entry.";
+                    _actionBusy = false;
+                    return;
+                }
+                var createdJson = await createResp.Content.ReadAsStringAsync();
+                var createdDoc  = System.Text.Json.JsonDocument.Parse(createdJson).RootElement;
+                entryId        = createdDoc.GetProperty("entryId").GetInt32();
+
+                // Now add clock-out if provided
+                if (!string.IsNullOrWhiteSpace(_manualClockOut))
+                {
+                    var outPayload = new
+                    {
+                        employeeId = _panelEmployee.EmployeeId,
+                        entryType  = "out",
+                        date       = dateStr,
+                        time       = _manualClockOut
+                    };
+                    await client.PostAsJsonAsync("api/Attendance/entry/manual", outPayload);
+                }
+
+                _manualSuccess = "✓ Manual entry created successfully.";
+            }
+            else
+            {
+                // Edit the existing entry
+                var updatePayload = new
+                {
+                    changedByEmpId  = SessionService.Id,
+                    newClockIn      = newClockIn ?? existingClockIn,
+                    newClockOut     = newClockOut,
+                    reasonForChange = _manualNote,
+                    changedField    = !string.IsNullOrWhiteSpace(_manualClockOut) ? "out" : "in"
+                };
+                var updateResp = await client.PutAsJsonAsync($"api/Attendance/entry/{entryId}", updatePayload);
+                if (updateResp.IsSuccessStatusCode)
+                    _manualSuccess = "✓ Attendance updated successfully.";
+                else
+                {
+                    var errBody = await updateResp.Content.ReadAsStringAsync();
+                    try
+                    {
+                        var errDoc = System.Text.Json.JsonDocument.Parse(errBody).RootElement;
+                        _manualError = errDoc.TryGetProperty("error", out var ep) ? ep.GetString() ?? "Update failed." : "Update failed.";
+                    }
+                    catch { _manualError = "Update failed."; }
+                }
+            }
+
+            if (string.IsNullOrEmpty(_manualError))
+                await LoadDashboard();
+        }
+        catch (Exception ex)
+        {
+            _manualError = $"Error: {ex.Message}";
+        }
+
+        _actionBusy = false;
+    }
+
+    private void ClearManualForm()
+    {
+        _manualClockIn  = "";
+        _manualClockOut = "";
+        _manualNote     = "";
+        _manualError    = "";
+        _manualSuccess  = "";
+    }
+
+    private void ClosePanel()
+    {
+        _showCorrectionPanel = false;
+        _panelEmployee       = null;
+        _pendingRequests     = new();
+    }
+
+    private void SetOverride(int reqId, string? val)
+    {
+        if (val != null) _overrideTimes[reqId] = val;
+    }
+
+    private void SetNote(int reqId, string? val)
+    {
+        if (val != null) _adminNotes[reqId] = val;
+    }
+
+    private async Task ApproveRequest(AdminCorrectionVm req)
+    {
+        _actionBusy = true;
+        _requestErrors.Remove(req.Id);
+        StateHasChanged();
+
+        int adminId = SessionService.Id;
+        _overrideTimes.TryGetValue(req.Id, out var overrideTime);
+        _adminNotes.TryGetValue(req.Id, out var note);
+
+        var result = await CorrectionService.ApproveAsync(req.Id, adminId,
+            string.IsNullOrWhiteSpace(overrideTime) ? null : overrideTime,
+            note, markAsAbsent: false);
+
+        if (result.success)
+        {
+            _pendingRequests.Remove(req);
+            await LoadDashboard();
+        }
+        else
+        {
+            _requestErrors[req.Id] = result.error ?? "Approval failed.";
+        }
+
+        _actionBusy = false;
+    }
+
+    private async Task ApproveAsPresent(AdminCorrectionVm req)
+    {
+        _actionBusy = true;
+        _requestErrors.Remove(req.Id);
+        StateHasChanged();
+
+        int adminId = SessionService.Id;
+        _overrideTimes.TryGetValue(req.Id, out var overrideTime);
+        _adminNotes.TryGetValue(req.Id, out var note);
+
+        var result = await CorrectionService.ApproveAsync(req.Id, adminId,
+            string.IsNullOrWhiteSpace(overrideTime) ? null : overrideTime,
+            note, markAsAbsent: false, forceStatus: "Present");
+
+        if (result.success)
+        {
+            _pendingRequests.Remove(req);
+            await LoadDashboard();
+        }
+        else
+        {
+            _requestErrors[req.Id] = result.error ?? "Mark Present failed.";
+        }
+
+        _actionBusy = false;
+    }
+
+    private async Task ApproveAsLate(AdminCorrectionVm req)
+    {
+        _actionBusy = true;
+        _requestErrors.Remove(req.Id);
+        StateHasChanged();
+
+        int adminId = SessionService.Id;
+        _overrideTimes.TryGetValue(req.Id, out var overrideTime);
+        _adminNotes.TryGetValue(req.Id, out var note);
+
+        var result = await CorrectionService.ApproveAsync(req.Id, adminId,
+            string.IsNullOrWhiteSpace(overrideTime) ? null : overrideTime,
+            note, markAsAbsent: false, forceStatus: "Late");
+
+        if (result.success)
+        {
+            _pendingRequests.Remove(req);
+            await LoadDashboard();
+        }
+        else
+        {
+            _requestErrors[req.Id] = result.error ?? "Mark Late failed.";
+        }
+
+        _actionBusy = false;
+    }
+
+    private async Task ApproveAsAbsent(AdminCorrectionVm req)
+    {
+        _actionBusy = true;
+        _requestErrors.Remove(req.Id);
+        StateHasChanged();
+
+        int adminId = SessionService.Id;
+        _adminNotes.TryGetValue(req.Id, out var note);
+
+        var result = await CorrectionService.ApproveAsync(req.Id, adminId,
+            overrideTime: null,
+            adminNote: note,
+            markAsAbsent: true);
+
+        if (result.success)
+        {
+            _pendingRequests.Remove(req);
+            await LoadDashboard();
+        }
+        else
+        {
+            _requestErrors[req.Id] = result.error ?? "Mark Absent failed.";
+        }
+
+        _actionBusy = false;
+    }
+
+    private async Task RejectRequest(AdminCorrectionVm req)
+    {
+        _actionBusy = true;
+        _requestErrors.Remove(req.Id);
+        StateHasChanged();
+
+        int adminId = SessionService.Id;
+        _adminNotes.TryGetValue(req.Id, out var note);
+
+        var result = await CorrectionService.RejectAsync(req.Id, adminId, note);
+
+        if (result.success)
+        {
+            _pendingRequests.Remove(req);
+            await LoadDashboard();
+        }
+        else
+        {
+            _requestErrors[req.Id] = result.error ?? "Rejection failed.";
+        }
+
+        _actionBusy = false;
+    }
+
+    private static string StatusIcon(string status) => status switch
+    {
+        "Present"  => "✓",
+        "Late"     => "⏰",
+        "Absent"   => "✗",
+        "Unmarked" => "⚠",
+        "Pending"  => "⏳",
+        "Active"   => "●",
+        _          => ""
+    };
+}
+
+<style>
+    .ad-page {
+        padding: 28px 32px;
+        max-width: 1300px;
+        font-family: 'Inter', -apple-system, sans-serif;
+    }
+
+    /* Header */
+    .ad-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 28px;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .ad-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0;
+    }
+
+    .ad-subtitle {
+        font-size: 13px;
+        color: #6b7280;
+        margin: 4px 0 0;
+    }
+
+    .ad-header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .ad-date-input {
+        padding: 8px 12px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        color: #374151;
+        background: #fff;
+    }
+
+    .ad-btn-refresh {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 13px;
+        font-weight: 500;
+        color: #374151;
+        cursor: pointer;
+    }
+
+    .ad-btn-refresh:hover { background: #f9fafb; }
+
+    /* Summary Cards */
+    .ad-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .ad-summary-card {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 18px 20px;
+        border-radius: 12px;
+        border: 1.5px solid transparent;
+        cursor: pointer;
+        transition: transform .15s, box-shadow .15s;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .ad-summary-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+
+    .ad-summary-card--present  { background: #f0fdf4; border-color: #bbf7d0; }
+    .ad-summary-card--late     { background: #fffbeb; border-color: #fde68a; }
+    .ad-summary-card--absent   { background: #fef2f2; border-color: #fecaca; }
+    .ad-summary-card--unmarked { background: #fff7ed; border-color: #fed7aa; }
+    .ad-summary-card--active   { box-shadow: 0 0 0 3px rgba(99,102,241,.25); border-color: #6366f1 !important; }
+
+    .ad-summary-icon { font-size: 28px; flex-shrink: 0; }
+    .ad-summary-card--present  .ad-summary-icon { color: #16a34a; }
+    .ad-summary-card--late     .ad-summary-icon { color: #d97706; }
+    .ad-summary-card--absent   .ad-summary-icon { color: #dc2626; }
+    .ad-summary-card--unmarked .ad-summary-icon { color: #ea580c; }
+
+    .ad-summary-body   { display: flex; flex-direction: column; }
+    .ad-summary-count  { font-size: 30px; font-weight: 800; color: #111827; line-height: 1; }
+    .ad-summary-label  { font-size: 13px; color: #6b7280; font-weight: 500; margin-top: 2px; }
+
+    .ad-priority-badge {
+        position: absolute;
+        top: 8px; right: 8px;
+        background: #ea580c;
+        color: #fff;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: .6px;
+        padding: 2px 6px;
+        border-radius: 20px;
+    }
+
+    /* Filter Bar */
+    .ad-filter-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .ad-filter-tabs {
+        display: flex;
+        gap: 4px;
+        background: #f3f4f6;
+        border-radius: 8px;
+        padding: 4px;
+    }
+
+    .ad-filter-tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        color: #6b7280;
+        background: transparent;
+        cursor: pointer;
+        transition: background .15s, color .15s;
+    }
+
+    .ad-filter-tab:hover { background: #e5e7eb; color: #374151; }
+    .ad-filter-tab--active { background: #fff; color: #111827; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+    .ad-tab-badge {
+        background: #ea580c;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 1px 6px;
+        border-radius: 20px;
+    }
+
+    .ad-search-box {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        min-width: 220px;
+    }
+
+    .ad-search-icon  { color: #9ca3af; font-size: 14px; }
+    .ad-search-input { border: none; outline: none; font-size: 13px; color: #374151; background: transparent; width: 100%; }
+
+    /* Table */
+    .ad-table-wrap { border: 1.5px solid #e5e7eb; border-radius: 12px; overflow: hidden; background: #fff; }
+
+    .ad-table { width: 100%; border-collapse: collapse; }
+    .ad-table thead { background: #f9fafb; }
+    .ad-table th {
+        padding: 12px 16px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        border-bottom: 1.5px solid #e5e7eb;
+    }
+    .ad-table td {
+        padding: 14px 16px;
+        font-size: 13px;
+        color: #374151;
+        border-bottom: 1px solid #f3f4f6;
+        vertical-align: middle;
+    }
+    .ad-table tbody tr:last-child td { border-bottom: none; }
+    .ad-table tbody tr:hover { background: #f9fafb; }
+    .ad-row--highlight       { background: #fff7ed !important; }
+    .ad-row--highlight:hover { background: #ffedd5 !important; }
+
+    .ad-emp-cell { display: flex; align-items: center; gap: 10px; }
+
+    .ad-avatar {
+        width: 36px; height: 36px;
+        border-radius: 50%;
+        background: #e0e7ff;
+        color: #6366f1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 14px;
+        overflow: hidden;
+        flex-shrink: 0;
+    }
+
+    .ad-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    .ad-emp-info { display: flex; flex-direction: column; }
+    .ad-emp-name { font-weight: 600; color: #111827; }
+    .ad-emp-code { font-size: 11px; color: #9ca3af; }
+
+    .ad-dept  { font-size: 12px; color: #6b7280; }
+    .ad-time  { font-weight: 500; }
+    .ad-hours { font-size: 12px; color: #6b7280; }
+    .ad-na    { color: #d1d5db; }
+
+    /* Status Badges */
+    .ad-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .ad-status-badge--present  { background: #dcfce7; color: #15803d; }
+    .ad-status-badge--late     { background: #fef9c3; color: #854d0e; }
+    .ad-status-badge--absent   { background: #fee2e2; color: #b91c1c; }
+    .ad-status-badge--unmarked { background: #ffedd5; color: #c2410c; }
+    .ad-status-badge--pending  { background: #e0e7ff; color: #3730a3; }
+    .ad-status-badge--active   { background: #dcfce7; color: #15803d; animation: ad-pulse-badge 2s ease-in-out infinite; }
+
+    @@keyframes ad-pulse-badge {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.65; }
+    }
+
+    .ad-row--active       { background: #f0fdf4 !important; }
+    .ad-row--active:hover { background: #dcfce7 !important; }
+
+    .ad-active-pulse {
+        color: #16a34a;
+        font-size: 12px;
+        font-weight: 600;
+        animation: ad-pulse-badge 1.5s ease-in-out infinite;
+    }
+
+    .ad-btn-review {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 12px;
+        border: 1.5px solid #f59e0b;
+        border-radius: 6px;
+        background: #fffbeb;
+        color: #b45309;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .ad-btn-review:hover { background: #fef3c7; }
+    .ad-no-action { color: #d1d5db; font-size: 12px; }
+
+    /* Panel */
+    .ad-panel-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.35);
+        z-index: 999;
+    }
+
+    .ad-panel {
+        position: fixed;
+        top: 0; right: 0;
+        width: 420px;
+        max-width: 95vw;
+        height: 100vh;
+        background: #fff;
+        box-shadow: -6px 0 32px rgba(0,0,0,.15);
+        z-index: 1000;
+        overflow-y: auto;
+        padding: 28px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .ad-panel-header { display: flex; justify-content: space-between; align-items: flex-start; }
+    .ad-panel-title  { font-size: 18px; font-weight: 700; color: #111827; margin: 0; }
+    .ad-panel-sub    { font-size: 13px; color: #6b7280; margin: 4px 0 0; }
+
+    .ad-panel-close {
+        width: 32px; height: 32px;
+        border: none; border-radius: 6px;
+        background: #f3f4f6; color: #6b7280;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 16px;
+    }
+
+    .ad-panel-loading, .ad-panel-empty {
+        text-align: center;
+        padding: 40px 20px;
+        color: #6b7280;
+        font-size: 14px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .ad-req-card {
+        background: #f9fafb;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .ad-req-row            { display: flex; justify-content: space-between; align-items: center; }
+    .ad-req-label          { font-size: 12px; color: #9ca3af; font-weight: 500; }
+    .ad-req-val            { font-size: 13px; color: #374151; font-weight: 500; }
+    .ad-req-val--highlight { color: #6366f1; font-weight: 700; }
+    .ad-req-override       { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+
+    .ad-time-input, .ad-note-input {
+        padding: 7px 10px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 6px;
+        font-size: 13px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .ad-btn-approve {
+        display: flex; align-items: center; gap: 5px;
+        flex: 1; justify-content: center;
+        padding: 8px;
+        border: none; border-radius: 7px;
+        background: #16a34a; color: #fff;
+        font-size: 13px; font-weight: 600;
+        cursor: pointer;
+    }
+    .ad-btn-approve:hover:not(:disabled) { background: #15803d; }
+    .ad-btn-approve:disabled { opacity: .6; cursor: not-allowed; }
+
+    .ad-btn-present {
+        display: flex; align-items: center; gap: 5px;
+        flex: 1; justify-content: center;
+        padding: 8px;
+        border: none; border-radius: 7px;
+        background: #0ea5e9; color: #fff;
+        font-size: 13px; font-weight: 600;
+        cursor: pointer;
+    }
+    .ad-btn-present:hover:not(:disabled) { background: #0284c7; }
+    .ad-btn-present:disabled { opacity: .6; cursor: not-allowed; }
+
+    .ad-btn-late {
+        display: flex; align-items: center; gap: 5px;
+        flex: 1; justify-content: center;
+        padding: 8px;
+        border: none; border-radius: 7px;
+        background: #d97706; color: #fff;
+        font-size: 13px; font-weight: 600;
+        cursor: pointer;
+    }
+    .ad-btn-late:hover:not(:disabled) { background: #b45309; }
+    .ad-btn-late:disabled { opacity: .6; cursor: not-allowed; }
+
+    .ad-req-actions { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+
+    .ad-btn-reject {
+        display: flex; align-items: center; gap: 5px;
+        flex: 1; justify-content: center;
+        padding: 8px;
+        border: none; border-radius: 7px;
+        background: #dc2626; color: #fff;
+        font-size: 13px; font-weight: 600;
+        cursor: pointer;
+    }
+    .ad-btn-reject:hover:not(:disabled) { background: #b91c1c; }
+    .ad-btn-reject:disabled { opacity: .6; cursor: not-allowed; }
+
+    .ad-btn-absent {
+        display: flex; align-items: center; gap: 5px;
+        flex: 1; justify-content: center;
+        padding: 8px;
+        border: none; border-radius: 7px;
+        background: #f59e0b; color: #fff;
+        font-size: 13px; font-weight: 600;
+        cursor: pointer;
+    }
+    .ad-btn-absent:hover:not(:disabled) { background: #d97706; }
+    .ad-btn-absent:disabled { opacity: .6; cursor: not-allowed; }
+
+    .ad-req-error {
+        background: #fee2e2; color: #b91c1c;
+        border-radius: 6px; padding: 8px 10px;
+        font-size: 12px;
+    }
+
+    /* Loading / Empty */
+    .ad-loading {
+        display: flex; align-items: center; gap: 14px;
+        padding: 60px 20px; color: #6b7280; font-size: 14px;
+    }
+
+    .ad-empty {
+        display: flex; flex-direction: column; align-items: center; gap: 12px;
+        padding: 60px 20px; color: #6b7280; font-size: 14px;
+    }
+
+    .ad-spinner {
+        width: 28px; height: 28px;
+        border: 3px solid #e5e7eb;
+        border-top-color: #6366f1;
+        border-radius: 50%;
+        animation: ad-spin .8s linear infinite;
+    }
+
+    .ad-spinner-sm {
+        display: inline-block;
+        width: 14px; height: 14px;
+        border: 2px solid rgba(255,255,255,.4);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: ad-spin .8s linear infinite;
+    }
+
+    @@keyframes ad-spin { to { transform: rotate(360deg); } }
+
+    /* ── Panel Tabs ── */
+    .ad-panel-tabs {
+        display: flex;
+        gap: 4px;
+        background: #f3f4f6;
+        border-radius: 8px;
+        padding: 4px;
+        margin-bottom: 20px;
+    }
+
+    .ad-panel-tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        justify-content: center;
+        padding: 8px 12px;
+        border: none;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #6b7280;
+        background: transparent;
+        cursor: pointer;
+        transition: background .15s, color .15s;
+    }
+
+    .ad-panel-tab:hover { background: #e5e7eb; color: #374151; }
+    .ad-panel-tab--active { background: #fff; color: #111827; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+    .ad-tab-count {
+        background: #6366f1;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 1px 6px;
+        border-radius: 20px;
+        min-width: 18px;
+        text-align: center;
+    }
+
+    /* ── Manual Edit Section ── */
+    .ad-manual-section {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .ad-manual-desc {
+        font-size: 13px;
+        color: #6b7280;
+        line-height: 1.5;
+        background: #f9fafb;
+        border-radius: 8px;
+        padding: 12px 14px;
+        margin: 0;
+        border-left: 3px solid #6366f1;
+    }
+
+    .ad-manual-current {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: #f9fafb;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 14px 16px;
+    }
+
+    .ad-manual-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .ad-manual-divider {
+        border: none;
+        border-top: 1.5px dashed #e5e7eb;
+        margin: 4px 0;
+    }
+
+    .ad-manual-form {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    .ad-manual-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .ad-req-success {
+        background: #dcfce7;
+        color: #15803d;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+</style>

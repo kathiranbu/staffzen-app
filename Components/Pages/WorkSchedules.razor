@@ -1,0 +1,1808 @@
+@page "/settings/work-schedules"
+@rendermode RenderMode.InteractiveServer
+@using APM.StaffZen.Blazor.Components.Layout
+@inject APM.StaffZen.Blazor.Services.WorkScheduleService WorkScheduleService
+@inject APM.StaffZen.Blazor.Services.SessionService SessionService
+
+<BasePage Title="Work Schedules">
+
+<div class="ws-outer">
+<div class="ws-layout">
+
+    <!-- ── Left sidebar ── -->
+    <div class="ws-sidebar">
+        <div class="ws-sidebar-search">
+            <i class="bi bi-search ws-search-icon"></i>
+            <input type="text" class="ws-search-input" placeholder="Search schedules"
+                   @bind="searchText" @bind:event="oninput" />
+        </div>
+        <button class="ws-add-btn" @onclick="AddNewSchedule">
+            <i class="bi bi-plus"></i> Add new schedule
+        </button>
+        <div class="ws-schedule-list">
+            @foreach (var s in FilteredSchedules)
+            {
+                var sid = s.Id;
+                <div class="ws-schedule-item @(activeScheduleId == sid ? "ws-schedule-item--active" : "")"
+                     @onclick="() => SelectSchedule(sid)">
+                    <span class="ws-schedule-name">@s.Name</span>
+                    @if (s.IsDefault) { <span class="ws-default-badge">Default</span> }
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- ── Right panel ── -->
+    <div class="ws-main">
+        @if (activeSchedule == null)
+        {
+            <div class="ws-landing">
+                <div class="ws-landing-illustration">
+                    <svg class="ws-landing-svg" viewBox="0 0 420 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <ellipse cx="210" cy="180" rx="190" ry="70" fill="#f0f2f5"/>
+                        <ellipse cx="320" cy="60" rx="80" ry="80" fill="#e8eaf0"/>
+                        <circle cx="310" cy="55" r="38" fill="#fbbf24"/>
+                        <circle cx="330" cy="42" r="30" fill="#e8eaf0"/>
+                        <circle cx="180" cy="30" r="4" fill="#c7d2fe"/>
+                        <circle cx="165" cy="55" r="3" fill="#c7d2fe"/>
+                        <circle cx="370" cy="90" r="3" fill="#c7d2fe"/>
+                        <ellipse cx="90" cy="150" rx="55" ry="28" fill="#e2e8f0"/>
+                        <ellipse cx="60" cy="155" rx="35" ry="22" fill="#e2e8f0"/>
+                        <ellipse cx="120" cy="158" rx="30" ry="18" fill="#e2e8f0"/>
+                        <ellipse cx="340" cy="140" rx="50" ry="24" fill="#e2e8f0"/>
+                        <ellipse cx="315" cy="145" rx="32" ry="20" fill="#e2e8f0"/>
+                        <ellipse cx="365" cy="148" rx="28" ry="17" fill="#e2e8f0"/>
+                        <rect x="180" y="60" width="175" height="52" rx="8" fill="white" filter="url(#shadow1)"/>
+                        <rect x="192" y="70" width="20" height="20" rx="4" fill="#ff7a00"/>
+                        <text x="198" y="84" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">J</text>
+                        <rect x="218" y="72" width="80" height="6" rx="3" fill="#374151"/>
+                        <rect x="218" y="82" width="60" height="5" rx="2.5" fill="#9ca3af"/>
+                        <rect x="218" y="91" width="90" height="5" rx="2.5" fill="#9ca3af"/>
+                        <rect x="60" y="115" width="175" height="52" rx="8" fill="white" filter="url(#shadow1)"/>
+                        <rect x="72" y="125" width="20" height="20" rx="4" fill="#ff7a00"/>
+                        <text x="78" y="139" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">J</text>
+                        <rect x="98" y="127" width="100" height="6" rx="3" fill="#374151"/>
+                        <rect x="98" y="137" width="70" height="5" rx="2.5" fill="#9ca3af"/>
+                        <rect x="98" y="146" width="110" height="5" rx="2.5" fill="#9ca3af"/>
+                        <circle cx="148" cy="141" r="26" fill="white" stroke="#e5e7eb" stroke-width="2"/>
+                        <circle cx="148" cy="141" r="22" fill="white" stroke="#3b82f6" stroke-width="2"/>
+                        <line x1="148" y1="141" x2="148" y2="126" stroke="#374151" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="148" y1="141" x2="158" y2="141" stroke="#374151" stroke-width="2" stroke-linecap="round"/>
+                        <rect x="200" y="165" width="175" height="52" rx="8" fill="white" filter="url(#shadow1)"/>
+                        <rect x="212" y="175" width="20" height="20" rx="4" fill="#ff7a00"/>
+                        <text x="218" y="189" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">J</text>
+                        <rect x="238" y="177" width="110" height="6" rx="3" fill="#374151"/>
+                        <rect x="238" y="187" width="70" height="5" rx="2.5" fill="#9ca3af"/>
+                        <rect x="238" y="196" width="90" height="5" rx="2.5" fill="#9ca3af"/>
+                        <rect x="348" y="172" width="28" height="22" rx="4" fill="#6366f1"/>
+                        <path d="M376 178 Q384 178 384 185 Q384 192 376 192" stroke="#6366f1" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                        <rect x="352" y="194" width="22" height="3" rx="1.5" fill="#4f46e5"/>
+                        <defs>
+                            <filter id="shadow1" x="-10%" y="-10%" width="120%" height="130%">
+                                <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,0.08)"/>
+                            </filter>
+                        </defs>
+                    </svg>
+                </div>
+                <h2 class="ws-landing-title">Take attendance to the next level</h2>
+                <p class="ws-landing-desc">Boost timesheets with fixed or flexible work hours, overtime,<br />breaks, and deductions for your team's compliance.</p>
+                <button class="ws-landing-cta" @onclick="AddNewSchedule">Add Your Work Schedule</button>
+                <a href="#" class="ws-landing-learn">Learn more about Work Schedules <i class="bi bi-box-arrow-up-right" style="font-size:11px;"></i></a>
+            </div>
+        }
+        else
+        {
+            <div class="ws-top-hint">Plug in your work hours to schedules to see advanced payroll calculations in timesheets.</div>
+
+            @if (!isEditing && activeSchedule.IsSaved)
+            {
+                <!-- ── VIEW MODE — matches screenshot exactly ── -->
+                <div class="ws-view-panel">
+
+                    <!-- ── SCHEDULE SECTION ── -->
+                    <div class="ws-vs-section">
+                        <div class="ws-vs-section-hdr">
+                            <span class="ws-vs-section-title">SCHEDULE <i class="bi bi-info-circle ws-info-icon"></i></span>
+                            <button class="ws-vs-edit-btn" @onclick="()=>isEditing=true"><i class="bi bi-pencil"></i></button>
+                        </div>
+
+                        <!-- Schedule name + default badge -->
+                        <h2 class="ws-vs-name">
+                            @activeSchedule.Name
+                            @if (activeSchedule.IsDefault) { <span class="ws-vs-default-badge">Default</span> }
+                        </h2>
+
+                        <!-- Work arrangement -->
+                        <div class="ws-vs-row">
+                            <span class="ws-vs-label">Work arrangement</span>
+                            <span class="ws-vs-value">@activeSchedule.Arrangement</span>
+                        </div>
+
+                        @if (activeSchedule.Arrangement == "Weekly")
+                        {
+                            <!-- Weekly: days of week + hours -->
+                            <div class="ws-vs-row">
+                                <span class="ws-vs-label">Days of the week</span>
+                                <span class="ws-vs-value">@string.Join(", ", DayKeys.Where(d => activeSchedule.WorkingDays.Contains(d)).Select(d => FullDayNames[d]))</span>
+                            </div>
+                            <div class="ws-vs-row">
+                                <span class="ws-vs-label">Hours</span>
+                                <span class="ws-vs-value">@activeSchedule.WeeklyHours hours</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <!-- Fixed / Flexible: per-day rows -->
+                            @foreach (var day in DayKeys)
+                            {
+                                bool isWork = activeSchedule.WorkingDays.Contains(day);
+                                var slot = activeSchedule.DaySlots.ContainsKey(day) ? activeSchedule.DaySlots[day] : null;
+                                <div class="ws-vs-row">
+                                    <span class="ws-vs-label">@FullDayNames[day]</span>
+                                    @if (isWork && activeSchedule.Arrangement == "Fixed")
+                                    {
+                                        <span class="ws-vs-value">@FormatTime12h(slot?.Start ?? "09:00") &nbsp;- &nbsp;@FormatTime12h(slot?.End ?? "17:00")</span>
+                                    }
+                                    else if (isWork && activeSchedule.Arrangement == "Flexible")
+                                    {
+                                        var fh = (int)(slot?.DailyHours ?? 0);
+                                        var fm = (int)(((slot?.DailyHours ?? 0) - fh) * 60);
+                                        <span class="ws-vs-value">@(fh > 0 || fm > 0 ? $"{fh} hours{(fm > 0 ? $" {fm} minutes" : "")}" : "0 hours")</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="ws-vs-value ws-vs-value--muted">Rest day</span>
+                                    }
+                                </div>
+                            }
+                            @if (activeSchedule.IncludeBeforeStart)
+                            {
+                                <div class="ws-vs-row">
+                                    <span class="ws-vs-label">Payroll hours</span>
+                                    <span class="ws-vs-value">Include time tracked before scheduled start time</span>
+                                </div>
+                            }
+                        }
+
+                        <div class="ws-vs-inner-divider"></div>
+
+                        <div class="ws-vs-row">
+                            <span class="ws-vs-label">Split timesheets at</span>
+                            <span class="ws-vs-value">@FormatTime12h(activeSchedule.SplitAt)</span>
+                        </div>
+                    </div>
+
+                    <div class="ws-vs-divider"></div>
+
+                    <!-- ── BREAKS SECTION ── -->
+                    <div class="ws-vs-section">
+                        <div class="ws-vs-section-title-plain">BREAKS <i class="bi bi-info-circle ws-info-icon"></i></div>
+                        <div class="ws-vs-desc">Schedule breaks by setting fixed times or durations here. If left empty, members can clock into breaks freely.</div>
+                        @if (!activeSchedule.Breaks.Any())
+                        {
+                            <div class="ws-vs-empty">No breaks added.</div>
+                        }
+                        @foreach (var br in activeSchedule.Breaks)
+                        {
+                            <div class="ws-vs-row">
+                                <span class="ws-vs-label">@(string.IsNullOrWhiteSpace(br.Name) ? "Break" : br.Name)</span>
+                                <span class="ws-vs-value">
+                                    @br.DurationHours h @br.DurationMins m
+                                    @if (br.HasTimeRange)
+                                    {
+                                        <text> between @FormatTime12h(br.RangeStart) - @FormatTime12h(br.RangeEnd)</text>
+                                    }
+                                </span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="ws-vs-divider"></div>
+
+                    <!-- ── AUTO DEDUCTIONS SECTION ── -->
+                    <div class="ws-vs-section">
+                        <div class="ws-vs-section-title-plain">AUTO DEDUCTIONS <i class="bi bi-info-circle ws-info-icon"></i></div>
+                        <div class="ws-vs-desc">Subtract breaks automatically from worked hours if members are not required to clock breaks into timesheets.</div>
+                        @if (!activeSchedule.AutoDeductions.Any())
+                        {
+                            <div class="ws-vs-empty">No auto deductions added.</div>
+                        }
+                        @foreach (var ad in activeSchedule.AutoDeductions)
+                        {
+                            <div class="ws-vs-row">
+                                <span class="ws-vs-label">After @ad.AfterHours h</span>
+                                <span class="ws-vs-value">Deduct @ad.DeductMinutes min</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="ws-vs-divider"></div>
+
+                    <!-- ── OVERTIME RULES SECTION ── -->
+                    <div class="ws-vs-section">
+                        <div class="ws-vs-section-title-plain">OVERTIME RULES <i class="bi bi-info-circle ws-info-icon"></i></div>
+                        <div class="ws-vs-desc">In combination with work hours, overtime will be shown automatically in timesheets based on these rules.</div>
+                        @if (!activeSchedule.DailyOvertime && !activeSchedule.DailyDoubleOvertime &&
+                             !activeSchedule.WeeklyOvertime && !activeSchedule.RestDayOvertime && !activeSchedule.PublicHolidayOvertime)
+                        {
+                            <div class="ws-vs-empty">No overtime rules configured.</div>
+                        }
+                        @if (activeSchedule.DailyOvertime)
+                        {
+                            <div class="ws-vs-row">
+                                <span class="ws-vs-label">Daily overtime</span>
+                                <span class="ws-vs-value">After @activeSchedule.DailyOvertimeAfterHours h @(activeSchedule.DailyOvertimeAfterMins > 0 ? activeSchedule.DailyOvertimeAfterMins + " m" : "") hours</span>
+                            </div>
+                        }
+                        @if (activeSchedule.DailyDoubleOvertime)
+                        {
+                            <div class="ws-vs-row">
+                                <span class="ws-vs-label">Daily double overtime</span>
+                                <span class="ws-vs-value">After @activeSchedule.DailyDoubleOTAfterHours h @(activeSchedule.DailyDoubleOTAfterMins > 0 ? activeSchedule.DailyDoubleOTAfterMins + " m" : "") hours</span>
+                            </div>
+                        }
+                        @if (activeSchedule.WeeklyOvertime)
+                        {
+                            <div class="ws-vs-row">
+                                <span class="ws-vs-label">Weekly overtime</span>
+                                <span class="ws-vs-value">@activeSchedule.WeeklyOvertimeAfterHours hours onwards</span>
+                            </div>
+                        }
+                        @if (activeSchedule.RestDayOvertime)
+                        {
+                            <div class="ws-vs-row">
+                                <span class="ws-vs-label">Rest day overtime</span>
+                                <span class="ws-vs-value">Enabled</span>
+                            </div>
+                        }
+                        @if (activeSchedule.PublicHolidayOvertime)
+                        {
+                            <div class="ws-vs-row">
+                                <span class="ws-vs-label">Public holiday overtime</span>
+                                <span class="ws-vs-value">Enabled</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="ws-vs-divider"></div>
+
+                    <!-- ── LOCATIONS SECTION ── -->
+                    <div class="ws-vs-section">
+                        <div class="ws-vs-section-title-plain">LOCATIONS</div>
+                        <div class="ws-vs-desc">If geofencing is enforced, members assigned to this schedule will only be allowed to track time within these locations.</div>
+                    </div>
+
+                    <div class="ws-vs-divider"></div>
+
+                    <!-- ── MEMBERS SECTION ── -->
+                    <div class="ws-vs-section ws-vs-section--last">
+                        <div class="ws-vs-section-title-plain">MEMBERS <span class="ws-premium-badge">PREMIUM</span></div>
+                        <div class="ws-vs-desc">Members and groups can belong to only one work schedule.</div>
+                        <div class="ws-members-notice">
+                            <i class="bi bi-exclamation-circle ws-notice-icon"></i>
+                            <span>Members not assigned to a specific schedule will follow the default.</span>
+                        </div>
+                        <div class="ws-members-link-row">
+                            <a href="#" class="ws-go-people-link">Go to People Settings</a>
+                            <span class="ws-members-link-text"> to view or edit Members and Groups assignment for this schedule</span>
+                        </div>
+                    </div>
+
+                </div>
+            }
+            else
+            {
+            <!-- ── EDIT MODE (existing form) ── -->
+
+            <div class="ws-upgrade-banner">
+                <i class="bi bi-record-circle-fill ws-banner-icon"></i>
+                <div class="ws-banner-body">
+                    <div class="ws-banner-title">Elevate timesheets with advanced schedules</div>
+                    <div class="ws-banner-desc">Set up advanced schedules with auto deductions, custom breaks, overtime and member assignment, and see where your hours go in timesheets and payroll.</div>
+                </div>
+                <button class="ws-upgrade-cta">See upgrade options</button>
+                <button class="ws-banner-dismiss">No, thanks</button>
+            </div>
+
+            <!-- ── SCHEDULE ── -->
+            <div class="ws-section">
+                <div class="ws-section-header">SCHEDULE <i class="bi bi-info-circle ws-info-icon"></i></div>
+
+                <div class="ws-field-row">
+                    <label class="ws-field-label">Schedule name</label>
+                    <input class="ws-input" type="text" @bind="activeSchedule.Name" @bind:event="oninput" placeholder="e.g. Default Work Schedule" />
+                </div>
+
+                <div class="ws-field-row">
+                    <label class="ws-field-label">Work arrangement</label>
+                    <div class="ws-arrangement-tabs">
+                        <button class="ws-arr-tab @(activeSchedule.Arrangement=="Fixed"?"ws-arr-tab--active":"")" @onclick='()=>SetArrangement("Fixed")'>Fixed</button>
+                        <button class="ws-arr-tab @(activeSchedule.Arrangement=="Flexible"?"ws-arr-tab--active":"")" @onclick='()=>SetArrangement("Flexible")'>Flexible</button>
+                        <button class="ws-arr-tab @(activeSchedule.Arrangement=="Weekly"?"ws-arr-tab--active":"")" @onclick='()=>SetArrangement("Weekly")'>Weekly</button>
+                    </div>
+                </div>
+
+                <div class="ws-field-row">
+                    <label class="ws-field-label">Days of the week</label>
+                    <div class="ws-days-row">
+                        @foreach (var day in DayKeys)
+                        {
+                            var d = day;
+                            bool sel = activeSchedule.WorkingDays.Contains(d);
+                            <button class="ws-day-btn @(sel?"ws-day-btn--sel":"")" @onclick="()=>ToggleDay(d)">@DayLabels[d]</button>
+                        }
+                    </div>
+                </div>
+
+                @if (activeSchedule.Arrangement == "Fixed")
+                {
+                    <!-- Fixed: time per day, "Copy to all" appears on first edited row -->
+                    <div class="ws-day-schedule-list">
+                        @foreach (var day in DayKeys)
+                        {
+                            var d = day;
+                            bool isWork = activeSchedule.WorkingDays.Contains(d);
+                            var slot = activeSchedule.DaySlots.ContainsKey(d) ? activeSchedule.DaySlots[d] : null;
+                            bool isFirst = d == DayKeys.First(k => activeSchedule.WorkingDays.Contains(k));
+                            <div class="ws-flex-day-row">
+                                <span class="ws-flex-day-label">@FullDayNames[d]</span>
+                                @if (isWork)
+                                {
+                                    <div class="ws-time-box @(fixedFocusDay == d ? "ws-time-box--active" : "")">
+                                        <input class="ws-time-native" type="time"
+                                               value="@(slot?.Start ?? "09:00")"
+                                               @onfocus="() => fixedFocusDay = d"
+                                               @onchange='e => { SetDayStart(d, e.Value?.ToString() ?? "09:00"); fixedFocusDay = d; }' />
+                                    </div>
+                                    <span class="ws-time-arrow">to</span>
+                                    <div class="ws-time-box @(fixedFocusDay == d ? "ws-time-box--active" : "")">
+                                        <input class="ws-time-native" type="time"
+                                               value="@(slot?.End ?? "17:00")"
+                                               @onfocus="() => fixedFocusDay = d"
+                                               @onchange='e => { SetDayEnd(d, e.Value?.ToString() ?? "17:00"); fixedFocusDay = d; }' />
+                                    </div>
+                                    @if (isFirst && fixedFocusDay == d)
+                                    {
+                                        <button class="ws-copy-all-btn" @onclick="() => CopyTimeToAll(d)">
+                                            <i class="bi bi-copy"></i> Copy to all
+                                        </button>
+                                    }
+                                    else if (!isFirst && fixedFocusDay == d)
+                                    {
+                                        <button class="ws-copy-all-btn" @onclick="() => CopyTimeToAll(d)">
+                                            <i class="bi bi-copy"></i> Copy to all
+                                        </button>
+                                    }
+                                }
+                                else { <span class="ws-rest-label">Rest day</span> }
+                            </div>
+                        }
+                        <div class="ws-field-row" style="margin-top:16px; margin-bottom:0;">
+                            <label class="ws-field-label" style="font-size:13px; color:#374151; min-width:160px; flex-shrink:0;">Payroll hours</label>
+                            <label class="ws-checkbox-row">
+                                <input type="checkbox" @bind="activeSchedule.IncludeBeforeStart" class="ws-green-check" />
+                                <span>Include time tracked before scheduled start time</span>
+                                <i class="bi bi-info-circle ws-info-icon"></i>
+                            </label>
+                        </div>
+                    </div>
+                }
+                else if (activeSchedule.Arrangement == "Flexible")
+                {
+                    <!-- Flexible: h/m per day, only focused row gets border -->
+                    <div class="ws-day-schedule-list">
+                        @foreach (var day in DayKeys)
+                        {
+                            var d = day;
+                            bool isWork = activeSchedule.WorkingDays.Contains(d);
+                            var slot = activeSchedule.DaySlots.ContainsKey(d) ? activeSchedule.DaySlots[d] : null;
+                            int hrs  = isWork ? (int)(slot?.DailyHours ?? 0) : 0;
+                            int mins = isWork ? (int)(((slot?.DailyHours ?? 0) - hrs) * 60) : 0;
+                            bool focused = flexFocusDay == d;
+                            <div class="ws-flex-day-row">
+                                <span class="ws-flex-day-label">@FullDayNames[d]</span>
+                                @if (isWork)
+                                {
+                                    <div class="ws-hm-box @(focused ? "ws-hm-box--focused" : "ws-hm-box--plain")">
+                                        <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="24" step="1" value="@hrs"
+                                               @onfocus="() => flexFocusDay = d"
+                                               @onchange="e => { SetDailyHoursFromHM(d, int.TryParse(e.Value?.ToString(), out var hv) ? hv : 0, GetSlotMins(d)); flexFocusDay = d; }" />
+                                        <span class="ws-hm-sep">h</span>
+                                        <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="59" step="5" value="@mins"
+                                               @onfocus="() => flexFocusDay = d"
+                                               @onchange="e => { SetDailyHoursFromHM(d, GetSlotHours(d), int.TryParse(e.Value?.ToString(), out var mv) ? mv : 0); flexFocusDay = d; }" />
+                                        <span class="ws-hm-sep">m</span>
+                                    </div>
+                                    @if (focused)
+                                    {
+                                        <button class="ws-copy-all-btn" @onclick="() => CopyFlexToAll(d)">
+                                            <i class="bi bi-copy"></i> Copy to all
+                                        </button>
+                                    }
+                                }
+                                else { <span class="ws-rest-label">Rest day</span> }
+                            </div>
+                        }
+                    </div>
+                }
+                else if (activeSchedule.Arrangement == "Weekly")
+                {
+                    <div class="ws-field-row">
+                        <label class="ws-field-label">Hours</label>
+                        <div class="ws-hm-box ws-hm-box--focused">
+                            <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="168" step="1" @bind="activeSchedule.WeeklyHours" />
+                            <span class="ws-hm-sep">h</span>
+                            <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="59" step="5" @bind="activeSchedule.WeeklyMinutes" />
+                            <span class="ws-hm-sep">m</span>
+                        </div>
+                    </div>
+                }
+
+                <!-- Split timesheets at -->
+                <div class="ws-split-row">
+                    <label class="ws-field-label">Split timesheets at</label>
+                    @if (!splitEditMode)
+                    {
+                        <!-- Disabled/readonly state - image 1 style -->
+                        <div class="ws-split-box ws-split-box--disabled">
+                            <span class="ws-split-time-text">@FormatTime12h(activeSchedule.SplitAt)</span>
+                            <i class="bi bi-clock ws-split-clock"></i>
+                        </div>
+                        <button class="ws-split-edit-btn" @onclick="OpenSplitConfirm">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <i class="bi bi-info-circle ws-info-icon"></i>
+                    }
+                    else
+                    {
+                        <!-- Edit state after confirm - image 3 style -->
+                        <div class="ws-split-box ws-split-box--edit">
+                            <input class="ws-split-time-input" type="time"
+                                   value="@activeSchedule.SplitAt"
+                                   @onchange='e => activeSchedule.SplitAt = e.Value?.ToString() ?? "00:00"' />
+                        </div>
+                        <button class="ws-split-cancel-text" @onclick="() => splitEditMode = false">Cancel</button>
+                        <i class="bi bi-info-circle ws-info-icon"></i>
+                    }
+                    <div class="ws-split-hint">Change this setting if your team works past midnight.</div>
+                    @if (splitEditMode)
+                    {
+                        <div class="ws-split-warning">
+                            <i class="bi bi-exclamation-circle ws-split-warn-icon"></i>
+                            <span>Time entries after midnight will be recorded <strong>with the previous date</strong> instead of the actual calendar date.</span>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="ws-divider"></div>
+
+            <!-- ── BREAKS ── (Image 1 layout exactly) -->
+            <div class="ws-section">
+                <div class="ws-section-header">BREAKS <i class="bi bi-info-circle ws-info-icon"></i></div>
+                <div class="ws-section-desc">Schedule breaks by setting fixed times or durations here. If left empty, members can clock into breaks freely.</div>
+
+                @if (!activeSchedule.Breaks.Any())
+                {
+                    <div class="ws-empty-label">No breaks added.</div>
+                }
+
+                @foreach (var br in activeSchedule.Breaks)
+                {
+                    var brRef = br;
+                    <!-- Main break row: [name input] [0 h 0 m 🕐] [trash] [Unpaid|Paid] -->
+                    <div class="ws-break-row-outer">
+                        <div class="ws-break-main-row">
+                            <input class="ws-break-name-input" type="text" placeholder="Break name"
+                                   value="@brRef.Name"
+                                   @onchange="e => brRef.Name = e.Value?.ToString() ?? string.Empty" />
+                            <div class="ws-hm-box ws-hm-box--focused ws-hm-break">
+                                <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="24" step="1" value="@brRef.DurationHours"
+                                       @onchange="e => brRef.DurationHours = int.TryParse(e.Value?.ToString(), out var hv) ? hv : 0" />
+                                <span class="ws-hm-sep">h</span>
+                                <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="59" step="5" value="@brRef.DurationMins"
+                                       @onchange="e => brRef.DurationMins = int.TryParse(e.Value?.ToString(), out var mv) ? mv : 0" />
+                                <span class="ws-hm-sep">m</span>
+                                <i class="bi bi-clock ws-hm-clock-sm"></i>
+                            </div>
+                            <button class="ws-row-del" @onclick="() => activeSchedule.Breaks.Remove(brRef)">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                            <div class="ws-pill-tabs ws-pill-tabs--break">
+                                <button class="ws-pill-tab @(!brRef.IsPaid?"ws-pill-tab--active":"")" @onclick="()=>brRef.IsPaid=false">Unpaid</button>
+                                <button class="ws-pill-tab @(brRef.IsPaid?"ws-pill-tab--active":"")" @onclick="()=>brRef.IsPaid=true">Paid</button>
+                            </div>
+                        </div>
+                        <!-- Time-range row below -->
+                        <div class="ws-break-time-row">
+                            <label class="ws-checkbox-row">
+                                <input type="checkbox" @bind="brRef.HasTimeRange" class="ws-green-check" />
+                                <span>Allow break to be taken between</span>
+                            </label>
+                            <div class="ws-time-box @(brRef.HasTimeRange ? "ws-time-box--active" : "ws-time-box--disabled-range")">
+                                <input class="ws-time-native" type="time" value="@(brRef.HasTimeRange ? brRef.RangeStart : "13:00")"
+                                       disabled="@(!brRef.HasTimeRange)"
+                                       @onchange='e => brRef.RangeStart = e.Value?.ToString() ?? "13:00"' />
+                            </div>
+                            <span class="ws-time-arrow">to</span>
+                            <div class="ws-time-box @(brRef.HasTimeRange ? "ws-time-box--active" : "ws-time-box--disabled-range")">
+                                <input class="ws-time-native" type="time" value="@(brRef.HasTimeRange ? brRef.RangeEnd : "14:00")"
+                                       disabled="@(!brRef.HasTimeRange)"
+                                       @onchange='e => brRef.RangeEnd = e.Value?.ToString() ?? "14:00"' />
+                            </div>
+                            @if (brRef.HasTimeRange)
+                            {
+                                <i class="bi bi-info-circle ws-info-icon"></i>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <button class="ws-add-link" @onclick="AddBreak">
+                    <i class="bi bi-plus"></i> Add a break
+                </button>
+            </div>
+
+            <div class="ws-divider"></div>
+
+            <!-- ── AUTO DEDUCTIONS ── -->
+            <div class="ws-section">
+                <div class="ws-section-header">AUTO DEDUCTIONS <i class="bi bi-info-circle ws-info-icon"></i></div>
+                <div class="ws-section-desc">Subtract breaks automatically from worked hours if members are not required to clock breaks into timesheets.</div>
+                @if (!activeSchedule.AutoDeductions.Any())
+                {
+                    <div class="ws-empty-label">No auto deductions added.</div>
+                }
+                else
+                {
+                    @foreach (var ad in activeSchedule.AutoDeductions)
+                    {
+                        var adRef = ad;
+                        <div class="ws-deduction-row">
+                            <span class="ws-break-name">After @adRef.AfterHours h → @adRef.DeductMinutes min</span>
+                            <button class="ws-row-del" @onclick="() => activeSchedule.AutoDeductions.Remove(adRef)"><i class="bi bi-trash3"></i></button>
+                        </div>
+                    }
+                }
+                <button class="ws-add-link" @onclick="AddDeduction"><i class="bi bi-plus"></i> Add a deduction</button>
+            </div>
+
+            <div class="ws-divider"></div>
+
+            <!-- ── OVERTIME RULES ── (Image 4 exactly) -->
+            <div class="ws-section">
+                <div class="ws-section-header">OVERTIME RULES <i class="bi bi-info-circle ws-info-icon"></i></div>
+                <div class="ws-section-desc">In combination with work hours, overtime will be shown automatically in timesheets based on these rules.</div>
+
+                <!-- Shared Hours / Time pill — top-right, only shown when Daily OT or Daily Double OT is on -->
+                @if (activeSchedule.DailyOvertime || activeSchedule.DailyDoubleOvertime)
+                {
+                    <div class="ws-ot-global-pill-row">
+                        <div class="ws-pill-tabs ws-pill-tabs--ot">
+                            <button class="ws-pill-tab @(!activeSchedule.DailyOvertimeIsTime?"ws-pill-tab--active":"")"
+                                    @onclick="()=>activeSchedule.DailyOvertimeIsTime=false">Hours</button>
+                            <button class="ws-pill-tab @(activeSchedule.DailyOvertimeIsTime?"ws-pill-tab--active":"")"
+                                    @onclick="()=>activeSchedule.DailyOvertimeIsTime=true">Time</button>
+                        </div>
+                    </div>
+                }
+
+                <!-- Daily overtime block -->
+                <div class="ws-ot-group">
+                    <div class="ws-ot-header-row">
+                        <div class="ws-ot-left">
+                            <div class="ws-toggle @(activeSchedule.DailyOvertime?"ws-toggle--on":"")"
+                                 @onclick="ToggleDailyOvertime">
+                                <div class="ws-toggle-knob"></div>
+                            </div>
+                            <span class="ws-ot-label">Daily overtime</span>
+                        </div>
+                    </div>
+                    @if (activeSchedule.DailyOvertime)
+                    {
+                        <div class="ws-ot-detail">
+                            <div class="ws-ot-detail-row">
+                                <span class="ws-ot-detail-label">Overtime starts after</span>
+                                @if (!activeSchedule.DailyOvertimeIsTime)
+                                {
+                                    <div class="ws-hm-box ws-hm-box--focused ws-hm-box--sm">
+                                        <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="24" step="1" @bind="activeSchedule.DailyOvertimeAfterHours" />
+                                        <span class="ws-hm-sep">h</span>
+                                        <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="59" step="5" @bind="activeSchedule.DailyOvertimeAfterMins" />
+                                        <span class="ws-hm-sep">m</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="ws-time-box ws-time-box--active">
+                                        <input class="ws-time-native" type="time" id="ot-daily-time-input"
+                                               value="@($"{activeSchedule.DailyOvertimeAfterHours:D2}:{activeSchedule.DailyOvertimeAfterMins:D2}")"
+                                               @onchange='e => { var p=(e.Value?.ToString()??"08:00").Split(":"); activeSchedule.DailyOvertimeAfterHours=int.Parse(p[0]); activeSchedule.DailyOvertimeAfterMins=int.Parse(p[1]); }' />
+                                    </div>
+                                }
+                            </div>
+                            <div class="ws-ot-detail-row">
+                                <span class="ws-ot-detail-label">Multiplier value</span>
+                                <i class="bi bi-info-circle ws-info-icon" style="margin-right:4px;"></i>
+                                <span class="ws-ot-x">×</span>
+                                <input class="ws-multiplier-input" type="number" min="1" max="10" step="0.5" @bind="activeSchedule.DailyOvertimeMultiplier" />
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Daily double overtime block -->
+                <div class="ws-ot-group">
+                    <div class="ws-ot-header-row">
+                        <div class="ws-ot-left">
+                            <div class="ws-toggle-wrap @(!activeSchedule.DailyOvertime ? "ws-toggle-wrap--disabled" : "")"
+                                 title="@(!activeSchedule.DailyOvertime ? "Daily overtime needs to be enabled before Daily double overtime" : "")">
+                                <div class="ws-toggle @(activeSchedule.DailyDoubleOvertime?"ws-toggle--on":"") @(!activeSchedule.DailyOvertime?"ws-toggle--disabled":"")"
+                                     @onclick="ToggleDailyDoubleOvertime">
+                                    <div class="ws-toggle-knob"></div>
+                                </div>
+                            </div>
+                            <span class="ws-ot-label @(!activeSchedule.DailyOvertime?"ws-ot-label--disabled":"")">Daily double overtime</span>
+                        </div>
+                    </div>
+                    @if (activeSchedule.DailyDoubleOvertime)
+                    {
+                        <div class="ws-ot-detail">
+                            <div class="ws-ot-detail-row">
+                                <span class="ws-ot-detail-label">Overtime starts after</span>
+                                @if (!activeSchedule.DailyOvertimeIsTime)
+                                {
+                                    <div class="ws-hm-box ws-hm-box--focused ws-hm-box--sm">
+                                        <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="24" step="1" @bind="activeSchedule.DailyDoubleOTAfterHours" />
+                                        <span class="ws-hm-sep">h</span>
+                                        <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="59" step="5" @bind="activeSchedule.DailyDoubleOTAfterMins" />
+                                        <span class="ws-hm-sep">m</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="ws-time-box ws-time-box--active">
+                                        <input class="ws-time-native" type="time" id="ot-daily-double-time-input"
+                                               value="@($"{activeSchedule.DailyDoubleOTAfterHours:D2}:{activeSchedule.DailyDoubleOTAfterMins:D2}")"
+                                               @onchange='e => { var p=(e.Value?.ToString()??"08:00").Split(":"); activeSchedule.DailyDoubleOTAfterHours=int.Parse(p[0]); activeSchedule.DailyDoubleOTAfterMins=int.Parse(p[1]); }' />
+                                    </div>
+                                }
+                            </div>
+                            <div class="ws-ot-detail-row">
+                                <span class="ws-ot-detail-label">Multiplier value</span>
+                                <i class="bi bi-info-circle ws-info-icon" style="margin-right:4px;"></i>
+                                <span class="ws-ot-x">×</span>
+                                <input class="ws-multiplier-input" type="number" min="1" max="10" step="0.5" @bind="activeSchedule.DailyDoubleOTMultiplier" />
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="ws-ot-divider"></div>
+
+                <!-- Weekly overtime block — radio with Daily overtime -->
+                <div class="ws-ot-group">
+                    <div class="ws-ot-header-row">
+                        <div class="ws-ot-left">
+                            <div class="ws-toggle @(activeSchedule.WeeklyOvertime?"ws-toggle--on":"")"
+                                 @onclick="ToggleWeeklyOvertime">
+                                <div class="ws-toggle-knob"></div>
+                            </div>
+                            <span class="ws-ot-label">Weekly overtime</span>
+                        </div>
+                    </div>
+                    @if (activeSchedule.WeeklyOvertime)
+                    {
+                        <div class="ws-ot-detail">
+                            <div class="ws-ot-detail-row">
+                                <span class="ws-ot-detail-label">Overtime starts after</span>
+                                <div class="ws-hm-box ws-hm-box--focused ws-hm-box--sm">
+                                    <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="168" step="1" @bind="activeSchedule.WeeklyOvertimeAfterHours" />
+                                    <span class="ws-hm-sep">h</span>
+                                    <input class="ws-hm-input ws-hm-input--no-arrows" type="number" min="0" max="59" step="5" @bind="activeSchedule.WeeklyOvertimeAfterMins" />
+                                    <span class="ws-hm-sep">m</span>
+                                </div>
+                            </div>
+                            <div class="ws-ot-detail-row">
+                                <span class="ws-ot-detail-label">Multiplier value</span>
+                                <i class="bi bi-info-circle ws-info-icon" style="margin-right:4px;"></i>
+                                <span class="ws-ot-x">×</span>
+                                <input class="ws-multiplier-input" type="number" min="1" max="10" step="0.5" @bind="activeSchedule.WeeklyOvertimeMultiplier" />
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="ws-ot-divider"></div>
+
+                <!-- Rest day overtime block -->
+                <div class="ws-ot-group">
+                    <div class="ws-ot-header-row">
+                        <div class="ws-ot-left">
+                            <div class="ws-toggle @(activeSchedule.RestDayOvertime?"ws-toggle--on":"")"
+                                 @onclick="()=>{ activeSchedule.RestDayOvertime=!activeSchedule.RestDayOvertime; if(activeSchedule.RestDayOvertime) activeSchedule.WeeklyOvertime=false; }">
+                                <div class="ws-toggle-knob"></div>
+                            </div>
+                            <span class="ws-ot-label">Rest day overtime</span>
+                        </div>
+                    </div>
+                    @if (activeSchedule.RestDayOvertime)
+                    {
+                        <div class="ws-ot-detail">
+                            <div class="ws-ot-detail-row">
+                                <span class="ws-ot-detail-label">Multiplier value</span>
+                                <i class="bi bi-info-circle ws-info-icon" style="margin-right:4px;"></i>
+                                <span class="ws-ot-x">×</span>
+                                <input class="ws-multiplier-input" type="number" min="1" max="10" step="0.5" @bind="activeSchedule.RestDayOvertimeMultiplier" />
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="ws-ot-divider"></div>
+
+                <!-- Public holiday overtime block -->
+                <div class="ws-ot-group">
+                    <div class="ws-ot-header-row">
+                        <div class="ws-ot-left">
+                            <div class="ws-toggle @(activeSchedule.PublicHolidayOvertime?"ws-toggle--on":"")"
+                                 @onclick="()=>{ activeSchedule.PublicHolidayOvertime=!activeSchedule.PublicHolidayOvertime; if(activeSchedule.PublicHolidayOvertime) activeSchedule.WeeklyOvertime=false; }">
+                                <div class="ws-toggle-knob"></div>
+                            </div>
+                            <span class="ws-ot-label">Public holiday overtime</span>
+                        </div>
+                    </div>
+                    @if (activeSchedule.PublicHolidayOvertime)
+                    {
+                        <div class="ws-ot-detail">
+                            <div class="ws-ot-detail-row">
+                                <span class="ws-ot-detail-label">Multiplier value</span>
+                                <i class="bi bi-info-circle ws-info-icon" style="margin-right:4px;"></i>
+                                <span class="ws-ot-x">×</span>
+                                <input class="ws-multiplier-input" type="number" min="1" max="10" step="0.5" @bind="activeSchedule.PublicHolidayOvertimeMultiplier" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="ws-divider"></div>
+
+            <!-- ── LOCATIONS ── -->
+            <div class="ws-section">
+                <div class="ws-section-header">LOCATIONS</div>
+                <div class="ws-section-desc">If geofencing is enforced, members assigned to this schedule will only be allowed to track time within these locations.</div>
+                <div class="ws-locations-row">
+                    <label class="ws-field-label">Assign to</label>
+                    <div class="ws-locations-input-wrap">
+                        <input class="ws-locations-input" type="text" placeholder="Select locations" />
+                        <i class="bi bi-search ws-loc-search"></i>
+                        <i class="bi bi-info-circle ws-info-icon"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ws-divider"></div>
+
+            <!-- ── MEMBERS ── -->
+            <div class="ws-section" style="padding-bottom:32px;">
+                <div class="ws-section-header">MEMBERS <span class="ws-premium-badge">PREMIUM</span></div>
+                <div class="ws-section-desc">Members and groups can belong to only one work schedule.</div>
+                <div class="ws-members-notice">
+                    <i class="bi bi-exclamation-circle ws-notice-icon"></i>
+                    <span>Members not assigned to a specific schedule will follow the default.</span>
+                </div>
+                <div class="ws-members-link-row">
+                    <a href="#" class="ws-go-people-link">Go to People Settings</a>
+                    <span class="ws-members-link-text"> to view or edit Members and Groups assignment for this schedule</span>
+                </div>
+            </div>
+            } <!-- end edit mode else -->
+        }
+    </div>
+</div>
+
+@if (activeSchedule != null && isEditing)
+{
+    <div class="ws-footer">
+        <button class="ws-cancel-btn" @onclick="CancelChanges">Cancel</button>
+        <button class="ws-save-btn" @onclick="RequestSave" disabled="@saving">
+            @if (saving) { <span class="ws-mini-spin"></span> } else { <span>Save</span> }
+        </button>
+        @if (!string.IsNullOrEmpty(saveError))
+        {
+            <span class="ws-save-error">@saveError</span>
+        }
+    </div>
+}
+
+<!-- ── Split Confirm Modal (Image 2) ── -->
+@if (showSplitConfirm)
+{
+    <div class="ws-modal-backdrop" @onclick="() => showSplitConfirm = false">
+        <div class="ws-modal" @onclick:stopPropagation="true">
+            <div class="ws-modal-header">
+                <h2 class="ws-modal-title">Are you sure?</h2>
+                <button class="ws-modal-close" @onclick="() => showSplitConfirm = false"><i class="bi bi-x"></i></button>
+            </div>
+            <div class="ws-modal-body">
+                <p>Changing this setting will affect how timesheets are displayed.</p>
+                <p>We recommend changing this setting only if time entries before the split time should be included in calculations of the previous calendar date.</p>
+                <a href="#" class="ws-modal-link">Learn more about splitting Timesheets <i class="bi bi-box-arrow-up-right" style="font-size:11px;"></i></a>
+            </div>
+            <div class="ws-modal-footer">
+                <button class="ws-modal-cancel" @onclick="() => showSplitConfirm = false">Cancel</button>
+                <button class="ws-modal-confirm" @onclick="ConfirmSplitEdit">Confirm</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ── Save Confirm Modal ── -->
+@if (showSaveConfirm)
+{
+    <div class="ws-modal-backdrop" @onclick="() => showSaveConfirm = false">
+        <div class="ws-modal" @onclick:stopPropagation="true">
+            <div class="ws-modal-header">
+                <h2 class="ws-modal-title">Confirm changes</h2>
+                <button class="ws-modal-close" @onclick="() => showSaveConfirm = false"><i class="bi bi-x"></i></button>
+            </div>
+            <div class="ws-modal-body">
+                <p>Timesheet calculations will be affected by schedule changes.</p>
+            </div>
+            <div class="ws-modal-footer">
+                <button class="ws-modal-cancel" @onclick="() => showSaveConfirm = false">Cancel</button>
+                <button class="ws-modal-confirm" @onclick="SaveSchedule">Confirm</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ── Schedule Saved Toast ── -->
+@if (showToast)
+{
+    <div class="ws-toast">
+        <i class="bi bi-check-circle-fill ws-toast-icon"></i>
+        <span>Schedule saved</span>
+    </div>
+}
+
+</div>
+</BasePage>
+
+@code {
+    private class DaySlot
+    {
+        public string Start      { get; set; } = "09:00";
+        public string End        { get; set; } = "17:00";
+        public double DailyHours { get; set; } = 0;
+    }
+
+    private class BreakItem
+    {
+        public string Name          { get; set; } = string.Empty;
+        public int    DurationHours { get; set; } = 0;
+        public int    DurationMins  { get; set; } = 0;
+        public bool   IsPaid        { get; set; } = false;
+        public bool   HasTimeRange  { get; set; } = false;
+        public string RangeStart    { get; set; } = "13:00";
+        public string RangeEnd      { get; set; } = "14:00";
+    }
+
+    private class DeductionItem
+    {
+        public double AfterHours    { get; set; } = 5;
+        public int    DeductMinutes { get; set; } = 30;
+    }
+
+    private class ScheduleVm
+    {
+        public int    Id                      { get; set; }
+        public string Name                    { get; set; } = "New Schedule";
+        public bool   IsDefault               { get; set; }
+        public string Arrangement             { get; set; } = "Fixed";
+        public HashSet<string> WorkingDays    { get; set; } = new() { "Mon","Tue","Wed","Thu","Fri" };
+        public Dictionary<string,DaySlot> DaySlots { get; set; } = new();
+        public bool   IncludeBeforeStart      { get; set; }
+        public int    WeeklyHours             { get; set; } = 0;
+        public int    WeeklyMinutes           { get; set; } = 0;
+        public string SplitAt                 { get; set; } = "00:00";
+        public List<BreakItem>     Breaks         { get; set; } = new();
+        public List<DeductionItem> AutoDeductions { get; set; } = new();
+        public bool   DailyOvertime           { get; set; }
+        public bool   DailyOvertimeIsTime     { get; set; }
+        public int    DailyOvertimeAfterHours { get; set; } = 8;
+        public int    DailyOvertimeAfterMins  { get; set; } = 0;
+        public double DailyOvertimeMultiplier { get; set; } = 1.5;
+        public bool   DailyDoubleOvertime     { get; set; }
+        public bool   DailyDoubleOvertimeIsTime { get; set; }
+        public int    DailyDoubleOTAfterHours { get; set; } = 10;
+        public int    DailyDoubleOTAfterMins  { get; set; } = 0;
+        public double DailyDoubleOTMultiplier { get; set; } = 1.5;
+        public bool   WeeklyOvertime           { get; set; }
+        public int    WeeklyOvertimeAfterHours { get; set; } = 8;
+        public int    WeeklyOvertimeAfterMins  { get; set; } = 0;
+        public double WeeklyOvertimeMultiplier { get; set; } = 1.5;
+        public bool   RestDayOvertime          { get; set; }
+        public double RestDayOvertimeMultiplier { get; set; } = 1.5;
+        public bool   PublicHolidayOvertime    { get; set; }
+        public double PublicHolidayOvertimeMultiplier { get; set; } = 1.5;
+        public bool   IsSaved                 { get; set; } = false;
+
+        // ── Verification policy ──────────────────────────────────────────────
+        public bool   RequireFaceVerification { get; set; } = false;
+        public bool   RequireSelfie           { get; set; } = false;
+        public string UnusualBehavior         { get; set; } = "Blocked";
+    }
+
+    private List<ScheduleVm> schedules        = new();
+    private int              activeScheduleId = 0;
+    private ScheduleVm?      activeSchedule;
+    private string           searchText       = "";
+    private bool             saving           = false;
+    private int              nextId           = 1;
+    private bool             isEditing        = false;
+    private bool             showSaveConfirm  = false; // confirm changes modal
+    private bool             showToast        = false; // "Schedule saved" toast
+    private string           saveError        = "";     // error message if save fails
+
+    // Split timesheet edit state
+    private bool             splitEditMode    = false;
+    private bool             showSplitConfirm = false;
+
+    // Focus tracking for border-only-on-focused row
+    private string           fixedFocusDay    = string.Empty;
+    private string           flexFocusDay     = string.Empty;
+
+    private static readonly string[] DayKeys = { "Mon","Tue","Wed","Thu","Fri","Sat","Sun" };
+    private static readonly Dictionary<string,string> DayLabels = new()
+        { {"Mon","M"},{"Tue","T"},{"Wed","W"},{"Thu","T"},{"Fri","F"},{"Sat","S"},{"Sun","S"} };
+    private static readonly Dictionary<string,string> FullDayNames = new()
+        { {"Mon","Monday"},{"Tue","Tuesday"},{"Wed","Wednesday"},{"Thu","Thursday"},
+          {"Fri","Friday"},{"Sat","Saturday"},{"Sun","Sunday"} };
+
+    private IEnumerable<ScheduleVm> FilteredSchedules =>
+        (string.IsNullOrWhiteSpace(searchText)
+            ? schedules
+            : schedules.Where(s => s.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase)))
+        .Where(s => s.IsSaved);
+
+    private string FormatTime12h(string t24)
+    {
+        if (TimeSpan.TryParse(t24, out var ts))
+        {
+            int h = ts.Hours; int m = ts.Minutes;
+            string ampm = h >= 12 ? "pm" : "am";
+            int h12 = h == 0 ? 12 : h > 12 ? h - 12 : h;
+            return $"{h12}:{m:D2} {ampm}";
+        }
+        return t24;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // ── If in-memory state exists (tab switch within same session), restore it ──
+        if (APM.StaffZen.Blazor.Services.WorkScheduleState.Schedules.Any())
+        {
+            schedules        = APM.StaffZen.Blazor.Services.WorkScheduleState.Schedules
+                                   .Select(VmFromPersisted).ToList();
+            nextId           = APM.StaffZen.Blazor.Services.WorkScheduleState.NextId;
+            activeScheduleId = APM.StaffZen.Blazor.Services.WorkScheduleState.ActiveScheduleId;
+            activeSchedule   = schedules.FirstOrDefault(s => s.Id == activeScheduleId);
+            if (activeSchedule != null) isEditing = false;
+            return;
+        }
+
+        // ── First load after app start/rebuild — fetch saved schedules from DB ──
+        try
+        {
+            var dtos = await WorkScheduleService.GetAllAsync();
+            foreach (var dto in dtos)
+            {
+                var vm = VmFromDto(dto);
+                schedules.Add(vm);
+                if (vm.Id >= nextId) nextId = vm.Id + 1;
+            }
+            // Select the default schedule (or first one) as the active view
+            activeSchedule = schedules.FirstOrDefault(s => s.IsDefault)
+                          ?? schedules.FirstOrDefault();
+            if (activeSchedule != null)
+            {
+                activeScheduleId = activeSchedule.Id;
+                isEditing        = false;
+            }
+            PersistState();
+        }
+        catch { /* DB not ready yet — start with empty list */ }
+    }
+
+    // ── Map ScheduleVm ↔ PersistedSchedule ───────────────────────────────────
+    // ── Convert ScheduleVm ↔ WorkScheduleDto (API persistence) ─────────────
+    // These two methods are what allow the schedule to survive app restarts.
+    // VmToDto serialises the in-memory ViewModel to the flat DTO that the API
+    // stores in the database.  VmFromDto does the reverse on first load.
+
+    private static APM.StaffZen.Blazor.Services.WorkScheduleDto VmToDto(ScheduleVm v)
+    {
+        // ── FIX: Ensure every working day has an explicit slot entry ──────────
+        // DaySlots is only written when the user actively changes a time input.
+        // If the user creates a schedule and leaves the default 09:00–17:00 times
+        // untouched, DaySlots remains empty and DaySlotsJson serialises as "{}".
+        // The backend then cannot find the scheduled start for the day, so the
+        // IncludeBeforeStart clip never fires, and full elapsed time is counted.
+        // We fix this by seeding every working day with "09:00"/"17:00" defaults
+        // before serialisation, so the clip always has a slot to read from.
+        var mergedSlots = new Dictionary<string, DaySlot>(v.DaySlots);
+        foreach (var day in v.WorkingDays)
+        {
+            if (!mergedSlots.ContainsKey(day))
+                mergedSlots[day] = new DaySlot { Start = "09:00", End = "17:00" };
+        }
+
+        // Serialise DaySlots → JSON string expected by the API
+        var slotsJson = System.Text.Json.JsonSerializer.Serialize(
+            mergedSlots.ToDictionary(
+                kv => kv.Key,
+                kv => new { start = kv.Value.Start, end = kv.Value.End, dailyHours = kv.Value.DailyHours }));
+
+        // Serialise Breaks → JSON
+        var breaksJson = System.Text.Json.JsonSerializer.Serialize(
+            v.Breaks.Select(b => new
+            {
+                name = b.Name, durationHours = b.DurationHours, durationMins = b.DurationMins,
+                isPaid = b.IsPaid, hasTimeRange = b.HasTimeRange,
+                rangeStart = b.RangeStart, rangeEnd = b.RangeEnd
+            }));
+
+        // Serialise AutoDeductions → JSON
+        var dedJson = System.Text.Json.JsonSerializer.Serialize(
+            v.AutoDeductions.Select(d => new { afterHours = d.AfterHours, deductMinutes = d.DeductMinutes }));
+
+        return new APM.StaffZen.Blazor.Services.WorkScheduleDto
+        {
+            Id                              = v.Id,
+            Name                            = v.Name,
+            IsDefault                       = v.IsDefault,
+            Arrangement                     = v.Arrangement,
+            WorkingDays                     = string.Join(",", v.WorkingDays.OrderBy(d =>
+                                                Array.IndexOf(new[]{"Mon","Tue","Wed","Thu","Fri","Sat","Sun"}, d))),
+            DaySlotsJson                    = slotsJson,
+            IncludeBeforeStart              = v.IncludeBeforeStart,
+            WeeklyHours                     = v.WeeklyHours,
+            WeeklyMinutes                   = v.WeeklyMinutes,
+            SplitAt                         = v.SplitAt,
+            BreaksJson                      = breaksJson,
+            AutoDeductionsJson              = dedJson,
+            DailyOvertime                   = v.DailyOvertime,
+            DailyOvertimeIsTime             = v.DailyOvertimeIsTime,
+            DailyOvertimeAfterHours         = v.DailyOvertimeAfterHours,
+            DailyOvertimeAfterMins          = v.DailyOvertimeAfterMins,
+            DailyOvertimeMultiplier         = v.DailyOvertimeMultiplier,
+            DailyDoubleOvertime             = v.DailyDoubleOvertime,
+            DailyDoubleOTAfterHours         = v.DailyDoubleOTAfterHours,
+            DailyDoubleOTAfterMins          = v.DailyDoubleOTAfterMins,
+            DailyDoubleOTMultiplier         = v.DailyDoubleOTMultiplier,
+            WeeklyOvertime                  = v.WeeklyOvertime,
+            WeeklyOvertimeAfterHours        = v.WeeklyOvertimeAfterHours,
+            WeeklyOvertimeAfterMins         = v.WeeklyOvertimeAfterMins,
+            WeeklyOvertimeMultiplier        = v.WeeklyOvertimeMultiplier,
+            RestDayOvertime                 = v.RestDayOvertime,
+            RestDayOvertimeMultiplier       = v.RestDayOvertimeMultiplier,
+            PublicHolidayOvertime           = v.PublicHolidayOvertime,
+            PublicHolidayOvertimeMultiplier = v.PublicHolidayOvertimeMultiplier,
+            RequireFaceVerification         = v.RequireFaceVerification,
+            RequireSelfie                   = v.RequireFaceVerification ? true : v.RequireSelfie,
+            UnusualBehavior                 = v.UnusualBehavior,
+        };
+    }
+
+    private static ScheduleVm VmFromDto(APM.StaffZen.Blazor.Services.WorkScheduleDto dto)
+    {
+        // Parse DaySlots from JSON
+        var daySlots = new Dictionary<string, DaySlot>();
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(dto.DaySlotsJson) && dto.DaySlotsJson != "{}")
+            {
+                var doc = System.Text.Json.JsonDocument.Parse(dto.DaySlotsJson).RootElement;
+                foreach (var prop in doc.EnumerateObject())
+                {
+                    var s = prop.Value.TryGetProperty("start", out var sv) ? sv.GetString() ?? "09:00" : "09:00";
+                    var e = prop.Value.TryGetProperty("end",   out var ev) ? ev.GetString() ?? "17:00" : "17:00";
+                    double dh = prop.Value.TryGetProperty("dailyHours", out var dv) ? dv.GetDouble() : 0;
+                    daySlots[prop.Name] = new DaySlot { Start = s, End = e, DailyHours = dh };
+                }
+            }
+        }
+        catch { }
+
+        // Parse Breaks from JSON
+        var breaks = new List<BreakItem>();
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(dto.BreaksJson) && dto.BreaksJson != "[]")
+            {
+                var arr = System.Text.Json.JsonDocument.Parse(dto.BreaksJson).RootElement;
+                foreach (var item in arr.EnumerateArray())
+                {
+                    breaks.Add(new BreakItem
+                    {
+                        Name          = item.TryGetProperty("name",          out var n)  ? n.GetString()  ?? "" : "",
+                        DurationHours = item.TryGetProperty("durationHours", out var dh) ? dh.GetInt32()      : 0,
+                        DurationMins  = item.TryGetProperty("durationMins",  out var dm) ? dm.GetInt32()      : 0,
+                        IsPaid        = item.TryGetProperty("isPaid",        out var ip) && ip.GetBoolean(),
+                        HasTimeRange  = item.TryGetProperty("hasTimeRange",  out var hr) && hr.GetBoolean(),
+                        RangeStart    = item.TryGetProperty("rangeStart",    out var rs) ? rs.GetString()  ?? "13:00" : "13:00",
+                        RangeEnd      = item.TryGetProperty("rangeEnd",      out var re) ? re.GetString()  ?? "14:00" : "14:00",
+                    });
+                }
+            }
+        }
+        catch { }
+
+        // Parse AutoDeductions from JSON
+        var deductions = new List<DeductionItem>();
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(dto.AutoDeductionsJson) && dto.AutoDeductionsJson != "[]")
+            {
+                var arr = System.Text.Json.JsonDocument.Parse(dto.AutoDeductionsJson).RootElement;
+                foreach (var item in arr.EnumerateArray())
+                {
+                    double ah = item.TryGetProperty("afterHours",    out var ahp) ? ahp.GetDouble() : 0;
+                    int    dm = item.TryGetProperty("deductMinutes", out var dmp) ? dmp.GetInt32()  : 0;
+                    deductions.Add(new DeductionItem { AfterHours = ah, DeductMinutes = dm });
+                }
+            }
+        }
+        catch { }
+
+        // Parse WorkingDays from comma-separated string
+        var workingDays = new HashSet<string>(
+            (dto.WorkingDays ?? "Mon,Tue,Wed,Thu,Fri")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(d => d.Trim()));
+
+        return new ScheduleVm
+        {
+            Id                              = dto.Id,
+            Name                            = dto.Name,
+            IsDefault                       = dto.IsDefault,
+            Arrangement                     = dto.Arrangement,
+            WorkingDays                     = workingDays,
+            DaySlots                        = daySlots,
+            IncludeBeforeStart              = dto.IncludeBeforeStart,
+            WeeklyHours                     = dto.WeeklyHours,
+            WeeklyMinutes                   = dto.WeeklyMinutes,
+            SplitAt                         = dto.SplitAt ?? "00:00",
+            Breaks                          = breaks,
+            AutoDeductions                  = deductions,
+            DailyOvertime                   = dto.DailyOvertime,
+            DailyOvertimeIsTime             = dto.DailyOvertimeIsTime,
+            DailyOvertimeAfterHours         = dto.DailyOvertimeAfterHours,
+            DailyOvertimeAfterMins          = dto.DailyOvertimeAfterMins,
+            DailyOvertimeMultiplier         = dto.DailyOvertimeMultiplier,
+            DailyDoubleOvertime             = dto.DailyDoubleOvertime,
+            DailyDoubleOTAfterHours         = dto.DailyDoubleOTAfterHours,
+            DailyDoubleOTAfterMins          = dto.DailyDoubleOTAfterMins,
+            DailyDoubleOTMultiplier         = dto.DailyDoubleOTMultiplier,
+            WeeklyOvertime                  = dto.WeeklyOvertime,
+            WeeklyOvertimeAfterHours        = dto.WeeklyOvertimeAfterHours,
+            WeeklyOvertimeAfterMins         = dto.WeeklyOvertimeAfterMins,
+            WeeklyOvertimeMultiplier        = dto.WeeklyOvertimeMultiplier,
+            RestDayOvertime                 = dto.RestDayOvertime,
+            RestDayOvertimeMultiplier       = dto.RestDayOvertimeMultiplier,
+            PublicHolidayOvertime           = dto.PublicHolidayOvertime,
+            PublicHolidayOvertimeMultiplier = dto.PublicHolidayOvertimeMultiplier,
+            RequireFaceVerification         = dto.RequireFaceVerification,
+            RequireSelfie                   = dto.RequireSelfie,
+            UnusualBehavior                 = dto.UnusualBehavior ?? "Blocked",
+            IsSaved                         = true, // loaded from DB → already saved
+        };
+    }
+
+        private static APM.StaffZen.Blazor.Services.WorkScheduleState.PersistedSchedule VmToPersisted(ScheduleVm v)
+    {
+        using var ms = new System.IO.MemoryStream();
+        return new APM.StaffZen.Blazor.Services.WorkScheduleState.PersistedSchedule
+        {
+            Id                            = v.Id,
+            Name                          = v.Name,
+            IsDefault                     = v.IsDefault,
+            Arrangement                   = v.Arrangement,
+            WorkingDays                   = v.WorkingDays.ToList(),
+            DaySlots                      = v.DaySlots.ToDictionary(
+                kv => kv.Key,
+                kv => new APM.StaffZen.Blazor.Services.WorkScheduleState.PersistedDaySlot
+                      { Start = kv.Value.Start, End = kv.Value.End, DailyHours = kv.Value.DailyHours }),
+            IncludeBeforeStart            = v.IncludeBeforeStart,
+            WeeklyHours                   = v.WeeklyHours,
+            WeeklyMinutes                 = v.WeeklyMinutes,
+            SplitAt                       = v.SplitAt,
+            Breaks                        = v.Breaks.Select(b => new APM.StaffZen.Blazor.Services.WorkScheduleState.PersistedBreak
+                                            { Name = b.Name, DurationHours = b.DurationHours, DurationMins = b.DurationMins,
+                                              IsPaid = b.IsPaid, HasTimeRange = b.HasTimeRange,
+                                              RangeStart = b.RangeStart, RangeEnd = b.RangeEnd }).ToList(),
+            AutoDeductions                = v.AutoDeductions.Select(d => new APM.StaffZen.Blazor.Services.WorkScheduleState.PersistedDeduction
+                                            { AfterHours = d.AfterHours, DeductMinutes = d.DeductMinutes }).ToList(),
+            DailyOvertime                 = v.DailyOvertime,
+            DailyOvertimeIsTime           = v.DailyOvertimeIsTime,
+            DailyOvertimeAfterHours       = v.DailyOvertimeAfterHours,
+            DailyOvertimeAfterMins        = v.DailyOvertimeAfterMins,
+            DailyOvertimeMultiplier       = v.DailyOvertimeMultiplier,
+            DailyDoubleOvertime           = v.DailyDoubleOvertime,
+            DailyDoubleOvertimeIsTime     = v.DailyDoubleOvertimeIsTime,
+            DailyDoubleOTAfterHours       = v.DailyDoubleOTAfterHours,
+            DailyDoubleOTAfterMins        = v.DailyDoubleOTAfterMins,
+            DailyDoubleOTMultiplier       = v.DailyDoubleOTMultiplier,
+            WeeklyOvertime                = v.WeeklyOvertime,
+            WeeklyOvertimeAfterHours      = v.WeeklyOvertimeAfterHours,
+            WeeklyOvertimeAfterMins       = v.WeeklyOvertimeAfterMins,
+            WeeklyOvertimeMultiplier      = v.WeeklyOvertimeMultiplier,
+            RestDayOvertime               = v.RestDayOvertime,
+            RestDayOvertimeMultiplier     = v.RestDayOvertimeMultiplier,
+            PublicHolidayOvertime         = v.PublicHolidayOvertime,
+            PublicHolidayOvertimeMultiplier = v.PublicHolidayOvertimeMultiplier,
+            IsSaved                       = v.IsSaved,
+            RequireFaceVerification       = v.RequireFaceVerification,
+            RequireSelfie                 = v.RequireSelfie,
+            UnusualBehavior               = v.UnusualBehavior,
+        };
+    }
+
+    private static ScheduleVm VmFromPersisted(APM.StaffZen.Blazor.Services.WorkScheduleState.PersistedSchedule p)
+    {
+        return new ScheduleVm
+        {
+            Id                            = p.Id,
+            Name                          = p.Name,
+            IsDefault                     = p.IsDefault,
+            Arrangement                   = p.Arrangement,
+            WorkingDays                   = new HashSet<string>(p.WorkingDays),
+            DaySlots                      = p.DaySlots.ToDictionary(
+                kv => kv.Key,
+                kv => new DaySlot { Start = kv.Value.Start, End = kv.Value.End, DailyHours = kv.Value.DailyHours }),
+            IncludeBeforeStart            = p.IncludeBeforeStart,
+            WeeklyHours                   = p.WeeklyHours,
+            WeeklyMinutes                 = p.WeeklyMinutes,
+            SplitAt                       = p.SplitAt,
+            Breaks                        = p.Breaks.Select(b => new BreakItem
+                                            { Name = b.Name, DurationHours = b.DurationHours, DurationMins = b.DurationMins,
+                                              IsPaid = b.IsPaid, HasTimeRange = b.HasTimeRange,
+                                              RangeStart = b.RangeStart, RangeEnd = b.RangeEnd }).ToList(),
+            AutoDeductions                = p.AutoDeductions.Select(d => new DeductionItem
+                                            { AfterHours = d.AfterHours, DeductMinutes = d.DeductMinutes }).ToList(),
+            DailyOvertime                 = p.DailyOvertime,
+            DailyOvertimeIsTime           = p.DailyOvertimeIsTime,
+            DailyOvertimeAfterHours       = p.DailyOvertimeAfterHours,
+            DailyOvertimeAfterMins        = p.DailyOvertimeAfterMins,
+            DailyOvertimeMultiplier       = p.DailyOvertimeMultiplier,
+            DailyDoubleOvertime           = p.DailyDoubleOvertime,
+            DailyDoubleOvertimeIsTime     = p.DailyDoubleOvertimeIsTime,
+            DailyDoubleOTAfterHours       = p.DailyDoubleOTAfterHours,
+            DailyDoubleOTAfterMins        = p.DailyDoubleOTAfterMins,
+            DailyDoubleOTMultiplier       = p.DailyDoubleOTMultiplier,
+            WeeklyOvertime                = p.WeeklyOvertime,
+            WeeklyOvertimeAfterHours      = p.WeeklyOvertimeAfterHours,
+            WeeklyOvertimeAfterMins       = p.WeeklyOvertimeAfterMins,
+            WeeklyOvertimeMultiplier      = p.WeeklyOvertimeMultiplier,
+            RestDayOvertime               = p.RestDayOvertime,
+            RestDayOvertimeMultiplier     = p.RestDayOvertimeMultiplier,
+            PublicHolidayOvertime         = p.PublicHolidayOvertime,
+            PublicHolidayOvertimeMultiplier = p.PublicHolidayOvertimeMultiplier,
+            IsSaved                       = p.IsSaved,
+            RequireFaceVerification       = p.RequireFaceVerification,
+            RequireSelfie                 = p.RequireSelfie,
+            UnusualBehavior               = p.UnusualBehavior,
+        };
+    }
+
+    // ── Sync to WorkScheduleState (called after every mutation that needs to persist) ──
+    private void PersistState()
+    {
+        APM.StaffZen.Blazor.Services.WorkScheduleState.Schedules        = schedules.Select(VmToPersisted).ToList();
+        APM.StaffZen.Blazor.Services.WorkScheduleState.NextId           = nextId;
+        APM.StaffZen.Blazor.Services.WorkScheduleState.ActiveScheduleId = activeScheduleId;
+    }
+
+    private void SelectSchedule(int id)
+    {
+        activeScheduleId = id;
+        activeSchedule   = schedules.FirstOrDefault(s => s.Id == id);
+        splitEditMode    = false;
+        isEditing        = false; // always open in view mode when selecting saved
+        PersistState();
+    }
+
+    private void AddNewSchedule()
+    {
+        // If no schedule is currently marked as default, make this new one the default.
+        // This ensures the timesheet calculation always has a schedule to load.
+        bool noDefaultExists = !schedules.Any(s => s.IsDefault);
+        var s = new ScheduleVm { Id = nextId++, IsSaved = false, IsDefault = noDefaultExists };
+        schedules.Add(s);
+        activeScheduleId = s.Id;
+        activeSchedule   = s;
+        splitEditMode    = false;
+        isEditing        = true; // new schedules go straight to edit mode
+        PersistState();
+    }
+
+    private void SetArrangement(string arr) { if (activeSchedule != null) activeSchedule.Arrangement = arr; }
+
+    private void ToggleDay(string day)
+    {
+        if (activeSchedule == null) return;
+        if (!activeSchedule.WorkingDays.Remove(day)) activeSchedule.WorkingDays.Add(day);
+    }
+
+    private void SetDayStart(string day, string val)
+    {
+        if (activeSchedule == null) return;
+        if (!activeSchedule.DaySlots.ContainsKey(day)) activeSchedule.DaySlots[day] = new DaySlot();
+        activeSchedule.DaySlots[day].Start = val;
+    }
+
+    private void SetDayEnd(string day, string val)
+    {
+        if (activeSchedule == null) return;
+        if (!activeSchedule.DaySlots.ContainsKey(day)) activeSchedule.DaySlots[day] = new DaySlot();
+        activeSchedule.DaySlots[day].End = val;
+    }
+
+    private void CopyTimeToAll(string fromDay)
+    {
+        if (activeSchedule == null) return;
+        if (!activeSchedule.DaySlots.ContainsKey(fromDay)) return;
+        var src = activeSchedule.DaySlots[fromDay];
+        foreach (var d in DayKeys.Where(k => activeSchedule.WorkingDays.Contains(k) && k != fromDay))
+        {
+            if (!activeSchedule.DaySlots.ContainsKey(d)) activeSchedule.DaySlots[d] = new DaySlot();
+            activeSchedule.DaySlots[d].Start = src.Start;
+            activeSchedule.DaySlots[d].End   = src.End;
+        }
+    }
+
+    private void SetDailyHoursFromHM(string day, int h, int m)
+    {
+        if (activeSchedule == null) return;
+        if (!activeSchedule.DaySlots.ContainsKey(day)) activeSchedule.DaySlots[day] = new DaySlot();
+        activeSchedule.DaySlots[day].DailyHours = h + m / 60.0;
+    }
+
+    private int GetSlotHours(string day)
+    {
+        if (activeSchedule == null || !activeSchedule.DaySlots.ContainsKey(day)) return 0;
+        return (int)activeSchedule.DaySlots[day].DailyHours;
+    }
+
+    private int GetSlotMins(string day)
+    {
+        if (activeSchedule == null || !activeSchedule.DaySlots.ContainsKey(day)) return 0;
+        var h = activeSchedule.DaySlots[day].DailyHours;
+        return (int)((h - (int)h) * 60);
+    }
+
+    private void CopyFlexToAll(string fromDay)
+    {
+        if (activeSchedule == null || !activeSchedule.DaySlots.ContainsKey(fromDay)) return;
+        double hrs = activeSchedule.DaySlots[fromDay].DailyHours;
+        foreach (var d in DayKeys.Where(k => activeSchedule.WorkingDays.Contains(k) && k != fromDay))
+        {
+            if (!activeSchedule.DaySlots.ContainsKey(d)) activeSchedule.DaySlots[d] = new DaySlot();
+            activeSchedule.DaySlots[d].DailyHours = hrs;
+        }
+    }
+
+    private void AddBreak()      => activeSchedule?.Breaks.Add(new BreakItem());
+    private void AddDeduction()  => activeSchedule?.AutoDeductions.Add(new DeductionItem());
+
+    private void OpenSplitConfirm()  => showSplitConfirm = true;
+    private void ConfirmSplitEdit()  { showSplitConfirm = false; splitEditMode = true; }
+
+    // JS interop to programmatically open time picker on clock click
+    [Microsoft.AspNetCore.Components.Inject]
+    private Microsoft.JSInterop.IJSRuntime JS { get; set; } = default!;
+
+    private async Task OpenTimePicker_OtDaily()
+    {
+        await JS.InvokeVoidAsync("eval", "document.getElementById('ot-daily-time-input')?.showPicker()");
+    }
+
+    private async Task OpenTimePicker_OtDailyDouble()
+    {
+        await JS.InvokeVoidAsync("eval", "document.getElementById('ot-daily-double-time-input')?.showPicker()");
+    }
+
+    private void ToggleDailyOvertime()
+    {
+        if (activeSchedule == null) return;
+        activeSchedule.DailyOvertime = !activeSchedule.DailyOvertime;
+        if (activeSchedule.DailyOvertime)
+        {
+            // Daily ON → Weekly turns OFF
+            activeSchedule.WeeklyOvertime = false;
+        }
+        else
+        {
+            // Daily OFF → Daily Double must also turn OFF
+            activeSchedule.DailyDoubleOvertime = false;
+        }
+    }
+
+    private void ToggleDailyDoubleOvertime()
+    {
+        if (activeSchedule == null) return;
+        // Can only be toggled when Daily Overtime is enabled
+        if (!activeSchedule.DailyOvertime) return;
+        activeSchedule.DailyDoubleOvertime = !activeSchedule.DailyDoubleOvertime;
+    }
+
+    private void ToggleWeeklyOvertime()
+    {
+        if (activeSchedule == null) return;
+        activeSchedule.WeeklyOvertime = !activeSchedule.WeeklyOvertime;
+        // Weekly ON → Daily, Daily Double, Rest Day, Public Holiday all turn OFF
+        if (activeSchedule.WeeklyOvertime)
+        {
+            activeSchedule.DailyOvertime = false;
+            activeSchedule.DailyDoubleOvertime = false;
+            activeSchedule.RestDayOvertime = false;
+            activeSchedule.PublicHolidayOvertime = false;
+        }
+    }
+
+    private void CancelChanges()
+    {
+        if (activeSchedule != null && !activeSchedule.IsSaved)
+        {
+            schedules.Remove(activeSchedule);
+            activeSchedule   = null;
+            activeScheduleId = 0;
+            isEditing        = false;
+        }
+        else if (activeScheduleId > 0)
+        {
+            SelectSchedule(activeScheduleId); // reverts to view mode
+        }
+        PersistState();
+    }
+
+    private void RequestSave() => showSaveConfirm = true;
+
+    private async Task SaveSchedule()
+    {
+        if (activeSchedule == null) return;
+        showSaveConfirm = false;
+        saving = true; saveError = ""; StateHasChanged();
+
+        // ── Persist to database ──────────────────────────────────────────────
+        // isNew = true  → POST  (schedule never saved to DB)
+        // isNew = false → PUT/{id} (schedule already has a real DB id)
+        // IMPORTANT: Only set IsSaved = true AFTER a confirmed successful API
+        // response. If we set it on failure the next save will use the wrong
+        // PUT/{tempId} route and silently fail every time.
+        try
+        {
+            bool isNew = !activeSchedule.IsSaved || activeSchedule.Id <= 0;
+            var dto    = VmToDto(activeSchedule);
+            dto.OrganizationId = SessionService.OrganizationId; // stamp current org so AutoClockOut can find this schedule
+            var saved  = await WorkScheduleService.SaveAsync(dto, isNew);
+            if (saved != null)
+            {
+                // Replace local temp Id with the real DB-assigned Id
+                var oldId = activeSchedule.Id;
+                activeSchedule.Id = saved.Id;
+                activeSchedule.IsSaved = true; // ← only mark saved on SUCCESS
+
+                // Keep local schedule list Id in sync
+                var listEntry = schedules.FirstOrDefault(s => s.Id == oldId);
+                if (listEntry != null) listEntry.Id = saved.Id;
+                activeScheduleId = saved.Id;
+
+                // Re-sync nextId so local counter stays above all DB ids
+                if (nextId <= saved.Id) nextId = saved.Id + 1;
+            }
+            else
+            {
+                // API call failed — surface the error so user knows
+                saveError = "Failed to save schedule. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            saveError = $"Error saving schedule: {ex.Message}";
+        }
+
+        saving    = false;
+        isEditing = activeSchedule.IsSaved ? false : true; // stay in edit if save failed
+        PersistState();
+
+        if (string.IsNullOrEmpty(saveError))
+        {
+            showToast = true; StateHasChanged();
+            await Task.Delay(3000);
+            showToast = false; StateHasChanged();
+        }
+        else
+        {
+            StateHasChanged();
+        }
+    }
+}
+
+<style>
+    /* ═══ Outer / Layout ═════════════════════════════════════════════════════ */
+    .ws-outer { display:flex; flex-direction:column; height:calc(100vh - 64px); overflow:hidden; }
+    .ws-layout { display:flex; flex:1; overflow:hidden; background:#f9fafb; }
+
+    /* ═══ Sidebar ════════════════════════════════════════════════════════════ */
+    .ws-sidebar { width:240px; flex-shrink:0; background:#fff; border-right:1px solid #e8eaed; display:flex; flex-direction:column; padding:16px 0; overflow-y:auto; scrollbar-width:thin; }
+    .ws-sidebar-search { display:flex; align-items:center; gap:8px; margin:0 12px 12px; background:#f9fafb; border:1.5px solid #e5e7eb; border-radius:8px; padding:8px 12px; transition:border-color .15s; }
+    .ws-sidebar-search:focus-within { border-color:#ff7a00; background:#fff; }
+    .ws-search-icon { color:#9ca3af; font-size:13px; flex-shrink:0; }
+    .ws-search-input { border:none; background:transparent; outline:none; font-size:13px; color:#111827; width:100%; font-family:inherit; }
+    .ws-add-btn { display:flex; align-items:center; gap:6px; margin:0 12px 14px; background:none; border:none; font-size:13px; font-weight:600; color:#ff7a00; cursor:pointer; font-family:inherit; padding:6px 4px; transition:color .15s; }
+    .ws-add-btn:hover { color:#c05a00; }
+    .ws-schedule-list { flex:1; }
+    .ws-schedule-item { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; cursor:pointer; font-size:13px; font-weight:500; color:#374151; transition:background .1s; border-left:3px solid transparent; }
+    .ws-schedule-item:hover { background:#f9fafb; }
+    .ws-schedule-item--active { background:#fff7ed; color:#ff7a00; border-left-color:#ff7a00; font-weight:600; }
+    .ws-default-badge { font-size:10px; font-weight:700; padding:2px 7px; background:#e5e7eb; color:#6b7280; border-radius:20px; text-transform:uppercase; }
+
+    /* ═══ Main ═══════════════════════════════════════════════════════════════ */
+    .ws-main { flex:1; overflow-y:auto; scrollbar-width:thin; }
+    .ws-top-hint { font-size:13px; color:#374151; padding:12px 24px; background:#fff; border-bottom:1px solid #e8eaed; }
+    .ws-upgrade-banner { display:flex; align-items:flex-start; gap:14px; margin:20px 24px 0; padding:16px 20px; background:#fff; border:1px solid #e8eaed; border-radius:10px; }
+    .ws-banner-icon { color:#ef4444; font-size:16px; flex-shrink:0; margin-top:2px; }
+    .ws-banner-body { flex:1; }
+    .ws-banner-title { font-size:14px; font-weight:700; color:#111827; margin-bottom:4px; }
+    .ws-banner-desc { font-size:13px; color:#6b7280; line-height:1.5; }
+    .ws-upgrade-cta { flex-shrink:0; padding:8px 16px; border-radius:8px; background:#ff7a00; color:#fff; border:none; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap; align-self:center; transition:background .15s; }
+    .ws-upgrade-cta:hover { background:#e66c00; }
+    .ws-banner-dismiss { flex-shrink:0; background:none; border:none; color:#9ca3af; font-size:13px; cursor:pointer; font-family:inherit; align-self:center; padding:4px; }
+
+    /* ═══ Sections ═══════════════════════════════════════════════════════════ */
+    .ws-section { padding:24px 24px 0; }
+    .ws-section-header { font-size:12px; font-weight:800; color:#374151; letter-spacing:1px; text-transform:uppercase; display:flex; align-items:center; gap:7px; margin-bottom:20px; }
+    .ws-section-desc { font-size:13px; color:#6b7280; line-height:1.6; margin-bottom:14px; margin-top:-10px; }
+    .ws-info-icon { font-size:13px; color:#9ca3af; cursor:help; flex-shrink:0; }
+    .ws-divider { height:1px; background:#e8eaed; margin:24px 0 0; }
+    .ws-field-row { display:flex; align-items:center; gap:20px; margin-bottom:24px; flex-wrap:wrap; }
+    .ws-field-label { font-size:14px; font-weight:500; color:#374151; min-width:160px; flex-shrink:0; }
+    .ws-input { flex:1; max-width:580px; padding:10px 14px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:14px; color:#111827; font-family:inherit; background:#fff; transition:border-color .15s; box-sizing:border-box; min-width:200px; }
+    .ws-input:focus { outline:none; border-color:#ff7a00; }
+    .ws-empty-label { font-size:13px; color:#9ca3af; margin-bottom:12px; font-style:italic; }
+
+    /* ═══ Arrangement tabs ═══════════════════════════════════════════════════ */
+    .ws-arrangement-tabs { display:flex; border:1.5px solid #e5e7eb; border-radius:8px; overflow:hidden; background:#fff; }
+    .ws-arr-tab { padding:10px 28px; border:none; background:transparent; font-size:14px; font-weight:500; color:#374151; cursor:pointer; font-family:inherit; border-right:1.5px solid #e5e7eb; transition:background .15s, color .15s; }
+    .ws-arr-tab:last-child { border-right:none; }
+    .ws-arr-tab:hover:not(.ws-arr-tab--active) { background:#f9fafb; }
+    .ws-arr-tab--active { background:#fff7ed; color:#ff7a00; font-weight:700; }
+
+    /* ═══ Day buttons ════════════════════════════════════════════════════════ */
+    .ws-days-row { display:flex; gap:6px; flex-wrap:wrap; }
+    .ws-day-btn { width:36px; height:36px; border-radius:50%; border:1.5px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#374151; cursor:pointer; font-family:inherit; display:flex; align-items:center; justify-content:center; transition:border-color .15s, background .15s, color .15s; }
+    .ws-day-btn:hover { border-color:#ff7a00; color:#ff7a00; }
+    .ws-day-btn--sel { background:#ff7a00; border-color:#ff7a00; color:#fff; }
+
+    /* ═══ Per-day rows (Fixed / Flexible) ═══════════════════════════════════ */
+    .ws-day-schedule-list { display:flex; flex-direction:column; margin-bottom:8px; }
+    .ws-flex-day-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #f3f4f6; font-size:14px; color:#374151; }
+    .ws-flex-day-label { min-width:180px; flex-shrink:0; font-size:14px; font-weight:500; color:#374151; text-align:right; padding-right:8px; }
+    .ws-rest-label { color:#9ca3af; font-size:13px; font-style:italic; }
+    .ws-time-arrow { font-size:13px; color:#374151; font-weight:400; }
+
+    /* Time box — plain until focused */
+    .ws-time-box { display:flex; align-items:center; gap:6px; border:1.5px solid #e5e7eb; border-radius:8px; background:#fff; padding:9px 14px; transition:border-color .15s; }
+    .ws-time-box--active { border-color:#e5e7eb; }
+    .ws-time-box--active:focus-within,
+    .ws-time-box:focus-within { border-color:#ff7a00; }
+    .ws-time-box--disabled-range { background:#f9fafb; border-color:#e5e7eb; opacity:0.6; }
+    .ws-time-native { border:none; outline:none; font-size:14px; color:#374151; font-weight:500; font-family:inherit; background:transparent; cursor:pointer; min-width:100px; }
+    .ws-time-native:disabled { color:#9ca3af; cursor:not-allowed; }
+    .ws-time-clock { font-size:13px; color:#9ca3af; flex-shrink:0; }
+    .ws-time-clock--clickable { cursor:pointer; }
+    .ws-time-clock--clickable:hover { color:#ff7a00; }
+
+    /* H/M box — plain (no border) vs focused (with border) */
+    .ws-hm-box { display:flex; align-items:center; gap:4px; border-radius:8px; background:#fff; padding:9px 14px; transition:border-color .15s; }
+    .ws-hm-box--plain { border:1.5px solid transparent; }
+    .ws-hm-box--focused { border:1.5px solid #e5e7eb; }
+    .ws-hm-box--focused:focus-within { border-color:#ff7a00; }
+    .ws-hm-box--sm { padding:9px 12px; }
+    .ws-hm-break { padding:9px 14px; }
+    .ws-hm-input { width:36px; border:none; outline:none; font-size:14px; font-weight:700; color:#111827; font-family:inherit; background:transparent; text-align:center; }
+    .ws-hm-input--no-arrows::-webkit-inner-spin-button, .ws-hm-input--no-arrows::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+    .ws-hm-input--no-arrows { -moz-appearance:textfield; }
+    .ws-hm-sep { font-size:13px; color:#6b7280; margin:0 2px; font-weight:500; }
+    .ws-hm-clock-sm { font-size:13px; color:#9ca3af; margin-left:6px; flex-shrink:0; }
+
+    /* Copy to all button */
+    .ws-copy-all-btn { display:inline-flex; align-items:center; gap:5px; background:none; border:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:600; color:#ff7a00; padding:0 4px; white-space:nowrap; transition:color .15s; }
+    .ws-copy-all-btn:hover { color:#c05a00; }
+    .ws-copy-all-btn i { font-size:13px; }
+
+    /* ═══ Split timesheets ═══════════════════════════════════════════════════ */
+    .ws-split-row { display:flex; align-items:center; gap:10px; padding:20px 0 18px; border-top:1px solid #f3f4f6; flex-wrap:wrap; }
+    /* Disabled state — grey, light text */
+    .ws-split-box--disabled { display:flex; align-items:center; gap:8px; border:1.5px solid #e5e7eb; border-radius:8px; background:#f9fafb; padding:8px 14px; }
+    .ws-split-time-text { font-size:14px; color:#9ca3af; min-width:82px; }
+    /* Edit state */
+    .ws-split-box--edit { display:flex; align-items:center; gap:8px; border:1.5px solid #e5e7eb; border-radius:8px; background:#fff; padding:8px 14px; transition:border-color .15s; }
+    .ws-split-box--edit:focus-within { border-color:#ff7a00; }
+    .ws-split-time-input { border:none; outline:none; font-size:14px; color:#374151; font-weight:500; font-family:inherit; background:transparent; cursor:pointer; min-width:82px; }
+    .ws-split-clock { font-size:13px; color:#9ca3af; flex-shrink:0; }
+    .ws-split-edit-btn { background:#f3f4f6; border:1.5px solid #e5e7eb; border-radius:8px; padding:7px 10px; color:#6b7280; cursor:pointer; font-size:14px; transition:background .15s, color .15s; }
+    .ws-split-edit-btn:hover { background:#e5e7eb; color:#374151; }
+    .ws-split-cancel-text { background:none; border:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:600; color:#ff7a00; padding:0 4px; transition:color .15s; }
+    .ws-split-cancel-text:hover { color:#c05a00; }
+    .ws-split-hint { font-size:12px; color:#9ca3af; flex-basis:100%; margin-top:0; padding-left:196px; }
+    .ws-split-warning { display:flex; align-items:flex-start; gap:10px; flex-basis:100%; margin-top:6px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:12px 16px; font-size:13px; color:#374151; line-height:1.5; }
+    .ws-split-warn-icon { color:#f59e0b; font-size:15px; flex-shrink:0; margin-top:1px; }
+
+    /* ═══ Breaks section — Image 1 layout ═══════════════════════════════════ */
+    .ws-break-row-outer { margin-bottom:16px; }
+    .ws-break-main-row { display:flex; align-items:center; gap:10px; flex-wrap:nowrap; }
+    .ws-break-name-input { flex:1; min-width:140px; max-width:280px; padding:9px 12px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:14px; color:#374151; font-family:inherit; background:#fff; transition:border-color .15s; }
+    .ws-break-name-input:focus { outline:none; border-color:#ff7a00; }
+    .ws-break-name-input::placeholder { color:#9ca3af; }
+    .ws-break-time-row { display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap; padding-left:2px; }
+    .ws-row-del { background:none; border:none; cursor:pointer; color:#9ca3af; font-size:15px; padding:4px 6px; transition:color .15s; flex-shrink:0; }
+    .ws-row-del:hover { color:#ef4444; }
+    /* Unpaid/Paid pill tabs for breaks */
+    .ws-pill-tabs--break { margin-left:auto; }
+
+    /* Pill tabs */
+    .ws-pill-tabs { display:flex; border:1.5px solid #e5e7eb; border-radius:8px; overflow:hidden; background:#fff; }
+    .ws-pill-tabs--ot { margin-left:auto; }
+    .ws-pill-tab { padding:7px 18px; border:none; background:transparent; font-size:13px; font-weight:500; color:#374151; cursor:pointer; font-family:inherit; border-right:1.5px solid #e5e7eb; transition:background .15s, color .15s; }
+    .ws-pill-tab:last-child { border-right:none; }
+    .ws-pill-tab--active { background:#fff7ed; color:#ff7a00; font-weight:700; }
+    .ws-pill-tab:hover:not(.ws-pill-tab--active) { background:#f9fafb; }
+
+    .ws-add-link { display:inline-flex; align-items:center; gap:6px; background:none; border:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:600; color:#ff7a00; padding:8px 0; transition:color .15s; }
+    .ws-add-link:hover { color:#c05a00; }
+
+    /* ═══ Auto deductions ════════════════════════════════════════════════════ */
+    .ws-deduction-row { display:flex; align-items:center; gap:12px; padding:10px 14px; border:1px solid #e8eaed; border-radius:8px; margin-bottom:8px; background:#fff; }
+    .ws-break-name { flex:1; font-size:14px; color:#374151; font-weight:500; }
+
+    /* ═══ Overtime — Image 4 layout ═════════════════════════════════════════ */
+    .ws-ot-group { padding:16px 0; }
+    .ws-ot-group--simple { display:flex; align-items:center; gap:14px; padding:16px 0; }
+    .ws-ot-header-row { display:flex; align-items:center; }
+    .ws-ot-left { display:flex; align-items:center; gap:14px; flex:1; }
+    .ws-ot-label { font-size:14px; color:#374151; font-weight:500; }
+    .ws-ot-divider { height:1px; background:#f3f4f6; }
+    .ws-ot-detail { margin-top:16px; padding-left:0; display:flex; flex-direction:column; gap:14px; }
+    .ws-ot-detail-row { display:flex; align-items:center; gap:12px; padding-left:54px; }
+    .ws-ot-detail-label { font-size:14px; color:#374151; min-width:160px; }
+    .ws-ot-x { font-size:14px; color:#6b7280; }
+    /* Global Hours/Time pill floated to top-right of section */
+    .ws-ot-global-pill-row { display:flex; justify-content:flex-end; margin-bottom:4px; }
+    .ws-multiplier-input { width:130px; padding:10px 14px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:14px; color:#9ca3af; font-family:inherit; background:#fff; }
+    .ws-multiplier-input:focus { outline:none; border-color:#ff7a00; }
+
+    /* Toggle switch */
+    .ws-toggle { width:44px; height:24px; border-radius:12px; background:#d1d5db; position:relative; cursor:pointer; transition:background .2s; flex-shrink:0; }
+    .ws-toggle--on { background:#22c55e; }
+    .ws-toggle-knob { position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 4px rgba(0,0,0,.2); transition:left .2s; }
+    .ws-toggle--on .ws-toggle-knob { left:23px; }
+    .ws-toggle--disabled { opacity:0.4; cursor:not-allowed; pointer-events:none; }
+    .ws-toggle-wrap--disabled { cursor:not-allowed; }
+    .ws-toggle-wrap--disabled .ws-toggle { pointer-events:none; }
+    .ws-ot-label--disabled { opacity:0.45; color:#9ca3af; }
+    .ws-green-check { accent-color:#22c55e; width:17px; height:17px; cursor:pointer; }
+    .ws-checkbox-row { display:flex; align-items:center; gap:10px; font-size:13px; color:#374151; cursor:pointer; }
+
+    /* ═══ Locations ══════════════════════════════════════════════════════════ */
+    .ws-locations-row { display:flex; align-items:center; gap:20px; margin-bottom:16px; }
+    .ws-locations-input-wrap { flex:1; max-width:480px; display:flex; align-items:center; border:1.5px solid #e5e7eb; border-radius:8px; background:#fff; padding:10px 14px; gap:8px; transition:border-color .15s; }
+    .ws-locations-input-wrap:focus-within { border-color:#ff7a00; }
+    .ws-locations-input { flex:1; border:none; outline:none; font-size:14px; color:#9ca3af; font-family:inherit; background:transparent; }
+    .ws-loc-search { font-size:14px; color:#9ca3af; }
+
+    /* ═══ Members ════════════════════════════════════════════════════════════ */
+    .ws-premium-badge { font-size:10px; font-weight:700; padding:2px 8px; background:#eff6ff; color:#3b82f6; border-radius:20px; border:1px solid #bfdbfe; }
+    .ws-members-notice { display:flex; align-items:center; gap:10px; padding:13px 16px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; margin-bottom:14px; font-size:13px; color:#92400e; font-weight:500; }
+    .ws-notice-icon { color:#f59e0b; font-size:15px; flex-shrink:0; }
+    .ws-members-link-row { font-size:13px; color:#6b7280; }
+    .ws-go-people-link { color:#ff7a00; font-weight:600; text-decoration:none; }
+    .ws-go-people-link:hover { text-decoration:underline; }
+    .ws-members-link-text { color:#6b7280; }
+
+    /* ═══ Footer ═════════════════════════════════════════════════════════════ */
+    .ws-footer { flex-shrink:0; display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:14px 24px; background:#fff; border-top:1px solid #e8eaed; z-index:20; }
+    .ws-cancel-btn { padding:10px 28px; border-radius:8px; border:none; background:none; font-size:14px; font-weight:600; color:#ff7a00; cursor:pointer; font-family:inherit; transition:background .15s; }
+    .ws-cancel-btn:hover { background:#fff7ed; }
+    .ws-save-btn { padding:10px 36px; border-radius:8px; border:none; background:#ff7a00; color:#fff; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:8px; transition:background .15s; }
+    .ws-save-btn:hover { background:#e66c00; }
+    .ws-save-btn:disabled { background:#fbd5a7; cursor:not-allowed; }
+    .ws-mini-spin { width:14px; height:14px; border-radius:50%; border:2px solid rgba(255,255,255,.4); border-top-color:#fff; animation:ws-spin .6s linear infinite; display:inline-block; }
+    @@keyframes ws-spin { to { transform:rotate(360deg); } }
+
+    /* ═══ Modal (Image 2) ════════════════════════════════════════════════════ */
+    .ws-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:1000; display:flex; align-items:center; justify-content:center; }
+    .ws-modal { background:#fff; border-radius:16px; width:560px; max-width:90vw; padding:36px 40px; box-shadow:0 20px 60px rgba(0,0,0,0.15); }
+    .ws-modal-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:20px; }
+    .ws-modal-title { font-size:24px; font-weight:700; color:#111827; margin:0; }
+    .ws-modal-close { background:none; border:none; font-size:20px; color:#6b7280; cursor:pointer; padding:4px; line-height:1; }
+    .ws-modal-close:hover { color:#111827; }
+    .ws-modal-body { font-size:14px; color:#374151; line-height:1.65; }
+    .ws-modal-body p { margin:0 0 12px; }
+    .ws-modal-link { color:#ff7a00; font-size:14px; font-weight:600; text-decoration:none; }
+    .ws-modal-link:hover { text-decoration:underline; }
+    .ws-modal-footer { display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-top:28px; }
+    .ws-modal-cancel { padding:10px 24px; border-radius:8px; border:none; background:none; font-size:14px; font-weight:600; color:#374151; cursor:pointer; font-family:inherit; transition:background .15s; }
+    .ws-modal-cancel:hover { background:#f3f4f6; }
+    .ws-modal-confirm { padding:10px 28px; border-radius:8px; border:none; background:#dc2626; color:#fff; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; transition:background .15s; }
+    .ws-save-error { font-size:12px; color:#dc2626; font-weight:500; margin-left:8px; }
+    .ws-modal-confirm:hover { background:#b91c1c; }
+
+    /* ═══ Landing page ═══════════════════════════════════════════════════════ */
+    .ws-landing { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; padding:40px 24px; text-align:center; }
+    .ws-landing-illustration { width:100%; max-width:420px; margin-bottom:28px; }
+    .ws-landing-svg { width:100%; height:auto; }
+    .ws-landing-title { font-size:22px; font-weight:800; color:#111827; margin:0 0 12px; }
+    .ws-landing-desc { font-size:14px; color:#6b7280; line-height:1.65; margin:0 0 28px; max-width:420px; }
+    .ws-landing-cta { padding:13px 36px; border-radius:8px; border:none; background:#ff7a00; color:#fff; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit; transition:background .15s; margin-bottom:16px; }
+    .ws-landing-cta:hover { background:#e66c00; }
+    .ws-landing-learn { font-size:13px; font-weight:600; color:#ff7a00; text-decoration:none; }
+    .ws-landing-learn:hover { text-decoration:underline; }
+
+    /* ═══ View mode — matches Jibble screenshot exactly ═══════════════════════ */
+    .ws-view-panel { background:#fff; border:1px solid #e8eaed; border-radius:10px; margin:20px 20px 20px; overflow:hidden; }
+
+    /* Section */
+    .ws-vs-section { padding:24px 32px; }
+    .ws-vs-section--last { padding-bottom:32px; }
+
+    /* Section header row (SCHEDULE with pencil icon) */
+    .ws-vs-section-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+    .ws-vs-section-title { font-size:12px; font-weight:800; color:#374151; letter-spacing:1px; text-transform:uppercase; display:flex; align-items:center; gap:6px; }
+    .ws-vs-section-title-plain { font-size:12px; font-weight:800; color:#374151; letter-spacing:1px; text-transform:uppercase; display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+
+    /* Pencil edit button */
+    .ws-vs-edit-btn { background:none; border:none; cursor:pointer; color:#9ca3af; font-size:16px; padding:4px 6px; border-radius:6px; transition:color .15s; line-height:1; }
+    .ws-vs-edit-btn:hover { color:#ff7a00; }
+
+    /* Schedule name heading */
+    .ws-vs-name { font-size:24px; font-weight:800; color:#111827; margin:0 0 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .ws-vs-default-badge { font-size:11px; font-weight:600; padding:3px 10px; background:#e5e7eb; color:#6b7280; border-radius:4px; }
+
+    /* Label-value rows — right-aligned label, bold value — matching screenshot */
+    .ws-vs-row { display:flex; align-items:baseline; padding:9px 0; border-bottom:1px solid #f3f4f6; font-size:14px; }
+    .ws-vs-row:last-child { border-bottom:none; }
+    .ws-vs-label { min-width:180px; text-align:right; padding-right:20px; color:#6b7280; font-size:14px; flex-shrink:0; }
+    .ws-vs-value { font-weight:700; color:#111827; font-size:14px; }
+    .ws-vs-value--muted { font-weight:400; color:#9ca3af; }
+
+    /* Inner divider (between days and split timesheets) */
+    .ws-vs-inner-divider { height:1px; background:#e8eaed; margin:12px 0; }
+
+    /* Section divider */
+    .ws-vs-divider { height:1px; background:#e8eaed; margin:0; }
+
+    /* Description text under section header */
+    .ws-vs-desc { font-size:13px; color:#6b7280; line-height:1.6; margin-bottom:10px; }
+
+    /* Empty italic text */
+    .ws-vs-empty { font-size:13px; color:#9ca3af; font-style:italic; padding:4px 0 8px; }
+
+    /* ── Schedule Saved Toast ─────────────────────────────────────────────── */
+    .ws-toast {
+        position:fixed; top:24px; right:28px; z-index:9999;
+        display:flex; align-items:center; gap:10px;
+        background:#111827; color:#fff;
+        font-size:14px; font-weight:500;
+        padding:12px 20px; border-radius:10px;
+        box-shadow:0 8px 24px rgba(0,0,0,.18);
+        animation: ws-toast-in .25s ease, ws-toast-out .35s ease 2.65s forwards;
+        pointer-events:none;
+    }
+    .ws-toast-icon { color:#22c55e; font-size:16px; }
+    @@keyframes ws-toast-in  { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
+    @@keyframes ws-toast-out { from { opacity:1; transform:translateY(0); } to { opacity:0; transform:translateY(-10px); } }
+</style>

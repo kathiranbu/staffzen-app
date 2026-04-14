@@ -1,0 +1,40 @@
+@* Modal shown when signup email/phone already has an account *@
+
+@if (Show)
+{
+    <div @onclick="OnClose"
+         style="position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:9999;">
+        <div @onclick:stopPropagation="true"
+             style="background:#fff;border-radius:16px;padding:36px 32px 28px;max-width:420px;width:90%;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.18);">
+
+            <button @onclick="OnClose"
+                    style="position:absolute;top:14px;right:14px;background:#f3f4f6;border:none;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+
+            <p style="font-size:15px;color:#222;line-height:1.6;margin:0 0 28px;padding-right:8px;">
+                Account with this email or phone already exists. Do you want to login with it instead?
+            </p>
+
+            <div style="display:flex;justify-content:flex-end;gap:12px;">
+                <button @onclick="OnClose"
+                        style="background:none;border:none;font-size:15px;font-weight:600;color:#555;cursor:pointer;padding:10px 20px;border-radius:8px;">
+                    Cancel
+                </button>
+                <button @onclick="OnGoToLogin"
+                        style="background:#ff6b00;color:#fff;border:none;border-radius:8px;padding:10px 28px;font-size:15px;font-weight:700;cursor:pointer;">
+                    Login
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnGoToLogin { get; set; }
+}

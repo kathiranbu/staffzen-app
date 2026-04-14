@@ -1,0 +1,2922 @@
+@inject IHttpClientFactory HttpClientFactory
+@inject SessionService SessionService
+@inject AttendanceService AttendanceService
+@inject WorkScheduleService WorkScheduleService
+@inject IJSRuntime JS
+@inject Microsoft.Extensions.Options.IOptions<APM.StaffZen.Blazor.Configuration.ApiSettings> ApiOptions
+@inject NotificationBus NotificationBus
+@inject NotificationService NotificationService
+@implements IDisposable
+@rendermode RenderMode.InteractiveServer
+
+<div class="page-container">
+
+    <!-- HEADER -->
+    <div class="top-header">
+        <div class="header-left">
+            <button class="menu-toggle" @onclick="ToggleSidebar">
+                <i class="bi bi-list"></i>
+            </button>
+            <h4 class="page-title">@Title</h4>
+        </div>
+
+        <div class="header-right">
+
+            @if (isClockedIn)
+            {
+                <div class="bp-clock-pill">
+                    <div class="bp-clock-pill-in">
+                        <i class="bi bi-clock"></i>
+                        <span>@clockInTime.ToString("hh:mm tt")</span>
+                    </div>
+                    <div class="bp-clock-pill-divider"></div>
+                    <div class="bp-clock-pill-elapsed">@ElapsedDisplay</div>
+                </div>
+            }
+
+            @if (!isClockedIn && lastClockOut != default)
+            {
+                <div class="bp-clocked-out-pill">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Out: @lastClockOut.ToString("hh:mm tt")</span>
+                </div>
+            }
+
+            <button class="@("icon-btn " + (isClockedIn ? "stop-btn" : "play-btn"))"
+                    @onclick="async () => await OpenConfirmPanel()"
+                    title="@(isClockedIn ? "Clock Out" : "Clock In")"
+                    disabled="@isClocking">
+                @if (isClocking)
+                {
+                    <span class="bp-mini-spinner"></span>
+                }
+                else if (isClockedIn)
+                {
+                    <i class="bi bi-stop-fill"></i>
+                }
+                else
+                {
+                    <i class="bi bi-play-fill"></i>
+                }
+            </button>
+
+            <div class="bp-team-wrap">
+                <button class="icon-btn bp-team-btn"
+                        title="Clock in for team members"
+                        @onclick="ToggleTeamPanel">
+                    <i class="bi bi-people-fill"></i>
+                </button>
+
+                @if (showTeamPanel)
+                {
+                    <div class="bp-team-backdrop" @onclick="CloseTeamPanel"></div>
+                    <div class="bp-team-panel">
+                        <div class="bp-team-panel-header">
+                            <span class="bp-team-panel-title">ADD TIME ENTRY FOR…</span>
+                            <button class="bp-team-clock-all-btn" @onclick="ClockInAllMembers" disabled="@teamLoading">
+                                <i class="bi bi-people"></i> Clock in for team members
+                            </button>
+                        </div>
+                        <div class="bp-team-search-wrap">
+                            <i class="bi bi-search bp-team-search-icon"></i>
+                            <input class="bp-team-search" placeholder="Search group members"
+                                   @bind="memberSearch" @bind:event="oninput" />
+                        </div>
+                        @if (teamLoading)
+                        {
+                            <div class="bp-team-loading"><span class="bp-team-spinner"></span> Loading…</div>
+                        }
+                        else if (!groupMembers.Any())
+                        {
+                            <div class="bp-team-empty">No group members found</div>
+                        }
+                        else
+                        {
+                            <div class="bp-team-list">
+                                @foreach (var m in FilteredMembers)
+                                {
+                                    <div class="bp-team-member">
+                                        <div class="@("bp-team-avatar " + (m.IsClockedIn ? "bp-avatar-in" : ""))">@m.FullName[0]</div>
+                                        <div class="bp-team-info">
+                                            <span class="bp-team-name">@m.FullName</span>
+                                            <span class="@("bp-team-status " + (m.IsClockedIn ? "bp-status-in" : "bp-status-out"))">
+                                                @(m.IsClockedIn ? "Clocked in" : "Clocked out")
+                                            </span>
+                                        </div>
+                                        <div class="bp-team-actions">
+                                            @if (!m.IsClockedIn)
+                                            {
+                                                <button class="bp-team-action-btn bp-action-in" @onclick="() => ClockInMember(m)">
+                                                    <i class="bi bi-play-fill"></i>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button class="bp-team-action-btn bp-action-out" @onclick="() => ClockOutMember(m)">
+                                                    <i class="bi bi-stop-fill"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="bp-notif-wrap">
+                <button class="icon-btn bp-notif-btn" @onclick="async () => await ToggleNotifPanel()" title="Notifications">
+                    <i class="bi bi-bell-fill"></i>
+                    @if (_unreadCount > 0)
+                    {
+                        <span class="bp-notif-badge">@(_unreadCount > 9 ? "9+" : _unreadCount.ToString())</span>
+                    }
+                </button>
+
+                @if (_showNotifPanel)
+                {
+                    <div class="bp-notif-backdrop" @onclick="CloseNotifPanel"></div>
+                    <div class="bp-notif-panel">
+                        <div class="bp-notif-panel-header">
+                            <span class="bp-notif-panel-title">Notifications</span>
+                            @if (_persistentNotifications.Any())
+                            {
+                                <button class="bp-notif-clear-btn" @onclick="ClearAllNotifications">Clear all</button>
+                            }
+                        </div>
+                        @if (_notifLoading)
+                        {
+                            <div class="bp-notif-empty">
+                                <span class="bp-mini-spinner"></span>
+                                <p style="margin-top:8px;">Loading…</p>
+                            </div>
+                        }
+                        else if (!_persistentNotifications.Any())
+                        {
+                            <div class="bp-notif-empty">
+                                <i class="bi bi-bell-slash" style="font-size:28px;color:#d1d5db;"></i>
+                                <p>No notifications</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="bp-notif-list">
+                                @foreach (var n in _persistentNotifications)
+                                {
+                                    <div class="bp-notif-item @(n.IsRead ? "" : "bp-notif-item--unread")"
+                                         @onclick="() => OnNotificationClick(n)"
+                                         style="cursor:pointer;">
+                                        <div class="bp-notif-icon @n.IconBgCss">
+                                            <i class="bi @n.Icon"></i>
+                                        </div>
+                                        <div class="bp-notif-body">
+                                            <div class="bp-notif-title">@n.Title</div>
+                                            <div class="bp-notif-msg">@n.Message</div>
+                                            <div class="bp-notif-time">@n.TimeAgo</div>
+                                        </div>
+                                        <button class="bp-notif-dismiss"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => DismissNotification(n)"
+                                                title="Dismiss">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            @* ── Leave Detail Modal (opened when a leave notification is clicked) ── *@
+            @if (_showLeaveModal)
+            {
+                <div class="lnd-backdrop" @onclick="CloseLeaveModal"></div>
+                <div class="lnd-modal" @onclick:stopPropagation="true">
+
+                    @* Header *@
+                    <div class="lnd-header">
+                        <div class="lnd-header-left">
+                            <div class="lnd-header-icon @(_activeNotif?.Type == "LeaveApplied" ? "lnd-icon--applied" : _activeNotif?.Type == "LeaveApproved" ? "lnd-icon--approved" : "lnd-icon--rejected")">
+                                <i class="bi @(_activeNotif?.Type == "LeaveApplied" ? "bi-person-lines-fill" : _activeNotif?.Type == "LeaveApproved" ? "bi-check-circle-fill" : "bi-x-circle-fill")"></i>
+                            </div>
+                            <div>
+                                <h3 class="lnd-title">@(_activeNotif?.Title ?? "Leave Request")</h3>
+                                <p class="lnd-subtitle">Leave request details</p>
+                            </div>
+                        </div>
+                        <button class="lnd-close" @onclick="CloseLeaveModal"><i class="bi bi-x-lg"></i></button>
+                    </div>
+
+                    @* Body *@
+                    @if (_leaveDetailLoading)
+                    {
+                        <div class="lnd-loading">
+                            <span class="bp-mini-spinner"></span>
+                            <span>Loading details…</span>
+                        </div>
+                    }
+                    else if (_leaveDetail == null)
+                    {
+                        <div class="lnd-loading">
+                            <i class="bi bi-exclamation-triangle" style="color:#f59e0b;font-size:22px;"></i>
+                            <span>Could not load request details.</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="lnd-body">
+
+                            @* ── ADMIN VIEW: show details + approve/reject ─────────── *@
+                            @if (_activeNotif?.Type == "LeaveApplied")
+                            {
+                                <div class="lnd-info-grid">
+                                    <div class="lnd-info-row">
+                                        <span class="lnd-info-label"><i class="bi bi-person me-1"></i>Employee</span>
+                                        <span class="lnd-info-value lnd-value--strong">@_leaveDetail.EmployeeName</span>
+                                    </div>
+                                    <div class="lnd-info-row">
+                                        <span class="lnd-info-label"><i class="bi bi-calendar-event me-1"></i>Start Date</span>
+                                        <span class="lnd-info-value">@_leaveDetail.StartDate.ToString("MMMM dd, yyyy")</span>
+                                    </div>
+                                    <div class="lnd-info-row">
+                                        <span class="lnd-info-label"><i class="bi bi-calendar-check me-1"></i>End Date</span>
+                                        <span class="lnd-info-value">@((_leaveDetail.EndDate ?? _leaveDetail.StartDate).ToString("MMMM dd, yyyy"))</span>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(_leaveDetail.Reason))
+                                    {
+                                        <div class="lnd-info-row lnd-info-row--full">
+                                            <span class="lnd-info-label"><i class="bi bi-chat-left-text me-1"></i>Reason</span>
+                                            <span class="lnd-info-value">@_leaveDetail.Reason</span>
+                                        </div>
+                                    }
+                                </div>
+
+                                @if (_leaveDetail.IsPending)
+                                {
+                                    @* ── Current approval stage badge ── *@
+                                    <div class="lnd-stage-row">
+                                        <span class="lnd-stage-badge @(_leaveDetail.Status == "Pending_HR" ? "lnd-stage--hr" : "lnd-stage--tl")">
+                                            <i class="bi @(_leaveDetail.Status == "Pending_HR" ? "bi-building" : "bi-person-badge") me-1"></i>
+                                            @(_leaveDetail.Status == "Pending_HR" ? "Pending HR Approval" : "Pending Team Lead Approval")
+                                        </span>
+                                    </div>
+
+                                    @* ── Approval timeline ── *@
+                                    <div class="lnd-timeline">
+                                        <div class="lnd-tl-step @(_leaveDetail.Status == "Pending_TeamLead" ? "lnd-tl-step--active" : (_leaveDetail.Status == "Pending_HR" || _leaveDetail.Status == "Approved" ? "lnd-tl-step--done" : "lnd-tl-step--skip"))">
+                                            <div class="lnd-tl-dot"><i class="bi @(_leaveDetail.Status == "Pending_HR" || _leaveDetail.Status == "Approved" ? "bi-check-lg" : "bi-hourglass-split")"></i></div>
+                                            <div class="lnd-tl-label">Team Lead Review</div>
+                                        </div>
+                                        <div class="lnd-tl-line"></div>
+                                        <div class="lnd-tl-step @(_leaveDetail.Status == "Pending_HR" ? "lnd-tl-step--active" : (_leaveDetail.Status == "Approved" ? "lnd-tl-step--done" : "lnd-tl-step--wait"))">
+                                            <div class="lnd-tl-dot"><i class="bi @(_leaveDetail.Status == "Approved" ? "bi-check-lg" : "bi-hourglass-split")"></i></div>
+                                            <div class="lnd-tl-label">HR Review</div>
+                                        </div>
+                                    </div>
+
+                                    @* ── Admin action panel ── *@
+                                    <div class="lnd-action-panel">
+                                        <div class="lnd-action-label">Take Action</div>
+
+                                        @if (!_showRejectInput)
+                                        {
+                                            @if (_leaveDetail.Status == "Pending_TeamLead")
+                                            {
+                                                @* Team Lead actions: Approve, Forward to HR, Reject *@
+                                                <div class="lnd-action-row" style="flex-wrap:wrap;">
+                                                    <button class="lnd-btn lnd-btn--approve"
+                                                            disabled="@_reviewBusy"
+                                                            @onclick="() => AdminApprove()">
+                                                        @if (_reviewBusy && _reviewingAction == "approve")
+                                                        { <span class="bp-mini-spinner"></span> }
+                                                        else
+                                                        { <i class="bi bi-check-lg me-1"></i> }
+                                                        Approve
+                                                    </button>
+                                                    <button class="lnd-btn lnd-btn--forward"
+                                                            disabled="@_reviewBusy"
+                                                            @onclick="() => AdminForwardToHR()">
+                                                        @if (_reviewBusy && _reviewingAction == "forward_to_hr")
+                                                        { <span class="bp-mini-spinner"></span> }
+                                                        else
+                                                        { <i class="bi bi-arrow-right-circle me-1"></i> }
+                                                        Forward to HR
+                                                    </button>
+                                                    <button class="lnd-btn lnd-btn--reject"
+                                                            disabled="@_reviewBusy"
+                                                            @onclick="() => _showRejectInput = true">
+                                                        <i class="bi bi-x-lg me-1"></i>Reject
+                                                    </button>
+                                                </div>
+                                            }
+                                            else if (_leaveDetail.Status == "Pending_HR")
+                                            {
+                                                @* HR actions: Approve, Reject *@
+                                                <div class="lnd-action-row">
+                                                    <button class="lnd-btn lnd-btn--approve"
+                                                            disabled="@_reviewBusy"
+                                                            @onclick="() => AdminApproveAsHR()">
+                                                        @if (_reviewBusy && _reviewingAction == "hr_approve")
+                                                        { <span class="bp-mini-spinner"></span> }
+                                                        else
+                                                        { <i class="bi bi-check-lg me-1"></i> }
+                                                        Approve (HR)
+                                                    </button>
+                                                    <button class="lnd-btn lnd-btn--reject"
+                                                            disabled="@_reviewBusy"
+                                                            @onclick="() => _showRejectInput = true">
+                                                        <i class="bi bi-x-lg me-1"></i>Reject
+                                                    </button>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="lnd-reject-form">
+                                                <label class="lnd-reject-label">Reason for rejection <span style="color:#ef4444;">*</span></label>
+                                                <textarea class="lnd-reject-textarea"
+                                                          rows="3"
+                                                          placeholder="Enter reason…"
+                                                          @bind="_rejectReason"></textarea>
+                                                @if (!string.IsNullOrEmpty(_reviewError))
+                                                {
+                                                    <div class="lnd-error"><i class="bi bi-exclamation-circle me-1"></i>@_reviewError</div>
+                                                }
+                                                <div class="lnd-action-row" style="margin-top:10px;">
+                                                    <button class="lnd-btn lnd-btn--reject"
+                                                            disabled="@_reviewBusy"
+                                                            @onclick="() => AdminReject()">
+                                                        @if (_reviewBusy && _reviewingAction == "reject")
+                                                        { <span class="bp-mini-spinner"></span> }
+                                                        else
+                                                        { <i class="bi bi-send me-1"></i> }
+                                                        Confirm Rejection
+                                                    </button>
+                                                    <button class="lnd-btn lnd-btn--cancel"
+                                                            @onclick="CancelRejectInput">
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+
+                                        @if (!string.IsNullOrEmpty(_reviewError) && !_showRejectInput)
+                                        {
+                                            <div class="lnd-error"><i class="bi bi-exclamation-circle me-1"></i>@_reviewError</div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(_reviewSuccess))
+                                        {
+                                            <div class="lnd-success"><i class="bi bi-check-circle me-1"></i>@_reviewSuccess</div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="lnd-status-badge @(_leaveDetail.IsApproved ? "lnd-badge--approved" : "lnd-badge--rejected")">
+                                        <i class="bi @(_leaveDetail.IsApproved ? "bi-check-circle-fill" : "bi-x-circle-fill") me-1"></i>
+                                        @_leaveDetail.DisplayStatus
+                                    </div>
+                                }
+                            }
+
+                            @* ── USER VIEW: read-only result ──────────────────────── *@
+                            else
+                            {
+                                <div class="lnd-info-grid">
+                                    <div class="lnd-info-row">
+                                        <span class="lnd-info-label"><i class="bi bi-flag me-1"></i>Status</span>
+                                        <span class="lnd-status-badge @(_leaveDetail.IsApproved ? "lnd-badge--approved" : _leaveDetail.IsRejected ? "lnd-badge--rejected" : "lnd-badge--pending")" style="display:inline-flex;">
+                                            <i class="bi @(_leaveDetail.IsApproved ? "bi-check-circle-fill" : _leaveDetail.IsRejected ? "bi-x-circle-fill" : "bi-hourglass-split") me-1"></i>
+                                            @_leaveDetail.DisplayStatus
+                                        </span>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(_leaveDetail.ReviewedBy))
+                                    {
+                                        <div class="lnd-info-row">
+                                            <span class="lnd-info-label"><i class="bi bi-person-check me-1"></i>Action taken by</span>
+                                            <span class="lnd-info-value">@_leaveDetail.ReviewedBy</span>
+                                        </div>
+                                    }
+                                    <div class="lnd-info-row">
+                                        <span class="lnd-info-label"><i class="bi bi-calendar-event me-1"></i>Start Date</span>
+                                        <span class="lnd-info-value">@_leaveDetail.StartDate.ToString("MMMM dd, yyyy")</span>
+                                    </div>
+                                    <div class="lnd-info-row">
+                                        <span class="lnd-info-label"><i class="bi bi-calendar-check me-1"></i>End Date</span>
+                                        <span class="lnd-info-value">@((_leaveDetail.EndDate ?? _leaveDetail.StartDate).ToString("MMMM dd, yyyy"))</span>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(_leaveDetail.RejectReason))
+                                    {
+                                        <div class="lnd-info-row lnd-info-row--full">
+                                            <span class="lnd-info-label" style="color:#ef4444;"><i class="bi bi-chat-left-text me-1"></i>Rejection Reason</span>
+                                            <span class="lnd-info-value" style="color:#ef4444;">@_leaveDetail.RejectReason</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            <button class="icon-btn bp-hide-mobile"><i class="bi bi-person"></i></button>
+            <button class="icon-btn bp-hide-mobile"><i class="bi bi-question-circle"></i></button>
+            <button class="icon-btn"><i class="bi bi-gear"></i></button>
+        </div>
+    </div>
+
+    <div class="page-body">
+        @ChildContent
+    </div>
+
+</div>
+
+
+@* ── Selfie-only camera modal ─────────────────────────────────────────────── *@
+@if (showSelfieModal)
+{
+    <div class="cci-backdrop" @onclick="CancelSelfieModal"></div>
+
+    <div class="cci-drawer face-verify-drawer">
+
+        <!-- Header -->
+        <div class="fv-header">
+            <div class="fv-header-left">
+                <span class="fv-title"><i class="bi bi-camera me-2"></i>@(isClockedIn ? "Clock Out" : "Clock In")</span>
+                <p class="fv-subtitle">Selfie required</p>
+            </div>
+            <button class="fv-close" @onclick="CancelSelfieModal" title="Close">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        <!-- Camera feed -->
+        <div class="fv-video-frame">
+            <span class="fv-scan-pill fv-scan-pill--idle"><i class="bi bi-camera me-1"></i>Scanning</span>
+            <video id="selfieClockVideo" autoplay muted playsinline class="fv-video"></video>
+            <canvas id="selfieClockCanvas" class="fv-canvas"></canvas>
+        </div>
+
+        <!-- Status -->
+        <div class="fv-status-row fv-status--info">
+            <i class="bi bi-camera fv-status-icon"></i>
+            <span>@selfieModalMessage</span>
+        </div>
+
+        <!-- Tip -->
+        <div class="fv-tip-row">
+            <span><i class="bi bi-lightbulb me-1"></i>Good lighting helps. Face the camera directly.</span>
+        </div>
+
+        <button class="fv-skip-btn" @onclick="CancelSelfieModal">
+            <i class="bi bi-x me-1"></i>Cancel
+        </button>
+    </div>
+}
+
+@if (showFaceModal)
+{
+    <div class="cci-backdrop" @onclick="CancelFaceModal"></div>
+
+    <div class="cci-drawer face-verify-drawer">
+
+        <!-- ── Header ── -->
+        <div class="fv-header">
+            <div class="fv-header-left">
+                <div class="fv-action-badge @(isClockedIn ? "fv-badge--out" : "fv-badge--in")">
+                    <i class="bi @(isClockedIn ? "bi-box-arrow-right" : "bi-box-arrow-in-right")"></i>
+                </div>
+                <div>
+                    <h3 class="fv-title">@(isClockedIn ? "Clock Out" : "Clock In")</h3>
+                    <p class="fv-subtitle">Face verification required</p>
+                </div>
+            </div>
+            <button class="fv-close" @onclick="CancelFaceModal" title="Close" disabled="@isClocking">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        <div class="fv-body">
+
+            @if (isClocking)
+            {
+                <div class="fv-processing">
+                    <div class="fv-processing-ring"></div>
+                    <p class="fv-processing-label">@(isClockedIn ? "Clocking out..." : "Clocking in...")</p>
+                </div>
+            }
+            else
+            {
+                <!-- Camera feed -->
+                <div class="fv-video-frame @(faceModalMsgType == "success" ? "fv-frame--matched" : faceModalMsgType == "danger" ? "fv-frame--mismatch" : "")">
+                    <div class="fv-scan-label">
+                        @if (faceModalMatched)
+                        {
+                            <span class="fv-scan-pill fv-scan-pill--ok"><i class="bi bi-check-circle-fill me-1"></i>Matched</span>
+                        }
+                        else if (faceModalMsgType == "danger")
+                        {
+                            <span class="fv-scan-pill fv-scan-pill--err"><i class="bi bi-x-circle-fill me-1"></i>Mismatch</span>
+                        }
+                        else
+                        {
+                            <span class="fv-scan-pill fv-scan-pill--idle"><i class="bi bi-camera me-1"></i>Scanning</span>
+                        }
+                    </div>
+                    <video id="faceClockVideo" autoplay muted playsinline class="fv-video"></video>
+                    <canvas id="faceClockCanvas" class="fv-canvas"></canvas>
+                    @if (faceModalMatched)
+                    {
+                        <div class="fv-matched-overlay">
+                            <i class="bi bi-check-circle-fill"></i>
+                        </div>
+                    }
+                </div>
+
+                <!-- Status message -->
+                <div class="fv-status-row fv-status--@faceModalMsgType">
+                    <i class="bi @(string.IsNullOrEmpty(faceModalMsgIcon) ? "bi-camera" : faceModalMsgIcon) fv-status-icon"></i>
+                    <span class="fv-status-text">
+                        @(string.IsNullOrEmpty(faceModalMessage)
+                            ? $"Look at the camera to {(isClockedIn ? "clock out" : "clock in")} automatically"
+                            : faceModalMessage)
+                    </span>
+                </div>
+
+                <!-- Tips -->
+                <div class="fv-tips">
+                    <span><i class="bi bi-lightbulb me-1"></i>Good lighting helps. Face the camera directly.</span>
+                </div>
+
+                <button class="fv-skip-btn" @onclick="CancelFaceModal">
+                    Use manual @(isClockedIn ? "clock-out" : "clock-in") instead
+                </button>
+            }
+
+        </div>
+    </div>
+}
+
+@if (showConfirmPanel)
+{
+    <div class="cci-backdrop" @onclick="CloseConfirmPanel"></div>
+
+    <div class="cci-drawer">
+
+        <div class="cci-header">
+            <h3 class="cci-title">@(isClockedIn ? "Confirm Clock Out" : "Confirm Clock In")</h3>
+            <button class="cci-close" @onclick="CloseConfirmPanel" title="Close">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        <div class="cci-user-strip">
+            <div class="cci-user-av">@(SessionService.FullName?[0].ToString().ToUpper() ?? "U")</div>
+            <div class="cci-user-info">
+                <div class="cci-user-name">@(SessionService.FullName ?? "User")</div>
+                <div class="cci-user-meta">Clocking from GMT+5:30</div>
+                @if (isClockedIn)
+                {
+                    <div class="cci-user-meta">Clocked in @clockInTime.ToString("hh:mm tt").ToLower()</div>
+                }
+                else if (lastClockOut != default)
+                {
+                    <div class="cci-user-meta">Last out @Ago(lastClockOut)</div>
+                }
+                <div class="cci-user-meta">Split time: 12:00 am</div>
+            </div>
+        </div>
+
+        @if (!isClockedIn)
+        {
+            <div class="cci-tabs">
+                <button class="@("cci-tab " + (confirmTab == "clock" ? "cci-tab--active" : ""))"
+                        @onclick='() => confirmTab = "clock"'>
+                    <i class="bi bi-arrow-right-circle"></i>
+                    Clock in
+                    <i class="bi bi-info-circle cci-tab-info"></i>
+                </button>
+                <button class="@("cci-tab " + (confirmTab == "hours" ? "cci-tab--active" : ""))"
+                        @onclick='() => confirmTab = "hours"'>
+                    <i class="bi bi-clock-history"></i>
+                    Add hours
+                    <i class="bi bi-info-circle cci-tab-info"></i>
+                </button>
+            </div>
+        }
+
+        <div class="cci-form">
+
+            <div class="cci-time-wrap">
+                <div class="@("cci-field" + (showTimePicker ? " cci-field--active" : ""))" @onclick="ToggleTimePicker">
+                    <input class="cci-input" readonly placeholder="Select time"
+                           value="@confirmTime.ToString("hh:mm tt").ToLower()" />
+                    <i class="bi bi-clock cci-icon-post"></i>
+                </div>
+                @if (showTimePicker)
+                {
+                    <div class="cci-scroll-picker">
+                        <!-- Hours column -->
+                        <div class="cci-col" id="cci-col-h">
+                            @for (int h = 1; h <= 12; h++)
+                            {
+                                var hv = h;
+                                <div class="@("cci-col-item" + (confirmTime.Hour % 12 == hv % 12 ? " cci-col-item--sel" : ""))"
+                                     @onclick="() => SetHour(hv)">@hv</div>
+                            }
+                        </div>
+                        <div class="cci-col-sep"></div>
+                        <!-- Minutes column -->
+                        <div class="cci-col" id="cci-col-m">
+                            @for (int m = 0; m < 60; m++)
+                            {
+                                var mv = m;
+                                <div class="@("cci-col-item" + (confirmTime.Minute == mv ? " cci-col-item--sel" : ""))"
+                                     @onclick="() => SetMinute(mv)">@mv.ToString("D2")</div>
+                            }
+                        </div>
+                        <!-- AM/PM column -->
+                        <div class="cci-col cci-col-ampm">
+                            <div class="@("cci-ampm-item" + (confirmTime.Hour < 12 ? " cci-ampm-item--sel" : ""))"
+                                 @onclick='() => SetAmPm("AM")'>am</div>
+                            <div class="@("cci-ampm-item" + (confirmTime.Hour >= 12 ? " cci-ampm-item--sel" : ""))"
+                                 @onclick='() => SetAmPm("PM")'>pm</div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="@("cci-field" + (showDatePicker ? " cci-field--active" : ""))" @onclick="ToggleDatePicker">
+                <input id="cci-fp-date" class="cci-input cci-input-no-events" readonly
+                       placeholder="Select date"
+                       value="@(confirmDate == DateOnly.FromDateTime(DateTime.Today) ? "Today" : confirmDate.ToString("dd MMM yyyy"))" />
+                <i class="bi bi-calendar cci-icon-post"></i>
+            </div>
+
+            @if (!isClockedIn)
+            {
+                <div class="cci-field cci-field--select">
+                    <select class="cci-input cci-select" @bind="confirmActivity">
+                        <option value="">Select an activity</option>
+                        <option value="Work">Work</option>
+                        <option value="Meeting">Meeting</option>
+                        <option value="Training">Training</option>
+                    </select>
+                    <i class="bi bi-chevron-down cci-field-icon"></i>
+                </div>
+
+                <div class="cci-field cci-field--select">
+                    <select class="cci-input cci-select" @bind="confirmProject">
+                        <option value="">Select a project</option>
+                        <option value="General">General</option>
+                        <option value="Internal">Internal</option>
+                    </select>
+                    <i class="bi bi-chevron-down cci-field-icon"></i>
+                </div>
+            }
+
+            <div class="cci-field cci-field--note">
+                <textarea class="cci-input cci-textarea" placeholder="Add a note" @bind="confirmNote"></textarea>
+            </div>
+
+            @if (isClockedIn)
+            {
+                <div class="cci-checkbox-row">
+                    <input type="checkbox" id="endWorkDay" class="cci-checkbox" @bind="endWorkForDay" />
+                    <label for="endWorkDay" class="cci-checkbox-label">
+                        End work for the day?
+                        <i class="bi bi-info-circle cci-checkbox-info"></i>
+                    </label>
+                </div>
+            }
+
+            <div class="cci-pills">
+                <button class="cci-pill">
+                    <i class="bi bi-bell"></i> Add reminder
+                </button>
+                @if (!isClockedIn)
+                {
+                    <button class="cci-pill">
+                        <i class="bi bi-arrow-clockwise"></i> Auto clock out
+                    </button>
+                }
+            </div>
+
+        </div>
+
+        @if (!string.IsNullOrEmpty(confirmError))
+        {
+            <div class="cci-error">
+                <i class="bi bi-exclamation-circle"></i> @confirmError
+            </div>
+        }
+
+        <div class="cci-footer">
+            <button class="cci-cancel-btn" @onclick="CloseConfirmPanel" disabled="@isClocking">Cancel</button>
+            <button class="cci-save-btn" @onclick="ExecuteClockAction" disabled="@isClocking">
+                @if (isClocking)
+                {
+                    <span class="bp-mini-spinner"></span>
+                }
+                else
+                {
+                    <span>Save</span>
+                }
+            </button>
+        </div>
+
+    </div>
+}
+
+@* ── In-app toast notifications (clock-in/out/shift alerts) ── *@
+@if (_toasts.Any())
+{
+    <div class="bp-toast-container">
+        @foreach (var t in _toasts)
+        {
+            <div class="bp-toast bp-toast--@t.Kind" @key="t.Id">
+                <div class="bp-toast-icon">
+                    <i class="bi @t.Icon"></i>
+                </div>
+                <div class="bp-toast-body">
+                    <div class="bp-toast-title">@t.Title</div>
+                    <div class="bp-toast-msg">@t.Message</div>
+                </div>
+                <button class="bp-toast-close" @onclick="() => DismissToast(t.Id)">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnClockAction { get; set; }
+    [CascadingParameter] public AppLayout? Layout { get; set; }
+
+    private DotNetObjectReference<BasePage>? _dotNetRef;
+
+    private bool     isClockedIn   = false;
+    private bool     isClocking    = false;
+    private int      activeEntryId = 0;
+    private DateTime clockInTime;
+    private DateTime lastClockOut;
+    private bool     _gpsStarted   = false;  // prevents GPS from starting twice on re-renders
+
+    private System.Threading.Timer? _timer;
+    private string ElapsedDisplay = "0:00:00";
+
+    private List<TimeEntryRecord> todayEntries = new();
+
+    private bool              showTeamPanel = false;
+    private bool              teamLoading   = false;
+    private List<GroupMember> groupMembers  = new();
+    private string            memberSearch  = "";
+
+    // ── Face verification modal state ────────────────────────────────────────
+    private bool   showFaceModal      = false;
+    private bool   faceModalMatched   = false;
+    private string faceModalMessage   = string.Empty;
+    private string faceModalMsgType   = "info";   // info | success | danger | warning
+    private string faceModalMsgIcon   = "bi-camera";
+    private bool   _hasFaceEnrolled   = false;
+    private string? _verifiedSelfieBase64 = null;  // selfie captured at face-match moment
+    private DotNetObjectReference<BasePage>? _faceClockRef;
+    private CancellationTokenSource? _faceVerifCts; // hard-stop if JS never resolves
+
+    // ── Time Tracking Policy (loaded from default work schedule) ─────────────
+    private bool _policyRequireSelfie      = false;  // RequireSelfie checkbox
+    private bool _policyRequireFaceVerif   = false;  // RequireFaceVerification checkbox
+
+    // ── Selfie-only camera modal (no face recognition — just snap & clock) ───
+    private bool   showSelfieModal    = false;
+    private string selfieModalMessage = "Hold still — capturing selfie...";
+
+    private bool     showConfirmPanel      = false;
+    private bool     _flatpickrInitialized = false;
+    private bool     showTimePicker        = false;
+    private bool     showDatePicker        = false;
+    private string   confirmTab            = "clock";
+    private TimeOnly confirmTime;
+    private DateOnly confirmDate;
+    private string   confirmActivity       = "";
+    private string   confirmProject        = "";
+    private string   confirmNote           = "";
+    private string   confirmError          = "";
+    private bool     endWorkForDay         = false;
+
+    private IEnumerable<GroupMember> FilteredMembers =>
+        string.IsNullOrWhiteSpace(memberSearch)
+            ? groupMembers
+            : groupMembers.Where(m => m.FullName.Contains(memberSearch, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        SessionService.OnSessionReady += LoadAsync;
+        NotificationBus.OnNotify += OnPushReceived;   // receive cross-component notifications
+        if (!SessionService.IsLoggedIn) return;
+        await LoadAsync();
+        // Load persistent notifications from DB on first render
+        await LoadPersistentNotificationsAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!SessionService.IsLoggedIn) return;
+
+        todayEntries = await AttendanceService.GetHistoryAsync(SessionService.Id, SessionService.ActiveOrganizationId);
+
+        var status = await AttendanceService.GetStatusAsync(SessionService.Id, SessionService.ActiveOrganizationId);
+        if (status.IsClockedIn)
+        {
+            isClockedIn   = true;
+            activeEntryId = status.EntryId;
+            clockInTime   = status.ClockIn;
+            StartTimer();
+            // Start GPS tracking — employee is already clocked in (page load / refresh / navigation)
+            await StartGpsTrackingAsync();
+        }
+        else
+        {
+            isClockedIn = false;
+            _gpsStarted = false;
+            StopTimer();
+            if (todayEntries.Any(e => e.ClockOut != null))
+                lastClockOut = todayEntries.Where(e => e.ClockOut != null).Max(e => e.ClockOut!.Value);
+        }
+
+        // Check if current user has face data enrolled (for face-clock-in)
+        try
+        {
+            var http2 = HttpClientFactory.CreateClient("API");
+            var faceRes = await http2.GetAsync($"api/employees/{SessionService.Id}/face-descriptor");
+            if (faceRes.IsSuccessStatusCode)
+            {
+                var faceJson = await faceRes.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                _hasFaceEnrolled = faceJson.TryGetProperty("hasFaceData", out var hfd) && hfd.GetBoolean();
+            }
+        }
+        catch { _hasFaceEnrolled = false; }
+
+        // Load Time Tracking Policy (RequireSelfie / RequireFaceVerification)
+        // Read each flag independently — exactly what is stored in the DB.
+        // No implicit coupling: face rec does NOT automatically mean selfie at read time.
+        try
+        {
+            var schedules = await WorkScheduleService.GetAllAsync();
+            var def = schedules?.FirstOrDefault(s => s.IsDefault) ?? schedules?.FirstOrDefault();
+            if (def != null)
+            {
+                _policyRequireFaceVerif = def.RequireFaceVerification;
+                _policyRequireSelfie    = def.RequireSelfie;
+            }
+        }
+        catch { /* policy stays false — safe default: no camera required */ }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // ── GPS tracking helpers ──────────────────────────────────────────────
+    private async Task StartGpsTrackingAsync()
+    {
+        if (_gpsStarted) return;
+        _gpsStarted = true;
+        try
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+
+            // Use HttpBaseUrl for GPS tracking — the dev HTTPS certificate is only
+            // valid for "localhost". Phones on the LAN must use plain HTTP to avoid
+            // SSL handshake failures (ERR_EMPTY_RESPONSE).
+            // Set ApiSettings.HttpBaseUrl = "http://<your-laptop-LAN-IP>:5080" in appsettings.json
+            var settings = ApiOptions.Value;
+            var apiBase  = (!string.IsNullOrEmpty(settings.HttpBaseUrl)
+                               ? settings.HttpBaseUrl
+                               : settings.BaseUrl).TrimEnd('/');
+
+            await JS.InvokeVoidAsync("liveLocation.start", SessionService.Id, apiBase);
+        }
+        catch
+        {
+            _gpsStarted = false;  // reset so it can be retried after render
+        }
+    }
+
+    private async Task StopGpsTrackingAsync()
+    {
+        _gpsStarted = false;
+        try { await JS.InvokeVoidAsync("liveLocation.stop"); }
+        catch { }
+    }
+
+    public async Task RefreshStatusAsync() => await LoadAsync();
+
+    private void ToggleSidebar() => Layout?.ToggleMobileSidebar();
+
+    private async Task OpenConfirmPanel()
+    {
+        // ── Fetch policy FRESH at click time ─────────────────────────────────
+        // Safe defaults = false. No camera opens unless the policy is explicitly ON in DB.
+        bool requireFaceVerif = false;
+        bool requireSelfie    = false;
+        try
+        {
+            var schedules = await WorkScheduleService.GetAllAsync();
+            var def = schedules?.FirstOrDefault(s => s.IsDefault) ?? schedules?.FirstOrDefault();
+            if (def != null)
+            {
+                // Read each flag independently — exactly what is stored in the DB.
+                // requireFaceVerif = true  → "Require verification by Face Recognition" checkbox is ON
+                // requireSelfie    = true  → "Require selfies when clocking in and out" checkbox is ON
+                // These are two separate checkboxes. No implicit coupling at read time.
+                requireFaceVerif = def.RequireFaceVerification;
+                requireSelfie    = def.RequireSelfie;
+            }
+        }
+        catch { /* API unreachable — safe default: no camera, show plain confirm panel */ }
+
+        // ── Route based on live policy ────────────────────────────────────────
+        // 1. Face verification ON + face enrolled → face-rec modal
+        if (requireFaceVerif && _hasFaceEnrolled)
+        {
+            await OpenFaceModal();
+            return;
+        }
+        // 2. Face verification ON but face NOT yet enrolled → selfie modal (fallback)
+        if (requireFaceVerif && !_hasFaceEnrolled)
+        {
+            await OpenSelfieModal();
+            return;
+        }
+        // 3. Selfie-only ON (face rec OFF) → selfie modal
+        if (requireSelfie)
+        {
+            await OpenSelfieModal();
+            return;
+        }
+        // 4. Both OFF → plain confirm panel, no camera at all
+        confirmError          = "";
+        confirmActivity       = "";
+        confirmProject        = "";
+        confirmNote           = "";
+        endWorkForDay         = false;
+        confirmTab            = "clock";
+        confirmTime           = TimeOnly.FromDateTime(DateTime.Now);
+        confirmDate           = DateOnly.FromDateTime(DateTime.Today);
+        _flatpickrInitialized = false;
+        showConfirmPanel      = true;
+    }
+
+    // ── Selfie-only camera modal (no face-recognition comparison) ────────────
+    // Used when RequireSelfie=ON but RequireFaceVerification=OFF,
+    // OR when RequireFaceVerification=ON but the employee has not enrolled a face yet.
+    private async Task OpenSelfieModal()
+    {
+        _verifiedSelfieBase64 = null;
+        selfieModalMessage    = "Camera opening...";
+        showSelfieModal       = true;
+        StateHasChanged();
+
+        await Task.Delay(150); // let DOM render the video element
+
+        try
+        {
+            await JS.InvokeVoidAsync("startCamera", "selfieClockVideo");
+            selfieModalMessage = "Face detected — capturing selfie automatically...";
+            StateHasChanged();
+
+            _faceClockRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("startSelfieCaptureLoop",
+                "selfieClockVideo", "selfieClockCanvas", _faceClockRef);
+        }
+        catch (Exception ex)
+        {
+            selfieModalMessage = $"Camera error: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnSelfieCaptureDone(string selfieBase64)
+    {
+        // Store the captured selfie (keep full data URL — backend strips the header)
+        _verifiedSelfieBase64 = string.IsNullOrEmpty(selfieBase64) ? null : selfieBase64;
+
+        selfieModalMessage = "Selfie captured! Clocking " + (isClockedIn ? "out..." : "in...");
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(600);
+
+        // Stop camera — but keep showSelfieModal=true so ExecuteClockWithSelfie
+        // can show errors inside the selfie modal if the API call fails.
+        try { await JS.InvokeVoidAsync("stopSelfieCaptureLoop"); } catch { }
+        try { await JS.InvokeVoidAsync("stopCamera", "selfieClockVideo"); } catch { }
+        _faceClockRef?.Dispose();
+        _faceClockRef = null;
+
+        await ExecuteClockWithSelfie();
+
+        // Close selfie modal after clock action completes (success or error already handled)
+        showSelfieModal = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelSelfieModal()
+    {
+        try { await JS.InvokeVoidAsync("stopSelfieCaptureLoop"); } catch { }
+        try { await JS.InvokeVoidAsync("stopCamera", "selfieClockVideo"); } catch { }
+        _faceClockRef?.Dispose();
+        _faceClockRef   = null;
+        showSelfieModal = false;
+        StateHasChanged();
+    }
+
+    // ── Face verification modal ───────────────────────────────────────────
+    private async Task OpenFaceModal()
+    {
+        faceModalMatched  = false;
+        faceModalMessage  = string.Empty;
+        showFaceModal     = true;
+        StateHasChanged();
+
+        await Task.Delay(150); // let DOM render the video element
+
+        try
+        {
+            // ── Ensure face-api models are ready before doing anything ──────────────
+            var modelsReady = await JS.InvokeAsync<bool>("areFaceModelsLoaded");
+            if (!modelsReady)
+            {
+                faceModalMessage = "Loading face recognition models...";
+                faceModalMsgType = "info";
+                faceModalMsgIcon = "bi-hourglass-split";
+                StateHasChanged();
+
+                for (int i = 0; i < 30; i++)
+                {
+                    await Task.Delay(1000);
+                    modelsReady = await JS.InvokeAsync<bool>("areFaceModelsLoaded");
+                    if (modelsReady) break;
+                }
+
+                if (!modelsReady)
+                {
+                    faceModalMessage = "Face models could not be loaded. Check your connection and try again.";
+                    faceModalMsgType = "danger";
+                    faceModalMsgIcon = "bi-exclamation-circle";
+                    StateHasChanged();
+                    return;
+                }
+            }
+
+            // Step 1: Fetch the stored descriptor HERE in Blazor (using HttpClient which
+            // already has the correct BaseUrl) — avoids JS fetch hitting the wrong server.
+            var http     = HttpClientFactory.CreateClient("API");
+            var faceRes  = await http.GetAsync($"api/employees/{SessionService.Id}/face-descriptor");
+            string? storedDescriptorJson = null;
+            if (faceRes.IsSuccessStatusCode)
+            {
+                var faceDoc = System.Text.Json.JsonDocument.Parse(await faceRes.Content.ReadAsStringAsync());
+                if (faceDoc.RootElement.TryGetProperty("descriptor", out var descEl)
+                    && descEl.ValueKind != System.Text.Json.JsonValueKind.Null)
+                {
+                    storedDescriptorJson = descEl.GetString();
+                }
+            }
+
+            if (string.IsNullOrEmpty(storedDescriptorJson))
+            {
+                faceModalMessage  = "No face data enrolled. Please enroll your face first in Account Settings.";
+                faceModalMsgType = "warning";
+                faceModalMsgIcon  = "bi-exclamation-triangle";
+                StateHasChanged();
+                return;
+            }
+
+            // Step 2: Start camera
+            await JS.InvokeVoidAsync("startCamera", "faceClockVideo");
+            faceModalMessage  = "Look at the camera...";
+            faceModalMsgType = "info";
+            faceModalMsgIcon  = "bi-camera";
+            StateHasChanged();
+
+            // Step 3: Pass descriptor directly to JS — no fetch needed in the browser
+            _faceClockRef = DotNetObjectReference.Create(this);
+
+            // ── Safety timer: C# backstop in case JS 40s timer is unreliable.
+            // If OnFaceStatus/OnFaceVerifiedWithSelfie is never called within 45s,
+            // auto-cancel the modal so the user is never left stuck.
+            _faceVerifCts?.Cancel();
+            _faceVerifCts = new CancellationTokenSource();
+            var cts = _faceVerifCts;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(45_000, cts.Token);
+                    await InvokeAsync(async () =>
+                    {
+                        if (showFaceModal && !faceModalMatched && !isClocking)
+                        {
+                            faceModalMessage = "Verification timed out. Use manual clock-in instead.";
+                            faceModalMsgType = "warning";
+                            faceModalMsgIcon  = "bi-clock";
+                            StateHasChanged();
+                            await Task.Delay(1500);
+                            await CancelFaceModal();
+                        }
+                    });
+                }
+                catch (TaskCanceledException) { /* cancelled by success/manual close — ignore */ }
+            });
+
+            await JS.InvokeVoidAsync("startLiveFaceVerificationWithDescriptor",
+                "faceClockVideo", "faceClockCanvas",
+                storedDescriptorJson,
+                _faceClockRef);
+        }
+        catch (Exception ex)
+        {
+            faceModalMessage  = $"Camera error: {ex.Message}";
+            faceModalMsgType = "danger";
+            faceModalMsgIcon  = "bi-exclamation-circle";
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnFaceVerifiedWithSelfie(double distance, string selfieBase64)
+    {
+        // Cancel the C# safety timeout — we succeeded
+        _faceVerifCts?.Cancel();
+        _faceVerifCts = null;
+
+        // Store selfie — ExecuteClockAction() will use it when the user clicks Save
+        _verifiedSelfieBase64 = string.IsNullOrEmpty(selfieBase64) ? null : selfieBase64;
+
+        // Show "Face recognised" briefly so the user sees the green match state
+        faceModalMatched = true;
+        faceModalMessage = "Face recognised! Opening confirm panel...";
+        faceModalMsgType = "success";
+        faceModalMsgIcon = "bi-check-circle-fill";
+        isClocking       = false; // NOT clocking yet — user must click Save in confirm panel
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(700);
+
+        // ── STOP CAMERA NOW — fixes the "camera light stays on" bug ──────────
+        // Camera must be stopped here, before the confirm panel opens.
+        // ProceedAfterFaceMatch also calls these but the delay before it opens
+        // the confirm panel can leave the camera running. Stop it immediately.
+        try { await JS.InvokeVoidAsync("stopLiveFaceDetection", "faceClockCanvas"); } catch {}
+        try { await JS.InvokeVoidAsync("stopCamera", "faceClockVideo"); } catch {}
+        _faceClockRef?.Dispose();
+        _faceClockRef = null;
+
+        // Open confirm panel — actual clock in/out only happens when user clicks Save
+        await ProceedAfterFaceMatch();
+    }
+
+    [JSInvokable]
+    public async Task OnFaceVerified(bool matched, double distance)
+    {
+        await OnFaceStatus(matched ? "matched" : "mismatch", distance);
+    }
+
+    [JSInvokable]
+    public async Task OnFaceStatus(string status, double distance)
+    {
+        switch (status)
+        {
+            case "matched":
+                // This path is only reached via the legacy OnFaceVerified callback
+                // (no selfie captured). The selfie path goes through OnFaceVerifiedWithSelfie directly.
+                if (!isClocking)  // guard: don't re-enter if ExecuteClockWithSelfie already running
+                {
+                    faceModalMatched = true;
+                    faceModalMessage = "Face recognised! Opening confirm panel...";
+                    faceModalMsgType = "success";
+                    faceModalMsgIcon = "bi-check-circle-fill";
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(700);
+                    await ProceedAfterFaceMatch();
+                }
+                break;
+
+            case "scanning":
+                if (faceModalMsgType != "success")
+                {
+                    faceModalMessage = "Face detected — verifying...";
+                    faceModalMsgType = "info";
+                    faceModalMsgIcon = "bi-person-bounding-box";
+                    await InvokeAsync(StateHasChanged);
+                }
+                break;
+
+            case "mismatch":
+                faceModalMessage = "Face not recognised. Please look directly at the camera.";
+                faceModalMsgType = "danger";
+                faceModalMsgIcon = "bi-x-circle-fill";
+                await InvokeAsync(StateHasChanged);
+                break;
+
+            case "multiple_faces":
+                faceModalMessage = "Multiple people detected — only one person should be in front of the camera.";
+                faceModalMsgType = "warning";
+                faceModalMsgIcon = "bi-people-fill";
+                await InvokeAsync(StateHasChanged);
+                break;
+
+            case "no_face_scanning":
+                if (string.IsNullOrEmpty(faceModalMessage) || faceModalMsgType == "info")
+                {
+                    faceModalMessage = "Look at the camera — move closer if needed.";
+                    faceModalMsgType = "info";
+                    faceModalMsgIcon = "bi-camera";
+                    await InvokeAsync(StateHasChanged);
+                }
+                break;
+
+            case "no_face":
+                faceModalMessage = "No face detected. Please position your face in the camera and try again.";
+                faceModalMsgType = "warning";
+                faceModalMsgIcon = "bi-exclamation-circle";
+                await InvokeAsync(StateHasChanged);
+                break;
+        }
+    }
+
+    private async Task ProceedAfterFaceMatch()
+    {
+        // Stop face loop + camera
+        try { await JS.InvokeVoidAsync("stopLiveFaceDetection", "faceClockCanvas"); } catch {}
+        try { await JS.InvokeVoidAsync("stopCamera", "faceClockVideo"); } catch {}
+        _faceClockRef?.Dispose();
+        _faceClockRef = null;
+
+        // Close face modal, then open the confirm drawer so user clicks Save to confirm
+        showFaceModal    = false;
+        faceModalMatched = false;
+        faceModalMessage = string.Empty;
+
+        // Open confirm drawer — actual clock in/out only happens when user clicks Save
+        confirmError          = "";
+        confirmActivity       = "";
+        confirmProject        = "";
+        confirmNote           = "";
+        endWorkForDay         = false;
+        confirmTab            = "clock";
+        confirmTime           = TimeOnly.FromDateTime(DateTime.Now);
+        confirmDate           = DateOnly.FromDateTime(DateTime.Today);
+        _flatpickrInitialized = false;
+        showConfirmPanel      = true;
+
+        StateHasChanged();
+    }
+
+    // ── Clock in/out directly after face verification (selfie already captured) ──
+    private async Task ExecuteClockWithSelfie()
+    {
+        confirmError = "";
+
+        if (!isClockedIn)
+        {
+            var (clockResult, clockError) = await AttendanceService.ClockInAsync(SessionService.Id, _verifiedSelfieBase64, SessionService.ActiveOrganizationId);
+            if (clockResult != null)
+            {
+                isClockedIn   = true;
+                activeEntryId = clockResult.EntryId;
+                clockInTime   = clockResult.ClockIn;
+                lastClockOut  = default;
+                StartTimer();
+                todayEntries.Add(new TimeEntryRecord { Id = clockResult.EntryId, ClockIn = clockResult.ClockIn, ClockInSelfieUrl = clockResult.ClockInSelfieUrl });
+                await ShowToastAsync("clockin", "bi-box-arrow-in-right", "Clocked In ✅",
+                    $"You clocked in at {clockResult.ClockIn.ToLocalTime():hh:mm tt}. Have a great shift!");
+                await OnClockAction.InvokeAsync();
+                await StartGpsTrackingAsync();
+            }
+            else
+            {
+                var errMsg = clockError ?? "Clock in failed. Please try again.";
+                // Show error in whichever modal is currently open
+                if (showSelfieModal)
+                {
+                    selfieModalMessage = errMsg;
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(3000);
+                    await CancelSelfieModal();
+                }
+                else
+                {
+                    faceModalMessage = errMsg;
+                    faceModalMsgType = "danger";
+                    faceModalMsgIcon = "bi-exclamation-circle";
+                    showFaceModal    = true;
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(3000);
+                    showFaceModal = false;
+                }
+            }
+        }
+        else
+        {
+            var result = await AttendanceService.ClockOutAsync(SessionService.Id, _verifiedSelfieBase64, SessionService.ActiveOrganizationId);
+            if (result != null)
+            {
+                StopTimer();
+                isClockedIn  = false;
+                lastClockOut = result.ClockOut!.Value;
+                var open = todayEntries.FirstOrDefault(e => e.Id == activeEntryId);
+                if (open != null)
+                {
+                    open.ClockOut         = result.ClockOut;
+                    open.WorkedHours      = result.WorkedHours;
+                    open.ClockInSelfieUrl  = result.ClockInSelfieUrl  ?? open.ClockInSelfieUrl;
+                    open.ClockOutSelfieUrl = result.ClockOutSelfieUrl;
+                }
+                activeEntryId = 0;
+                // ── In-app bell notification for clock-out ──
+                var clockOutTimeStr = result.ClockOut!.Value.ToString("hh:mm tt");
+                var workedStr = !string.IsNullOrEmpty(result.WorkedHours) ? $" Total: {result.WorkedHours}" : "";
+                await ShowToastAsync("clockout", "bi-box-arrow-right", "Clocked Out 🟢",
+                    $"You clocked out at {clockOutTimeStr}.{workedStr}");
+                await OnClockAction.InvokeAsync();
+                await StopGpsTrackingAsync();
+            }
+            else
+            {
+                var errMsg = "Clock out failed. Please try again.";
+                if (showSelfieModal)
+                {
+                    selfieModalMessage = errMsg;
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(3000);
+                    await CancelSelfieModal();
+                }
+                else
+                {
+                    faceModalMessage = errMsg;
+                    faceModalMsgType = "danger";
+                    faceModalMsgIcon = "bi-exclamation-circle";
+                    showFaceModal    = true;
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(3000);
+                    showFaceModal = false;
+                }
+            }
+        }
+
+        _verifiedSelfieBase64 = null;
+        isClocking = false;
+        faceModalMatched = false;
+        faceModalMessage = string.Empty;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelFaceModal()
+    {
+        // Cancel the C# safety timeout — user manually closed or timed out
+        _faceVerifCts?.Cancel();
+        _faceVerifCts = null;
+        await JS.InvokeVoidAsync("stopLiveFaceDetection", "faceClockCanvas");
+        await JS.InvokeVoidAsync("stopCamera", "faceClockVideo");
+        _faceClockRef?.Dispose();
+        _faceClockRef = null;
+        showFaceModal         = false;
+        faceModalMatched      = false;
+        faceModalMessage      = string.Empty;
+        _verifiedSelfieBase64 = null;
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Only init flatpickr for the date picker
+        if (showConfirmPanel && !_flatpickrInitialized)
+        {
+            _flatpickrInitialized = true;
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeVoidAsync("FlatpickrHelper.initDate", "cci-fp-date", _dotNetRef);
+            }
+            catch { }
+        }
+    }
+
+    // ── Date picker toggle ──
+    private async Task ToggleDatePicker()
+    {
+        showDatePicker = !showDatePicker;
+        if (showDatePicker)
+        {
+            // Close time picker first
+            showTimePicker = false;
+            StateHasChanged();
+            await Task.Delay(30);
+            try { await JS.InvokeVoidAsync("FlatpickrHelper.open", "cci-fp-date"); } catch { }
+        }
+        else
+        {
+            try { await JS.InvokeVoidAsync("FlatpickrHelper.close", "cci-fp-date"); } catch { }
+        }
+    }
+
+    // ── Custom scroll time picker ──
+    private async Task ToggleTimePicker()
+    {
+        showTimePicker = !showTimePicker;
+        if (showTimePicker)
+        {
+            // Close date picker
+            if (showDatePicker)
+            {
+                showDatePicker = false;
+                try { await JS.InvokeVoidAsync("FlatpickrHelper.close", "cci-fp-date"); } catch { }
+            }
+        }
+    }
+
+    private void SetHour(int h)
+    {
+        bool isPm = confirmTime.Hour >= 12;
+        int newHour = isPm ? (h == 12 ? 12 : h + 12) : (h == 12 ? 0 : h);
+        confirmTime = new TimeOnly(newHour, confirmTime.Minute);
+        showTimePicker = false;
+    }
+
+    private void SetMinute(int m)
+    {
+        confirmTime = new TimeOnly(confirmTime.Hour, m);
+        showTimePicker = false;
+    }
+
+    private void SetAmPm(string ampm)
+    {
+        int h = confirmTime.Hour;
+        if (ampm == "AM" && h >= 12) h -= 12;
+        else if (ampm == "PM" && h < 12) h += 12;
+        confirmTime = new TimeOnly(h, confirmTime.Minute);
+    }
+
+    [JSInvokable]
+    public void OnDateChangedJs(string value)
+    {
+        if (DateOnly.TryParse(value, out var d))
+            confirmDate = d;
+        showDatePicker = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CloseConfirmPanel()
+    {
+        showConfirmPanel = false;
+        showDatePicker   = false;
+        showTimePicker   = false;
+        confirmError     = "";
+        // Safety net: ensure camera is fully off if confirm panel is cancelled
+        // (camera should already be stopped after face match, but guard here too)
+        try { await JS.InvokeVoidAsync("stopLiveFaceDetection", "faceClockCanvas"); } catch {}
+        try { await JS.InvokeVoidAsync("stopCamera", "faceClockVideo"); } catch {}
+    }
+
+    private async Task ExecuteClockAction()
+    {
+        if (isClocking) return;
+        isClocking   = true;
+        confirmError = "";
+        StateHasChanged();
+
+        // Build the selected date+time from the confirm panel inputs.
+        var selectedDateTime = confirmDate.ToDateTime(confirmTime);
+        // "Is the selected time meaningfully different from now?" (>30s difference = custom time)
+        bool isCustomTime = Math.Abs((selectedDateTime - DateTime.Now).TotalSeconds) > 30;
+        bool isAdmin      = SessionService.CanManageActiveOrg;
+        string dateStr    = confirmDate.ToString("yyyy-MM-dd");
+        string timeStr    = confirmTime.ToString("HH:mm");
+
+        if (!isClockedIn)
+        {
+            // ── Clock IN ────────────────────────────────────────────────────────
+            if (isCustomTime && isAdmin)
+            {
+                // Admin selected a specific past time — use manual entry so the
+                // exact time is honoured (ClockInAsync always uses DateTime.Now server-side).
+                // The API creates a normal (IsManual=false) clock-in entry at the selected time
+                // when no live session exists, OR back-dates the existing live session.
+                var (ok, errMsg) = await AttendanceService.AddManualEntryAsync(
+                    SessionService.Id, "in", dateStr, timeStr,
+                    organizationId: SessionService.ActiveOrganizationId,
+                    requesterId: SessionService.Id,
+                    isAdminOverride: true);
+
+                if (ok)
+                {
+                    // Fetch status to get entryId; use selectedDateTime for the timer
+                    // so it counts elapsed time from the admin-chosen time, not DateTime.Now
+                    var status = await AttendanceService.GetStatusAsync(SessionService.Id, SessionService.ActiveOrganizationId);
+                    isClockedIn   = true;
+                    activeEntryId = status.IsClockedIn ? status.EntryId : 0;
+                    clockInTime   = selectedDateTime;
+                    lastClockOut  = default;
+                    StopTimer();
+                    StartTimer();
+                    todayEntries = await AttendanceService.GetHistoryAsync(SessionService.Id, SessionService.ActiveOrganizationId);
+                    showConfirmPanel      = false;
+                    _verifiedSelfieBase64 = null;
+                    await OnClockAction.InvokeAsync();
+                    await StartGpsTrackingAsync();
+                }
+                else
+                {
+                    confirmError = errMsg ?? "Clock in failed. Please try again.";
+                }
+            }
+            else
+            {
+                // Standard real-time clock-in
+                var (clockResult, clockError) = await AttendanceService.ClockInAsync(SessionService.Id, _verifiedSelfieBase64, SessionService.ActiveOrganizationId);
+                if (clockResult != null)
+                {
+                    isClockedIn   = true;
+                    activeEntryId = clockResult.EntryId;
+                    clockInTime   = clockResult.ClockIn;
+                    lastClockOut  = default;
+                    StartTimer();
+                    todayEntries.Add(new TimeEntryRecord { Id = clockResult.EntryId, ClockIn = clockResult.ClockIn, ClockInSelfieUrl = clockResult.ClockInSelfieUrl });
+                    showConfirmPanel      = false;
+                    _verifiedSelfieBase64 = null;
+                    await ShowToastAsync("clockin", "bi-box-arrow-in-right", "Clocked In ✅",
+                        $"You clocked in at {clockResult.ClockIn.ToLocalTime():hh:mm tt}. Have a great shift!");
+                    await OnClockAction.InvokeAsync();
+                    await StartGpsTrackingAsync();
+                }
+                else
+                {
+                    confirmError = clockError ?? "Clock in failed. Please try again.";
+                }
+            }
+        }
+        else if (isClockedIn && isCustomTime && isAdmin && confirmTab == "clock")
+        {
+            // ── Admin BACK-DATING an active live session ────────────────────────
+            // The user is already clocked in and the admin is adjusting the start time.
+            // Call AddManualEntryAsync with IsAdminOverride=true — the API will:
+            //   • Find the live session and move its ClockIn to the earlier time
+            //   • Keep IsManual=false so GetStatus still recognises it as live
+            //   • Remove any conflicting manual entries between new and old start
+            //   • Log the override in change history
+            var (ok, errMsg) = await AttendanceService.AddManualEntryAsync(
+                SessionService.Id, "in", dateStr, timeStr,
+                organizationId: SessionService.ActiveOrganizationId,
+                requesterId: SessionService.Id,
+                isAdminOverride: true);
+
+            if (ok)
+            {
+                // Update the local timer to count from the new (earlier) start time.
+                // activeEntryId is unchanged — it is still the same live session entry.
+                clockInTime = selectedDateTime;
+                StopTimer();
+                StartTimer();
+
+                // Refresh today's entries so the Time Entries list shows updated start time
+                todayEntries = await AttendanceService.GetHistoryAsync(SessionService.Id, SessionService.ActiveOrganizationId);
+                showConfirmPanel      = false;
+                _verifiedSelfieBase64 = null;
+                await OnClockAction.InvokeAsync();
+            }
+            else
+            {
+                confirmError = errMsg ?? "Failed to update clock-in time. Please try again.";
+            }
+        }
+        else
+        {
+            // ── Standard clock OUT ──────────────────────────────────────────────
+            var result = await AttendanceService.ClockOutAsync(SessionService.Id, _verifiedSelfieBase64, SessionService.ActiveOrganizationId);
+            if (result != null)
+            {
+                StopTimer();
+                isClockedIn  = false;
+                lastClockOut = result.ClockOut!.Value;
+                var open = todayEntries.FirstOrDefault(e => e.Id == activeEntryId);
+                if (open != null)
+                {
+                    open.ClockOut          = result.ClockOut;
+                    open.WorkedHours       = result.WorkedHours;
+                    open.ClockInSelfieUrl  = result.ClockInSelfieUrl  ?? open.ClockInSelfieUrl;
+                    open.ClockOutSelfieUrl = result.ClockOutSelfieUrl;
+                }
+                activeEntryId         = 0;
+                showConfirmPanel      = false;
+                _verifiedSelfieBase64 = null;
+                // ── In-app bell notification for clock-out ──
+                var clockOutTimeStr2 = result.ClockOut!.Value.ToString("hh:mm tt");
+                var workedStr2 = !string.IsNullOrEmpty(result.WorkedHours) ? $" Total: {result.WorkedHours}" : "";
+                await ShowToastAsync("clockout", "bi-box-arrow-right", "Clocked Out 🟢",
+                    $"You clocked out at {clockOutTimeStr2}.{workedStr2}");
+                await OnClockAction.InvokeAsync();
+                await StopGpsTrackingAsync();
+            }
+            else
+            {
+                confirmError = "Clock out failed. Please try again.";
+            }
+        }
+
+        // Final safety stop — camera must be off after every clock action
+        try { await JS.InvokeVoidAsync("stopLiveFaceDetection", "faceClockCanvas"); } catch {}
+        try { await JS.InvokeVoidAsync("stopCamera", "faceClockVideo"); } catch {}
+
+        isClocking = false;
+        StateHasChanged();
+    }
+
+    private int _pollTick = 0;  // counts timer ticks to throttle the server poll
+
+    private void StartTimer()
+    {
+        _pollTick = 0;
+        _timer?.Dispose();
+        _timer = new System.Threading.Timer(_ =>
+        {
+            var e = DateTime.Now - clockInTime;
+            ElapsedDisplay = $"{(int)e.TotalHours}:{e.Minutes:D2}:{e.Seconds:D2}";
+
+            // Poll the server every 60 ticks (60 seconds) to detect auto clock-out
+            _pollTick++;
+            if (_pollTick >= 60)
+            {
+                _pollTick = 0;
+                // Fire-and-forget on the Blazor sync context
+                InvokeAsync(async () =>
+                {
+                    try
+                    {
+                        var status = await AttendanceService.GetStatusAsync(
+                            SessionService.Id, SessionService.ActiveOrganizationId);
+
+                        // Auto clock-out happened on the server — update UI without refresh
+                        if (!status.IsClockedIn && isClockedIn)
+                        {
+                            isClockedIn   = false;
+                            activeEntryId = 0;
+                            StopTimer();
+
+                            // Reload today's entries so the clock-out time shows in the list
+                            todayEntries = await AttendanceService.GetHistoryAsync(
+                                SessionService.Id, SessionService.ActiveOrganizationId);
+
+                            if (todayEntries.Any(x => x.ClockOut != null))
+                                lastClockOut = todayEntries
+                                    .Where(x => x.ClockOut != null)
+                                    .Max(x => x.ClockOut!.Value);
+
+                            await StopGpsTrackingAsync();
+                            await OnClockAction.InvokeAsync();
+                            StateHasChanged();
+                        }
+                    }
+                    catch { /* network hiccup — ignore, will retry next tick */ }
+                });
+            }
+            else
+            {
+                InvokeAsync(StateHasChanged);
+            }
+        }, null, 0, 1000);
+    }
+
+    private void StopTimer()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        ElapsedDisplay = "0:00:00";
+    }
+
+    private async Task ToggleTeamPanel()
+    {
+        if (showTeamPanel) { showTeamPanel = false; return; }
+        showTeamPanel = true;
+        teamLoading   = true;
+        StateHasChanged();
+        groupMembers = await AttendanceService.GetGroupMembersAsync(SessionService.Id);
+        teamLoading  = false;
+        StateHasChanged();
+    }
+
+    private void CloseTeamPanel() => showTeamPanel = false;
+
+    private async Task ClockInMember(GroupMember m)
+    {
+        var (result, _) = await AttendanceService.ClockInAsync(m.Id, null, SessionService.ActiveOrganizationId);
+        if (result != null) m.IsClockedIn = true;
+        StateHasChanged();
+    }
+
+    private async Task ClockOutMember(GroupMember m)
+    {
+        var result = await AttendanceService.ClockOutAsync(m.Id, null, SessionService.ActiveOrganizationId);
+        if (result != null) m.IsClockedIn = false;
+        StateHasChanged();
+    }
+
+    private async Task ClockInAllMembers()
+    {
+        teamLoading = true;
+        StateHasChanged();
+        foreach (var m in groupMembers.Where(m => !m.IsClockedIn))
+        {
+            var (result, _) = await AttendanceService.ClockInAsync(m.Id, null, SessionService.ActiveOrganizationId);
+            if (result != null) m.IsClockedIn = true;
+        }
+        teamLoading = false;
+        StateHasChanged();
+    }
+
+    private static string Ago(DateTime dt)
+    {
+        var d = DateTime.Now - dt;
+        if (d.TotalSeconds < 60)  return "a few seconds ago";
+        if (d.TotalMinutes < 60)  return $"{(int)d.TotalMinutes} mins ago";
+        return $"{(int)d.TotalHours} hours ago";
+    }
+
+    // ── Persistent (DB-backed) Notification State ────────────────────────────
+    private List<NotificationVm> _persistentNotifications = new();
+    private bool                 _showNotifPanel          = false;
+    private bool                 _notifLoading            = false;
+    private int                  _unreadCount             => _persistentNotifications.Count(n => !n.IsRead);
+
+    // Leave detail modal state
+    private bool            _showLeaveModal    = false;
+    private bool            _leaveDetailLoading = false;
+    private LeaveDetailVm?  _leaveDetail       = null;
+    private NotificationVm? _activeNotif       = null;
+
+    // Admin review state
+    private bool   _reviewBusy      = false;
+    private string _reviewingAction = "";
+    private bool   _showRejectInput = false;
+    private string _rejectReason    = "";
+    private string _reviewError     = "";
+    private string _reviewSuccess   = "";
+
+    // ── Toast notification system ─────────────────────────────────────────────
+    private record ToastItem(string Id, string Kind, string Icon, string Title, string Message);
+    private List<ToastItem> _toasts = new();
+
+    private async Task ShowToastAsync(string kind, string icon, string title, string message)
+    {
+        var id = Guid.NewGuid().ToString("N")[..8];
+        var toast = new ToastItem(id, kind, icon, title, message);
+        _toasts.Add(toast);
+        await InvokeAsync(StateHasChanged);
+
+        // Map kind → API notification type and persist to DB so it appears in bell panel
+        var notifType = kind switch
+        {
+            "clockin"  => "ClockIn",
+            "clockout" => "ClockOut",
+            "break"    => "BreakEnd",
+            "shift"    => "ShiftAlert",
+            _          => ""
+        };
+        if (!string.IsNullOrEmpty(notifType) && SessionService.IsLoggedIn)
+        {
+            _ = Task.Run(async () =>
+            {
+                await NotificationService.SaveClockEventAsync(notifType, title, message);
+                await LoadPersistentNotificationsAsync();
+            });
+        }
+
+        // Auto-dismiss after 5 seconds
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(5000);
+            await InvokeAsync(() => { DismissToast(id); return Task.CompletedTask; });
+        });
+    }
+
+    private void DismissToast(string id)
+    {
+        _toasts.RemoveAll(t => t.Id == id);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task OnPushReceived(string title, string body)
+    {
+        // Detect type from title for icon/colour
+        var kind = title.Contains("Clocked In") || title.Contains("Clock In")  ? "clockin"
+                 : title.Contains("Clocked Out") || title.Contains("Clock Out") ? "clockout"
+                 : title.Contains("Break")  ? "break"
+                 : title.Contains("Shift")  ? "shift"
+                 : "info";
+        var icon = kind switch
+        {
+            "clockin"  => "bi-box-arrow-in-right",
+            "clockout" => "bi-box-arrow-right",
+            "break"    => "bi-cup-hot",
+            "shift"    => "bi-alarm",
+            _          => "bi-bell-fill"
+        };
+
+        _ = Task.Run(async () =>
+        {
+            await ShowToastAsync(kind, icon, title, body);
+            await Task.Delay(300);
+            await LoadPersistentNotificationsAsync();
+        });
+
+        return Task.CompletedTask;
+    }
+
+    private async Task ToggleNotifPanel()
+    {
+        _showNotifPanel = !_showNotifPanel;
+        if (_showNotifPanel)
+            await LoadPersistentNotificationsAsync();
+    }
+
+    private async Task LoadPersistentNotificationsAsync()
+    {
+        _notifLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        _persistentNotifications = await NotificationService.GetMyNotificationsAsync();
+
+        _notifLoading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CloseNotifPanel() => _showNotifPanel = false;
+
+    private async Task OnNotificationClick(NotificationVm n)
+    {
+        // Mark read in the DB and locally
+        if (!n.IsRead)
+        {
+            await NotificationService.MarkReadAsync(n.Id);
+            n.IsRead = true;
+        }
+
+        _activeNotif        = n;
+        _showLeaveModal     = true;
+        _showNotifPanel     = false;
+        _leaveDetailLoading = true;
+        _leaveDetail        = null;
+        _showRejectInput    = false;
+        _rejectReason       = "";
+        _reviewError        = "";
+        _reviewSuccess      = "";
+
+        await InvokeAsync(StateHasChanged);
+
+        _leaveDetail        = await NotificationService.GetLeaveRequestAsync(n.ReferenceId);
+        _leaveDetailLoading = false;
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CloseLeaveModal()
+    {
+        _showLeaveModal  = false;
+        _leaveDetail     = null;
+        _activeNotif     = null;
+        _reviewError     = "";
+        _reviewSuccess   = "";
+        _showRejectInput = false;
+        _rejectReason    = "";
+    }
+
+    private void CancelRejectInput()
+    {
+        _showRejectInput = false;
+        _rejectReason    = "";
+        _reviewError     = "";
+    }
+
+    private async Task AdminApprove()
+    {
+        if (_leaveDetail == null || _activeNotif == null) return;
+        _reviewBusy      = true;
+        _reviewingAction = "approve";
+        _reviewError     = "";
+        await InvokeAsync(StateHasChanged);
+
+        var (ok, err) = await NotificationService.ReviewLeaveAsync(
+            _leaveDetail.Id, "direct_approve", "TeamLead");
+
+        if (ok)
+        {
+            _reviewSuccess            = "Leave request approved successfully.";
+            _leaveDetail.Status       = "Approved";
+            _leaveDetail.ReviewedBy   = SessionService.FullName;
+            // Remove that notification from the list so it won't show again
+            _persistentNotifications.Remove(_activeNotif);
+        }
+        else
+        {
+            _reviewError = err;
+        }
+
+        _reviewBusy = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AdminForwardToHR()
+    {
+        if (_leaveDetail == null || _activeNotif == null) return;
+        _reviewBusy      = true;
+        _reviewingAction = "forward_to_hr";
+        _reviewError     = "";
+        await InvokeAsync(StateHasChanged);
+
+        var (ok, err) = await NotificationService.ReviewLeaveAsync(
+            _leaveDetail.Id, "forward_to_hr", "TeamLead");
+
+        if (ok)
+        {
+            _reviewSuccess      = "Request forwarded to HR.";
+            _leaveDetail.Status = "Pending_HR";
+            // Keep notification open so HR can act on it too
+        }
+        else
+        {
+            _reviewError = err;
+        }
+
+        _reviewBusy = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AdminApproveAsHR()
+    {
+        if (_leaveDetail == null || _activeNotif == null) return;
+        _reviewBusy      = true;
+        _reviewingAction = "hr_approve";
+        _reviewError     = "";
+        await InvokeAsync(StateHasChanged);
+
+        var (ok, err) = await NotificationService.ReviewLeaveAsync(
+            _leaveDetail.Id, "approve", "HR");
+
+        if (ok)
+        {
+            _reviewSuccess            = "Leave request approved by HR.";
+            _leaveDetail.Status       = "Approved";
+            _leaveDetail.ReviewedBy   = "HR";
+            _persistentNotifications.Remove(_activeNotif);
+        }
+        else
+        {
+            _reviewError = err;
+        }
+
+        _reviewBusy = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AdminReject()
+    {
+        if (_leaveDetail == null || _activeNotif == null) return;
+        if (string.IsNullOrWhiteSpace(_rejectReason))
+        {
+            _reviewError = "A rejection reason is required.";
+            return;
+        }
+
+        _reviewBusy      = true;
+        _reviewingAction = "reject";
+        _reviewError     = "";
+        await InvokeAsync(StateHasChanged);
+
+        // Reject as whoever is the current reviewer
+        var reviewer = _leaveDetail.Status == "Pending_HR" ? "HR" : "TeamLead";
+        var (ok, err) = await NotificationService.ReviewLeaveAsync(
+            _leaveDetail.Id, "reject", reviewer, _rejectReason.Trim());
+
+        if (ok)
+        {
+            _reviewSuccess            = "Leave request rejected.";
+            _leaveDetail.Status       = reviewer == "HR" ? "Rejected_HR" : "Rejected_TeamLead";
+            _leaveDetail.ReviewedBy   = reviewer;
+            _leaveDetail.RejectReason = _rejectReason.Trim();
+            _showRejectInput          = false;
+            _persistentNotifications.Remove(_activeNotif);
+        }
+        else
+        {
+            _reviewError = err;
+        }
+
+        _reviewBusy = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task DismissNotification(NotificationVm n)
+    {
+        await NotificationService.DismissAsync(n.Id);
+        _persistentNotifications.Remove(n);
+        if (!_persistentNotifications.Any()) _showNotifPanel = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ClearAllNotifications()
+    {
+        await NotificationService.ClearAllAsync();
+        _persistentNotifications.Clear();
+        _showNotifPanel = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _faceClockRef?.Dispose();
+        SessionService.OnSessionReady -= LoadAsync;
+        NotificationBus.OnNotify -= OnPushReceived;
+        _timer?.Dispose();
+        _dotNetRef?.Dispose();
+    }
+}
+
+<style>
+    /* ═══════════════════════════════════════════════════════════════
+       NOTIFICATION BELL + PANEL
+       ═══════════════════════════════════════════════════════════════ */
+
+    .bp-notif-wrap { position: relative; }
+
+    .bp-notif-btn {
+        position: relative;
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .bp-notif-badge {
+        position: absolute;
+        top: -4px; right: -4px;
+        background: #ef4444;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        min-width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 3px;
+        line-height: 1;
+        border: 2px solid #fff;
+        pointer-events: none;
+    }
+
+    .bp-notif-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1080;
+    }
+
+    .bp-notif-panel {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        width: 340px;
+        max-height: 440px;
+        background: #fff;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 14px;
+        box-shadow: 0 8px 32px rgba(0,0,0,.12);
+        z-index: 1081;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        animation: bp-notif-in .18s ease;
+    }
+
+    @@keyframes bp-notif-in {
+        from { opacity: 0; transform: translateY(-6px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .bp-notif-panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 16px 10px;
+        border-bottom: 1px solid #f3f4f6;
+        flex-shrink: 0;
+    }
+
+    .bp-notif-panel-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .bp-notif-clear-btn {
+        background: none;
+        border: none;
+        font-size: 12px;
+        color: #6b7280;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: inherit;
+    }
+
+    .bp-notif-clear-btn:hover { background: #f3f4f6; color: #374151; }
+
+    .bp-notif-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 36px 20px;
+        color: #9ca3af;
+        font-size: 13px;
+    }
+
+    .bp-notif-list {
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .bp-notif-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 14px;
+        border-bottom: 1px solid #f9fafb;
+        transition: background .1s;
+    }
+
+    .bp-notif-item:hover { background: #f9fafb; }
+
+    .bp-notif-item--unread { background: #eff6ff; border-left: 3px solid #3b82f6; }
+    .bp-notif-item--unread:hover { background: #dbeafe; }
+
+    .bp-notif-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #e0e7ff;
+        color: #4f46e5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        flex-shrink: 0;
+        margin-top: 1px;
+    }
+
+    .bp-notif-body { flex: 1; min-width: 0; }
+    .bp-notif-title { font-size: 13px; font-weight: 600; color: #111827; margin-bottom: 2px; }
+    .bp-notif-msg   { font-size: 12px; color: #6b7280; line-height: 1.4; }
+    .bp-notif-time  { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+
+    .bp-notif-dismiss {
+        background: none;
+        border: none;
+        color: #9ca3af;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 2px 4px;
+        border-radius: 4px;
+        flex-shrink: 0;
+        align-self: flex-start;
+        margin-top: 1px;
+    }
+
+    .bp-notif-dismiss:hover { color: #374151; background: #f3f4f6; }
+
+    /* Notification icon colour variants */
+    .notif-icon--applied  { background: #dbeafe; color: #1d4ed8; }
+    .notif-icon--approved { background: #dcfce7; color: #15803d; }
+    .notif-icon--rejected { background: #fee2e2; color: #b91c1c; }
+    .notif-icon--clockin  { background: #dcfce7; color: #16a34a; }
+    .notif-icon--clockout { background: #dbeafe; color: #2563eb; }
+    .notif-icon--break    { background: #fef3c7; color: #d97706; }
+    .notif-icon--shift    { background: #ede9fe; color: #7c3aed; }
+
+    /* ═══════════════════════════════════════════════════════════════
+       LEAVE NOTIFICATION DETAIL MODAL (lnd-*)
+       ═══════════════════════════════════════════════════════════════ */
+
+    .lnd-backdrop {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,.45);
+        z-index: 1100;
+        animation: lnd-fade .2s ease;
+    }
+    @@keyframes lnd-fade { from { opacity:0; } to { opacity:1; } }
+
+    .lnd-modal {
+        position: fixed;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: min(480px, 95vw);
+        background: #fff;
+        border-radius: 18px;
+        box-shadow: 0 20px 60px rgba(0,0,0,.2);
+        z-index: 1101;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        animation: lnd-pop .2s cubic-bezier(.175,.885,.32,1.275);
+    }
+    @@keyframes lnd-pop {
+        from { opacity:0; transform: translate(-50%,-50%) scale(.92); }
+        to   { opacity:1; transform: translate(-50%,-50%) scale(1); }
+    }
+
+    .lnd-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 18px 20px 14px;
+        border-bottom: 1px solid #f3f4f6;
+    }
+    .lnd-header-left { display: flex; align-items: center; gap: 12px; }
+    .lnd-header-icon {
+        width: 42px; height: 42px; border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px; flex-shrink: 0;
+    }
+    .lnd-icon--applied  { background: #dbeafe; color: #1d4ed8; }
+    .lnd-icon--approved { background: #dcfce7; color: #15803d; }
+    .lnd-icon--rejected { background: #fee2e2; color: #b91c1c; }
+
+    .lnd-title    { font-size: 16px; font-weight: 700; color: #111827; margin: 0 0 2px; }
+    .lnd-subtitle { font-size: 12px; color: #9ca3af; margin: 0; }
+
+    .lnd-close {
+        background: none; border: none; color: #9ca3af;
+        cursor: pointer; font-size: 16px;
+        width: 30px; height: 30px; border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        transition: background .12s, color .12s;
+    }
+    .lnd-close:hover { background: #f3f4f6; color: #374151; }
+
+    .lnd-loading {
+        display: flex; align-items: center; gap: 10px;
+        justify-content: center; padding: 36px 20px;
+        color: #6b7280; font-size: 14px;
+    }
+
+    .lnd-body { padding: 20px; }
+
+    .lnd-info-grid {
+        display: flex; flex-direction: column; gap: 0;
+        border: 1px solid #f3f4f6; border-radius: 10px;
+        overflow: hidden; margin-bottom: 16px;
+    }
+    .lnd-info-row {
+        display: flex; justify-content: space-between; align-items: flex-start;
+        gap: 10px; padding: 11px 14px;
+        border-bottom: 1px solid #f9fafb;
+    }
+    .lnd-info-row:last-child { border-bottom: none; }
+    .lnd-info-row--full { flex-direction: column; gap: 4px; }
+    .lnd-info-label {
+        font-size: 12px; color: #6b7280; font-weight: 500;
+        white-space: nowrap; flex-shrink: 0;
+    }
+    .lnd-info-value { font-size: 13px; color: #111827; text-align: right; }
+    .lnd-value--strong { font-weight: 700; }
+
+    .lnd-status-badge {
+        display: inline-flex; align-items: center;
+        padding: 4px 10px; border-radius: 20px;
+        font-size: 12px; font-weight: 600;
+    }
+    .lnd-badge--approved { background: #dcfce7; color: #15803d; }
+    .lnd-badge--rejected { background: #fee2e2; color: #b91c1c; }
+    .lnd-badge--pending  { background: #fef9c3; color: #a16207; }
+
+    .lnd-action-panel {
+        border: 1px solid #f3f4f6; border-radius: 10px;
+        padding: 14px;
+    }
+    .lnd-action-label {
+        font-size: 12px; font-weight: 600; color: #6b7280;
+        text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px;
+    }
+    .lnd-action-row { display: flex; gap: 10px; }
+
+    .lnd-btn {
+        flex: 1; padding: 9px 16px; border: none; border-radius: 8px;
+        font-size: 13px; font-weight: 600; cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center;
+        gap: 4px; transition: opacity .12s;
+        font-family: inherit;
+    }
+    .lnd-btn:disabled { opacity: .6; cursor: not-allowed; }
+    .lnd-btn--approve  { background: #16a34a; color: #fff; }
+    .lnd-btn--approve:hover:not(:disabled) { background: #15803d; }
+    .lnd-btn--reject   { background: #ef4444; color: #fff; }
+    .lnd-btn--reject:hover:not(:disabled)  { background: #dc2626; }
+    .lnd-btn--cancel   { background: #f3f4f6; color: #374151; flex: none; padding: 9px 14px; }
+    .lnd-btn--cancel:hover { background: #e5e7eb; }
+
+    .lnd-reject-form { display: flex; flex-direction: column; gap: 6px; }
+    .lnd-reject-label { font-size: 12px; font-weight: 600; color: #374151; }
+    .lnd-reject-textarea {
+        border: 1px solid #d1d5db; border-radius: 8px;
+        padding: 8px 10px; font-size: 13px; resize: vertical;
+        font-family: inherit; color: #111827;
+        outline: none; transition: border .15s;
+    }
+    .lnd-reject-textarea:focus { border-color: #6366f1; }
+
+    .lnd-error   { color: #dc2626; font-size: 12px; display: flex; align-items: center; margin-top: 6px; }
+    .lnd-success { color: #16a34a; font-size: 13px; display: flex; align-items: center; gap: 4px; margin-top: 8px; font-weight: 500; }
+
+    /* ═══════════════════════════════════════════════════════════════
+       CONFIRM CLOCK IN/OUT DRAWER
+       ═══════════════════════════════════════════════════════════════ */
+
+    .cci-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 1050;
+        animation: cci-fade-in .2s ease;
+    }
+    @@keyframes cci-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+    .cci-drawer {
+        position: fixed;
+        top: 0; right: 0; bottom: 0;
+        width: 400px;
+        background: #fff;
+        box-shadow: -8px 0 40px rgba(0,0,0,.15);
+        z-index: 1051;
+        display: flex;
+        flex-direction: column;
+        animation: cci-slide-in .22s cubic-bezier(.25,.46,.45,.94);
+        overflow: hidden;
+    }
+    @@keyframes cci-slide-in {
+        from { transform: translateX(100%); opacity: 0; }
+        to   { transform: translateX(0);    opacity: 1; }
+    }
+    @@media (max-width: 480px) { .cci-drawer { width: 100%; } }
+
+    .cci-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 24px 16px;
+        border-bottom: 1px solid #f3f4f6;
+        flex-shrink: 0;
+    }
+    .cci-title { font-size: 20px; font-weight: 700; color: #111827; margin: 0; }
+    .cci-close {
+        width: 32px; height: 32px; border-radius: 8px;
+        border: none; background: #f9fafb;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; color: #6b7280; font-size: 14px;
+        transition: background .15s, color .15s; flex-shrink: 0;
+    }
+    .cci-close:hover { background: #f3f4f6; color: #111827; }
+
+    .cci-user-strip {
+        display: flex; align-items: flex-start; gap: 14px;
+        padding: 16px 24px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0;
+    }
+    .cci-user-av {
+        width: 52px; height: 52px; border-radius: 50%;
+        background: #e5e7eb; color: #374151;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 20px; font-weight: 700; flex-shrink: 0;
+    }
+    .cci-user-name { font-size: 15px; font-weight: 700; color: #111827; }
+    .cci-user-meta { font-size: 12px; color: #6b7280; margin-top: 2px; }
+
+    .cci-tabs {
+        display: flex; border-bottom: 1px solid #e5e7eb;
+        flex-shrink: 0; padding: 0 24px;
+    }
+    .cci-tab {
+        display: flex; align-items: center; gap: 6px;
+        padding: 12px 4px; margin-right: 24px;
+        background: none; border: none;
+        font-size: 14px; font-weight: 600; color: #9ca3af;
+        cursor: pointer; font-family: inherit;
+        border-bottom: 2.5px solid transparent;
+        transition: color .15s, border-color .15s;
+        position: relative; bottom: -1px;
+    }
+    .cci-tab--active { color: #ff7a00; border-bottom-color: #ff7a00; }
+    .cci-tab:hover:not(.cci-tab--active) { color: #6b7280; }
+    .cci-tab-info { font-size: 12px; opacity: .5; }
+
+    .cci-form {
+        flex: 1; overflow-y: auto; padding: 20px 24px;
+        display: flex; flex-direction: column; gap: 12px; scrollbar-width: thin;
+    }
+
+    /* ── Time field wrapper ── */
+    .cci-time-wrap {
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    /* ── Custom scroll-column time picker ── */
+    .cci-scroll-picker {
+        display: flex;
+        background: #f8f9fb;
+        border-radius: 10px;
+        border: 1.5px solid #e5e7eb;
+        overflow: hidden;
+        box-shadow: 0 8px 32px rgba(0,0,0,.22);
+        margin-top: 4px;
+        user-select: none;
+    }
+
+    .cci-col {
+        flex: 1;
+        max-height: 180px;
+        overflow-y: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+    .cci-col::-webkit-scrollbar { display: none; }
+
+    .cci-col-ampm {
+        flex: 0 0 64px;
+        display: flex;
+        flex-direction: column;
+        background: #f0f2f5;
+        border-left: 1px solid #e5e7eb;
+    }
+
+    .cci-col-sep {
+        width: 1px;
+        background: #e5e7eb;
+        flex-shrink: 0;
+    }
+
+    .cci-col-item {
+        padding: 10px 0;
+        text-align: center;
+        font-size: 15px;
+        font-weight: 500;
+        color: #6b7280;
+        cursor: pointer;
+        transition: background .12s, color .12s;
+        line-height: 1;
+    }
+    .cci-col-item:hover {
+        background: #fff3e8;
+        color: #ff7a00;
+    }
+    .cci-col-item--sel {
+        background: #ff7a00;
+        color: #fff;
+        font-weight: 700;
+        border-radius: 6px;
+    }
+
+    .cci-ampm-item {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+        color: #6b7280;
+        cursor: pointer;
+        transition: background .12s, color .12s;
+        padding: 0 8px;
+    }
+    .cci-ampm-item:hover { background: #fff3e8; color: #ff7a00; }
+    .cci-ampm-item--sel {
+        background: #ff7a00;
+        color: #fff;
+        font-weight: 700;
+        border-radius: 6px;
+    }
+
+    .cci-field {
+        position: relative; display: flex; align-items: center;
+        background: #fff; border: 1.5px solid #e5e7eb; border-radius: 10px;
+        overflow: visible; transition: border-color .2s, box-shadow .2s; cursor: pointer;
+    }
+    .cci-field:focus-within,
+    .cci-field:hover,
+    .cci-field--active { border-color: #ff7a00; box-shadow: 0 0 0 3px rgba(255,122,0,.08); }
+    .cci-field--note   { align-items: flex-start; cursor: default; }
+    .cci-field--select { cursor: pointer; }
+
+    .cci-icon-pre {
+        padding: 0 0 0 14px; font-size: 14px;
+        flex-shrink: 0; pointer-events: none;
+    }
+    .cci-icon-orange { color: #ff7a00; }
+    .cci-icon-post {
+        padding: 0 14px 0 6px; font-size: 13px; color: #9ca3af;
+        flex-shrink: 0; pointer-events: none;
+    }
+
+    .cci-input {
+        flex: 1; border: none; outline: none; padding: 13px 10px;
+        font-size: 14px; color: #111827; font-family: inherit;
+        background: transparent; min-width: 0; cursor: pointer;
+    }
+    .cci-input-padded-l { padding-left: 10px; }
+    .cci-input::placeholder { color: #9ca3af; }
+    .cci-input-no-events { pointer-events: none; }
+
+    .cci-select {
+        flex: 1; border: none; outline: none; padding: 13px 10px;
+        font-size: 14px; color: #111827; font-family: inherit;
+        background: transparent; -webkit-appearance: none;
+        appearance: none; cursor: pointer; min-width: 0;
+    }
+    .cci-select option[value=""] { color: #9ca3af; }
+    .cci-field-icon {
+        padding: 0 14px 0 6px; font-size: 11px;
+        color: #9ca3af; flex-shrink: 0; pointer-events: none;
+    }
+
+    .cci-textarea {
+        flex: 1; border: none; outline: none; padding: 12px 14px;
+        font-size: 14px; font-family: inherit; background: transparent;
+        resize: vertical; min-height: 80px; line-height: 1.5;
+        color: #111827; width: 100%; cursor: text;
+    }
+
+    /* ══════════════════════════════════════════════════════
+       FLATPICKR — matching screenshots exactly
+       ══════════════════════════════════════════════════════ */
+
+    .flatpickr-calendar {
+        font-family: inherit !important;
+        border-radius: 12px !important;
+        border: 1px solid #e5e7eb !important;
+        box-shadow: 0 8px 32px rgba(0,0,0,.14) !important;
+        overflow: hidden !important;
+        z-index: 1100 !important;
+        background: #fff !important;
+        padding: 0 !important;
+    }
+    .flatpickr-calendar::before,
+    .flatpickr-calendar::after { display: none !important; }
+
+    /* Calendar: clean white header, no colour */
+    .flatpickr-month {
+        background: #fff !important;
+        color: #111827 !important;
+        height: 44px !important;
+        display: flex !important;
+        align-items: center !important;
+        padding: 0 8px !important;
+    }
+    .flatpickr-current-month {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 4px !important;
+        padding: 0 !important;
+        width: 100% !important;
+        font-size: 14px !important;
+    }
+    .flatpickr-current-month .cur-month {
+        font-weight: 600 !important; color: #111827 !important; font-size: 14px !important;
+    }
+    .flatpickr-current-month input.cur-year {
+        font-weight: 600 !important; color: #111827 !important;
+        font-size: 14px !important; background: transparent !important;
+    }
+    .flatpickr-prev-month, .flatpickr-next-month {
+        color: #6b7280 !important; fill: #6b7280 !important;
+        top: 10px !important; padding: 4px 8px !important;
+    }
+    .flatpickr-prev-month:hover, .flatpickr-next-month:hover {
+        color: #ff7a00 !important; fill: #ff7a00 !important; background: none !important;
+    }
+    .flatpickr-prev-month svg, .flatpickr-next-month svg {
+        fill: inherit !important; width: 12px !important; height: 12px !important;
+    }
+    .flatpickr-weekdays {
+        background: #fff !important;
+        border-bottom: 1px solid #f3f4f6 !important;
+        height: 32px !important;
+    }
+    span.flatpickr-weekday {
+        color: #9ca3af !important; font-weight: 500 !important;
+        font-size: 12px !important; background: #fff !important;
+    }
+    .flatpickr-days { border: none !important; }
+    .dayContainer { padding: 4px !important; }
+    .flatpickr-day {
+        border-radius: 50% !important;
+        font-size: 13px !important; color: #374151 !important;
+        font-weight: 400 !important; border: none !important;
+        height: 34px !important; line-height: 34px !important;
+        max-width: 34px !important; margin: 2px !important;
+    }
+    .flatpickr-day:hover {
+        background: #fff7ed !important; color: #ff7a00 !important; border: none !important;
+    }
+    .flatpickr-day.today {
+        background: #ff7a00 !important; color: #fff !important;
+        font-weight: 700 !important; border: none !important;
+    }
+    .flatpickr-day.today:hover { background: #e66c00 !important; color: #fff !important; }
+    .flatpickr-day.selected, .flatpickr-day.selected:hover {
+        background: #ff7a00 !important; color: #fff !important;
+        font-weight: 700 !important; border: none !important;
+    }
+    .flatpickr-day.prevMonthDay,
+    .flatpickr-day.nextMonthDay { color: #d1d5db !important; }
+    .flatpickr-day.flatpickr-disabled,
+    .flatpickr-day.flatpickr-disabled:hover {
+        color: #d1d5db !important; background: transparent !important;
+    }
+
+
+
+    /* Pills */
+    .cci-pills { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+    .cci-pill {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 7px 14px; border-radius: 20px; border: 1.5px solid #e5e7eb;
+        background: #fff; font-size: 12px; font-weight: 600; color: #6b7280;
+        cursor: pointer; font-family: inherit;
+        transition: border-color .15s, color .15s, background .15s;
+    }
+    .cci-pill:hover { border-color: #ff7a00; color: #ff7a00; background: #fff7ed; }
+
+    /* Checkbox */
+    .cci-checkbox-row { display: flex; align-items: center; gap: 10px; padding: 2px 0; }
+    .cci-checkbox {
+        width: 17px; height: 17px; border: 1.5px solid #d1d5db;
+        border-radius: 4px; cursor: pointer; accent-color: #ff7a00; flex-shrink: 0;
+    }
+    .cci-checkbox-label {
+        font-size: 14px; font-weight: 500; color: #374151; cursor: pointer;
+        display: flex; align-items: center; gap: 6px; margin: 0;
+    }
+    .cci-checkbox-info { font-size: 13px; color: #9ca3af; }
+
+    /* Error */
+    .cci-error {
+        margin: 0 24px 8px; padding: 10px 14px; border-radius: 8px;
+        background: #fef2f2; border: 1px solid #fca5a5; color: #dc2626;
+        font-size: 13px; font-weight: 500; display: flex; align-items: center;
+        gap: 8px; flex-shrink: 0;
+    }
+
+    /* Footer */
+    .cci-footer {
+        display: flex; align-items: center; justify-content: flex-end;
+        gap: 12px; padding: 16px 24px; border-top: 1px solid #f3f4f6;
+        flex-shrink: 0; background: #fff;
+    }
+    .cci-cancel-btn {
+        padding: 10px 24px; border-radius: 8px; border: none; background: none;
+        font-size: 14px; font-weight: 600; color: #ff7a00;
+        cursor: pointer; font-family: inherit; transition: background .15s;
+    }
+    .cci-cancel-btn:hover:not(:disabled) { background: #fff7ed; }
+    .cci-cancel-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .cci-save-btn {
+        padding: 10px 32px; border-radius: 8px; border: none;
+        background: #ff7a00; color: #fff; font-size: 14px; font-weight: 700;
+        cursor: pointer; font-family: inherit; display: flex; align-items: center;
+        gap: 8px; min-width: 80px; justify-content: center;
+        transition: background .15s, transform .1s;
+    }
+    .cci-save-btn:hover:not(:disabled) { background: #e66c00; }
+    .cci-save-btn:active:not(:disabled) { transform: scale(.97); }
+    .cci-save-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+    /* ── Face Verify Drawer ─────────────────────────────────────── */
+    /* ═══════════════════════════════════════════════════════════════
+       FACE VERIFICATION MODAL  — Professional redesign
+       ═══════════════════════════════════════════════════════════════ */
+
+    .face-verify-drawer { max-width: 400px !important; }
+
+    /* ── Header ── */
+    .fv-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 18px 20px 14px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0;
+    }
+    .fv-header-left { display: flex; align-items: center; gap: 12px; }
+    .fv-action-badge {
+        width: 42px; height: 42px; border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px; flex-shrink: 0;
+    }
+    .fv-badge--in  { background: linear-gradient(135deg,#f0fdf4,#dcfce7); color: #16a34a; }
+    .fv-badge--out { background: linear-gradient(135deg,#fff7ed,#ffedd5); color: #ea580c; }
+    .fv-title   { font-size: 17px; font-weight: 700; color: #111827; margin: 0; }
+    .fv-subtitle { font-size: 11px; color: #9ca3af; margin: 0; letter-spacing: .3px; text-transform: uppercase; }
+    .fv-close {
+        width: 32px; height: 32px; border: none; background: #f3f4f6;
+        border-radius: 8px; cursor: pointer; display: flex; align-items: center;
+        justify-content: center; font-size: 13px; color: #6b7280;
+        transition: background .15s; flex-shrink: 0;
+    }
+    .fv-close:hover:not(:disabled) { background: #e5e7eb; }
+    .fv-close:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* ── Body ── */
+    .fv-body { padding: 16px 16px 20px; }
+
+    /* ── Camera frame ── */
+    .fv-video-frame {
+        position: relative; border-radius: 16px; overflow: hidden;
+        background: #0f172a; margin-bottom: 12px;
+        box-shadow: 0 4px 24px rgba(0,0,0,.22);
+        border: 2.5px solid transparent;
+        transition: border-color .3s;
+    }
+    .fv-frame--matched  { border-color: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.15), 0 4px 24px rgba(0,0,0,.2); }
+    .fv-frame--mismatch { border-color: #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,.13), 0 4px 24px rgba(0,0,0,.2); }
+
+    .fv-scan-label {
+        position: absolute; top: 10px; left: 10px; z-index: 10;
+    }
+    .fv-scan-pill {
+        display: inline-flex; align-items: center;
+        padding: 4px 10px; border-radius: 20px;
+        font-size: 11px; font-weight: 700;
+        backdrop-filter: blur(8px);
+        letter-spacing: .3px;
+    }
+    .fv-scan-pill--idle { background: rgba(0,0,0,.5); color: #e5e7eb; }
+    .fv-scan-pill--ok   { background: rgba(34,197,94,.85); color: #fff; }
+    .fv-scan-pill--err  { background: rgba(239,68,68,.85); color: #fff; }
+
+    .fv-video {
+        display: block; width: 100%; border-radius: 14px;
+    }
+    .fv-canvas {
+        position: absolute; top: 0; left: 0;
+        width: 100%; height: 100%; pointer-events: none;
+        border-radius: 14px;
+    }
+    .fv-matched-overlay {
+        position: absolute; inset: 0;
+        background: rgba(34,197,94,0.20);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 60px; color: #22c55e;
+        animation: fvMatchIn .25s ease; border-radius: 14px;
+    }
+    @@keyframes fvMatchIn {
+        from { opacity: 0; transform: scale(.6); }
+        to   { opacity: 1; transform: scale(1);  }
+    }
+
+    /* ── Status message ── */
+    .fv-status-row {
+        display: flex; align-items: flex-start; gap: 8px;
+        padding: 10px 13px; border-radius: 10px;
+        font-size: 13px; font-weight: 500; margin-bottom: 10px;
+        transition: all .25s;
+    }
+    .fv-status--info    { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+    .fv-status--success { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .fv-status--danger  { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    .fv-status--warning { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .fv-status-icon { font-size: 15px; margin-top: 1px; flex-shrink: 0; }
+    .fv-status-text { line-height: 1.5; }
+
+    /* ── Tips row ── */
+    .fv-tips {
+        font-size: 11.5px; color: #9ca3af; margin-bottom: 12px;
+        display: flex; align-items: center; gap: 5px;
+    }
+
+    /* ── Skip button ── */
+    .fv-skip-btn {
+        display: block; width: 100%; text-align: center;
+        background: transparent; border: 1.5px solid #e5e7eb;
+        color: #6b7280; font-size: 12px; font-weight: 600;
+        padding: 9px; border-radius: 9px; cursor: pointer;
+        font-family: inherit; transition: all .15s;
+    }
+    .fv-skip-btn:hover { border-color: #9ca3af; color: #374151; background: #f9fafb; }
+
+    /* ── Processing spinner ── */
+    .fv-processing {
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        padding: 52px 0;
+    }
+    .fv-processing-ring {
+        width: 52px; height: 52px;
+        border: 4px solid #f3f4f6;
+        border-top-color: #ff7a00;
+        border-radius: 50%;
+        animation: fvSpin .7s linear infinite;
+        margin-bottom: 16px;
+    }
+    @@keyframes fvSpin { to { transform: rotate(360deg); } }
+    .fv-processing-label {
+        font-size: 14px; font-weight: 600; color: #374151; margin: 0;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       IN-APP TOAST NOTIFICATIONS
+       ═══════════════════════════════════════════════════════════════ */
+    .bp-toast-container {
+        position: fixed;
+        bottom: 24px; right: 24px;
+        z-index: 9999;
+        display: flex; flex-direction: column; gap: 10px;
+        pointer-events: none;
+    }
+    .bp-toast {
+        display: flex; align-items: flex-start; gap: 10px;
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,.16), 0 1px 4px rgba(0,0,0,.06);
+        padding: 12px 14px;
+        min-width: 280px; max-width: 360px;
+        pointer-events: all;
+        border-left: 4px solid #6366f1;
+        animation: bp-toast-in .25s cubic-bezier(.175,.885,.32,1.275);
+    }
+    @@keyframes bp-toast-in {
+        from { opacity: 0; transform: translateX(40px) scale(.95); }
+        to   { opacity: 1; transform: translateX(0) scale(1); }
+    }
+    .bp-toast--clockin  { border-left-color: #16a34a; }
+    .bp-toast--clockout { border-left-color: #2563eb; }
+    .bp-toast--break    { border-left-color: #d97706; }
+    .bp-toast--shift    { border-left-color: #7c3aed; }
+    .bp-toast--info     { border-left-color: #6366f1; }
+
+    .bp-toast-icon {
+        width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center; font-size: 15px;
+    }
+    .bp-toast--clockin  .bp-toast-icon { background: #dcfce7; color: #16a34a; }
+    .bp-toast--clockout .bp-toast-icon { background: #dbeafe; color: #2563eb; }
+    .bp-toast--break    .bp-toast-icon { background: #fef3c7; color: #d97706; }
+    .bp-toast--shift    .bp-toast-icon { background: #ede9fe; color: #7c3aed; }
+    .bp-toast--info     .bp-toast-icon { background: #e0e7ff; color: #6366f1; }
+
+    .bp-toast-body { flex: 1; min-width: 0; }
+    .bp-toast-title { font-size: 13px; font-weight: 700; color: #111827; margin-bottom: 2px; }
+    .bp-toast-msg   { font-size: 12px; color: #6b7280; line-height: 1.4; }
+
+    .bp-toast-close {
+        background: none; border: none; color: #9ca3af;
+        cursor: pointer; font-size: 13px; padding: 2px;
+        flex-shrink: 0; border-radius: 4px; align-self: flex-start;
+    }
+    .bp-toast-close:hover { color: #374151; background: #f3f4f6; }
+
+    /* ── Leave modal timeline & stage ── */
+    .lnd-stage-row { margin-bottom: 12px; }
+    .lnd-stage-badge {
+        display: inline-flex; align-items: center;
+        padding: 5px 12px; border-radius: 20px;
+        font-size: 12px; font-weight: 600;
+    }
+    .lnd-stage--tl { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
+    .lnd-stage--hr { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+    .lnd-timeline {
+        display: flex; align-items: center; gap: 0;
+        margin-bottom: 14px; padding: 10px 14px;
+        background: #f9fafb; border-radius: 10px;
+        border: 1px solid #f3f4f6;
+    }
+    .lnd-tl-step {
+        display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1;
+    }
+    .lnd-tl-dot {
+        width: 30px; height: 30px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 12px; font-weight: 700;
+        border: 2px solid #e5e7eb; background: #fff; color: #9ca3af;
+    }
+    .lnd-tl-label { font-size: 10px; font-weight: 600; color: #6b7280; text-align: center; }
+    .lnd-tl-line  { flex: 0 0 32px; height: 2px; background: #e5e7eb; margin-bottom: 14px; }
+
+    .lnd-tl-step--active .lnd-tl-dot { background: #ff7a00; border-color: #ff7a00; color: #fff; }
+    .lnd-tl-step--active .lnd-tl-label { color: #ff7a00; }
+    .lnd-tl-step--done .lnd-tl-dot   { background: #16a34a; border-color: #16a34a; color: #fff; }
+    .lnd-tl-step--done .lnd-tl-label { color: #16a34a; }
+    .lnd-tl-step--wait .lnd-tl-dot   { background: #f3f4f6; color: #d1d5db; border-color: #e5e7eb; }
+    .lnd-tl-step--skip .lnd-tl-dot   { background: #fee2e2; border-color: #fca5a5; color: #ef4444; }
+
+    /* Forward to HR button */
+    .lnd-btn--forward { background: #2563eb; color: #fff; }
+    .lnd-btn--forward:hover:not(:disabled) { background: #1d4ed8; }
+</style>

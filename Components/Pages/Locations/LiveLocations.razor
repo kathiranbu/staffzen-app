@@ -1,0 +1,770 @@
+@page "/live-locations"
+@rendermode RenderMode.InteractiveServer
+@inject SessionService SessionService
+@inject AttendanceService AttendanceService
+@inject LocationService LocationService
+@inject IJSRuntime JS
+@implements IDisposable
+
+<BasePage Title="Live Locations">
+
+    <div class="ll-page">
+
+        @* ── Google Map fills the left area ── *@
+        <div class="ll-map-container">
+            <div id="ll-map" class="ll-map"></div>
+
+            @* Map / Satellite toggle (bottom-left, matching Jibble) *@
+            <div class="ll-map-style-toggle">
+                <button class="ll-ms-btn @(!llSatellite ? "ll-ms-btn--active" : "")" @onclick="() => SetSatellite(false)">Map</button>
+                <button class="ll-ms-btn @(llSatellite ? "ll-ms-btn--active" : "")" @onclick="() => SetSatellite(true)">Satellite</button>
+            </div>
+
+            @* Show geofences toggle (bottom-right of map, left of panel) *@
+            <div class="ll-geofences-toggle">
+                <label class="ll-gf-label">
+                    <input type="checkbox" class="ll-gf-cb"
+                           checked="@showGeofences"
+                           @onchange="ToggleGeofences" />
+                    Show geofences
+                </label>
+            </div>
+        </div>
+
+        @* ═══════════════════════════════════════════
+           RIGHT PANEL — three states:
+           1. Member list (default)
+           2. Filters sidebar
+           3. Routes detail
+        ═══════════════════════════════════════════ *@
+
+        @if (showRoutes && routesMember != null)
+        {
+            @* ── STATE 3: Routes view ── *@
+            <div class="ll-right-panel">
+                <div class="ll-routes-header">
+                    <button class="ll-routes-back" @onclick="CloseRoutes">
+                        <i class="bi bi-arrow-left"></i>
+                    </button>
+                    <span class="ll-routes-title">Routes</span>
+                </div>
+
+                <div class="ll-routes-scroll">
+                    <div class="ll-routes-member-block">
+                        <div class="ll-routes-av">@InitialOf(routesMember.Name)</div>
+                        <div class="ll-routes-member-info">
+                            <div class="ll-routes-name">@routesMember.Name</div>
+                        </div>
+                    </div>
+
+                    <div class="ll-routes-entry-row">
+                        <i class="bi bi-clock ll-routes-clock"></i>
+                        <span>@routesMember.LastSeen.ToString("MMM d, yyyy, h:mm tt") (@GetTimeAgo(routesMember.LastSeen))</span>
+                    </div>
+
+                    <div class="ll-routes-tags-row">
+                        @if (!string.IsNullOrEmpty(routesMember.Activity))
+                        { <span class="ll-tag ll-tag--act">@routesMember.Activity</span> }
+                        @if (!string.IsNullOrEmpty(routesMember.Project))
+                        { <span class="ll-tag ll-tag--proj">@routesMember.Project</span> }
+                    </div>
+
+                    <div class="ll-routes-section-title">Entries timeline</div>
+
+                    @if (routePoints.Any())
+                    {
+                        @foreach (var pt in routePoints)
+                        {
+                            <div class="ll-routes-timeline-item">
+                                <i class="bi bi-geo-alt-fill ll-timeline-dot"></i>
+                                <span class="ll-timeline-time">@pt.RecordedAt.ToLocalTime().ToString("h:mm tt")</span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="ll-routes-info-box">No route points recorded for today.</div>
+                    }
+
+                    <div class="ll-routes-info-box">
+                        This sidebar shows entry details and a timeline of recorded locations.
+                    </div>
+                </div>
+            </div>
+        }
+        else if (showFilters)
+        {
+            @* ── STATE 2: Filters panel ── *@
+            <div class="ll-right-panel ll-filters-panel">
+                <div class="ll-filters-header">
+                    <span class="ll-filters-title">Filters</span>
+                    <button class="ll-panel-x-btn" @onclick="() => showFilters = false">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+
+                <div class="ll-filters-body">
+                    @foreach (var (label, key) in new[]{
+                        ("Members","members"), ("Groups","groups"),
+                        ("Schedules","schedules"), ("Locations","locations"),
+                        ("Member codes","codes") })
+                    {
+                        var k = key; var lbl = label;
+                        bool open = filterExpandedKey == k;
+                        <div class="ll-filter-section">
+                            <button class="ll-filter-section-btn"
+                                    @onclick="() => filterExpandedKey = open ? string.Empty : k">
+                                <span>@lbl</span>
+                                <i class="bi bi-chevron-@(open ? "up" : "down")"></i>
+                            </button>
+
+                            @if (open && k == "members")
+                            {
+                                <div class="ll-filter-list">
+                                    @foreach (var m in clockedInMembers)
+                                    {
+                                        var mem = m;
+                                        bool sel = filterSelectedMemberIds.Contains(mem.Id);
+                                        <div class="ll-filter-item @(sel ? "ll-filter-item--sel" : "")"
+                                             @onclick="() => { if(sel) filterSelectedMemberIds.Remove(mem.Id); else filterSelectedMemberIds.Add(mem.Id); }">
+                                            <div class="ll-fi-av">@InitialOf(mem.Name)</div>
+                                            <span>@mem.Name</span>
+                                            @if (sel) { <i class="bi bi-check ll-fi-check"></i> }
+                                        </div>
+                                    }
+                                    <button class="ll-filter-clear" @onclick="() => filterSelectedMemberIds.Clear()">Clear selection</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="ll-filters-footer">
+                    <button class="ll-filters-clear-all" @onclick="ClearAllFilters">Clear All</button>
+                    <button class="ll-filters-cancel" @onclick="() => showFilters = false">Cancel</button>
+                    <button class="ll-filters-apply" @onclick="() => showFilters = false">Apply</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            @* ── STATE 1: Default member list ── *@
+            <div class="ll-right-panel">
+
+                <div class="ll-panel-header">
+                    <div class="ll-panel-header-top">
+                        <div>
+                            <span class="ll-panel-count-text">Clocked in members: </span>
+                            <span class="ll-panel-count">@FilteredMembers.Count</span>
+                        </div>
+                        <div class="ll-panel-header-actions">
+                            @if (hasNewData)
+                            {
+                                <button class="ll-refresh-btn" @onclick="Refresh">
+                                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                                </button>
+                            }
+                            <button class="ll-filters-btn" @onclick="() => showFilters = true">
+                                <i class="bi bi-sliders"></i> Filters
+                            </button>
+                        </div>
+                    </div>
+                    @if (lastUpdated.HasValue)
+                    {
+                        <div class="ll-panel-updated">Updated @GetTimeAgo(lastUpdated.Value)</div>
+                    }
+                </div>
+
+                <div class="ll-panel-search-wrap">
+                    <i class="bi bi-search ll-panel-search-icon"></i>
+                    <input class="ll-panel-search" placeholder="Search members..."
+                           @bind="memberSearchQuery" @bind:event="oninput" />
+                </div>
+
+                @if (isLoading)
+                {
+                    <div class="ll-empty">
+                        <div class="ll-spinner"></div>
+                        <p>Loading locations...</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="ll-member-list">
+                        @if (!FilteredMembers.Any())
+                        {
+                            <div class="ll-empty">
+                                <i class="bi bi-geo-alt" style="font-size:36px;color:#d1d5db;"></i>
+                                <p>No members currently clocked in with live location tracking.</p>
+                            </div>
+                        }
+                        @foreach (var m in FilteredMembers)
+                        {
+                            var mem = m;
+                            bool isSel = selectedMember?.Id == mem.Id;
+                            <div class="ll-member-item @(isSel ? "ll-member-item--sel" : "")"
+                                 @onclick="() => SelectMember(mem)">
+                                <div class="ll-member-av-wrap">
+                                    <div class="ll-member-av">@InitialOf(mem.Name)</div>
+                                    <div class="ll-member-dot @(mem.HasLocation ? "ll-member-dot--online" : "ll-member-dot--no-loc")"></div>
+                                </div>
+                                <div class="ll-member-info">
+                                    <div class="ll-member-name">@mem.Name</div>
+                                    <div class="ll-member-tags">
+                                        @if (!string.IsNullOrEmpty(mem.Activity))
+                                        { <span class="ll-tag ll-tag--act">@mem.Activity</span> }
+                                        @if (!string.IsNullOrEmpty(mem.Project))
+                                        { <span class="ll-tag ll-tag--proj">@mem.Project</span> }
+                                        @if (!mem.HasLocation)
+                                        { <span class="ll-tag ll-tag--noloc">No GPS yet</span> }
+                                    </div>
+                                </div>
+                                <div class="ll-member-right">
+                                    <div class="ll-member-time">@(mem.LastSeen.Year > 2000 ? mem.LastSeen.ToString("h:mm") : "—")</div>
+                                    <div class="ll-member-time-ago">@(mem.LastSeen.Year > 2000 ? GetTimeAgo(mem.LastSeen) : "")</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+            </div>
+        }
+
+        @* ── Member detail card (shown when a map pin is clicked) ── *@
+        @if (mapClickedMember != null)
+        {
+            <div class="ll-map-card">
+                <button class="ll-map-card-close" @onclick="() => mapClickedMember = null"><i class="bi bi-x"></i></button>
+                <div class="ll-map-card-av">@InitialOf(mapClickedMember.Name)</div>
+                <div class="ll-map-card-info">
+                    <div class="ll-map-card-name">@mapClickedMember.Name</div>
+                    <div class="ll-map-card-time">
+                        <i class="bi bi-clock"></i>
+                        @mapClickedMember.LastSeen.ToString("MMM d, yyyy, h:mm tt") (@GetTimeAgo(mapClickedMember.LastSeen))
+                    </div>
+                    <div class="ll-map-card-tags">
+                        @if (!string.IsNullOrEmpty(mapClickedMember.Activity))
+                        { <span class="ll-tag ll-tag--act">@mapClickedMember.Activity</span> }
+                        @if (!string.IsNullOrEmpty(mapClickedMember.Project))
+                        { <span class="ll-tag ll-tag--proj">@mapClickedMember.Project</span> }
+                    </div>
+                </div>
+                <button class="ll-map-card-routes-btn"
+                        @onclick="() => OpenRoutes(mapClickedMember)">
+                    View routes
+                </button>
+            </div>
+        }
+
+    </div>
+
+</BasePage>
+
+@code {
+    // ── Inner model ───────────────────────────────────────────────
+    private class LiveMember
+    {
+        public int      Id          { get; set; }
+        public string   Name        { get; set; } = "";
+        public string   Activity    { get; set; } = "";
+        public string   Project     { get; set; } = "";
+        public DateTime LastSeen    { get; set; } = default;
+        public double   Lat         { get; set; }
+        public double   Lng         { get; set; }
+        public bool     HasLocation { get; set; }
+    }
+
+    // ── State ─────────────────────────────────────────────────────
+    private bool   llSatellite       = false;
+    private bool   showGeofences     = false;
+    private bool   showFilters       = false;
+    private bool   showRoutes        = false;
+    private bool   hasNewData        = false;
+    private bool   isLoading         = true;
+    private string memberSearchQuery = "";
+    private string filterExpandedKey = "";
+    private DateTime? lastUpdated;
+    private HashSet<int> filterSelectedMemberIds = new();
+
+    private LiveMember?       selectedMember   = null;
+    private LiveMember?       routesMember     = null;
+    private LiveMember?       mapClickedMember = null;
+    private List<RoutePointDto> routePoints    = new();
+
+    private List<LiveMember> clockedInMembers  = new();
+
+    private List<LiveMember> FilteredMembers
+    {
+        get
+        {
+            var list = clockedInMembers.AsEnumerable();
+            if (filterSelectedMemberIds.Any())
+                list = list.Where(m => filterSelectedMemberIds.Contains(m.Id));
+            if (!string.IsNullOrEmpty(memberSearchQuery))
+                list = list.Where(m => m.Name.Contains(memberSearchQuery, StringComparison.OrdinalIgnoreCase));
+            return list.ToList();
+        }
+    }
+
+    // ── Polling timer & JS ref ─────────────────────────────────────
+    private DotNetObjectReference<LiveLocations>? _dotNetRef;
+    private System.Threading.Timer? _pollTimer;
+    private bool _mapInitialized = false;
+
+    // ── Lifecycle ─────────────────────────────────────────────────
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+
+            // Load real data from API
+            await LoadLiveMembers();
+            isLoading   = false;
+            lastUpdated = DateTime.Now;
+            StateHasChanged();
+
+            // Initialise Google Map with real member locations
+            await InitMap();
+            _mapInitialized = true;
+
+            // Also load real geofences for the "Show geofences" toggle
+            await LoadGeofenceData();
+
+            // Poll every 30 seconds — sets hasNewData = true so the Refresh button appears
+            _pollTimer = new System.Threading.Timer(async _ =>
+            {
+                hasNewData = true;
+                await InvokeAsync(StateHasChanged);
+            }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        }
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+        _pollTimer?.Dispose();
+    }
+
+    // ── Data loading ──────────────────────────────────────────────
+    private async Task LoadLiveMembers()
+    {
+        try
+        {
+            var dtos = await LocationService.GetCurrentLocationsAsync();
+            clockedInMembers = dtos.Select(d => new LiveMember
+            {
+                Id          = d.EmployeeId,
+                Name        = d.FullName,
+                HasLocation = d.HasLocation,
+                Lat         = d.Latitude,
+                Lng         = d.Longitude,
+                LastSeen    = d.RecordedAt.HasValue
+                                ? d.RecordedAt.Value.ToLocalTime()
+                                : default,
+            }).ToList();
+        }
+        catch { }
+    }
+
+    private List<object> _geofenceData = new();
+
+    private async Task LoadGeofenceData()
+    {
+        try
+        {
+            var locs = await LocationService.GetAllAsync();
+            _geofenceData = locs
+                .Where(l => l.RadiusMetres >= 300)
+                .Select(l => (object)new { lat = l.Latitude, lng = l.Longitude, radius = l.RadiusMetres })
+                .ToList();
+        }
+        catch { }
+    }
+
+    // ── Map init ──────────────────────────────────────────────────
+    private async Task InitMap()
+    {
+        try
+        {
+            var memberData = clockedInMembers
+                .Where(m => m.HasLocation)
+                .Select(m => new { id = m.Id, name = m.Name, lat = m.Lat, lng = m.Lng })
+                .ToArray();
+
+            await JS.InvokeVoidAsync("llMap.init", "ll-map", memberData, _dotNetRef);
+        }
+        catch { }
+    }
+
+    private async Task UpdateMapMarkers()
+    {
+        if (!_mapInitialized) return;
+        try
+        {
+            var memberData = clockedInMembers
+                .Where(m => m.HasLocation)
+                .Select(m => new { id = m.Id, name = m.Name, lat = m.Lat, lng = m.Lng })
+                .ToArray();
+            await JS.InvokeVoidAsync("llMap.updateMarkers", memberData);
+        }
+        catch { }
+    }
+
+    // ── Called by JS when a map pin is clicked ────────────────────
+    [JSInvokable]
+    public async Task OnMapMemberClicked(int memberId)
+    {
+        mapClickedMember = clockedInMembers.FirstOrDefault(m => m.Id == memberId);
+        selectedMember   = mapClickedMember;
+        try { await JS.InvokeVoidAsync("llMap.selectMember", memberId); } catch { }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // ── Interactions ──────────────────────────────────────────────
+    private async Task SelectMember(LiveMember m)
+    {
+        selectedMember   = m;
+        mapClickedMember = null;
+        showRoutes       = false;
+        if (m.HasLocation)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("llMap.flyTo", m.Lat, m.Lng);
+                await JS.InvokeVoidAsync("llMap.selectMember", m.Id);
+            }
+            catch { }
+        }
+    }
+
+    private async Task OpenRoutes(LiveMember m)
+    {
+        routesMember     = m;
+        mapClickedMember = null;
+        showRoutes       = true;
+
+        // Fetch real route points from API
+        routePoints = await LocationService.GetRoutesAsync(m.Id, DateTime.Today);
+
+        // Draw polyline on map
+        if (routePoints.Any())
+        {
+            try
+            {
+                var pts = routePoints.Select(p => new { lat = p.Lat, lng = p.Lng }).ToArray();
+                await JS.InvokeVoidAsync("llMap.drawRoute", pts);
+            }
+            catch { }
+        }
+    }
+
+    private void CloseRoutes()
+    {
+        showRoutes   = false;
+        routesMember = null;
+        routePoints  = new();
+        _ = JS.InvokeVoidAsync("llMap.clearRoute");
+    }
+
+    private async Task Refresh()
+    {
+        isLoading = true; StateHasChanged();
+        await LoadLiveMembers();
+        isLoading   = false;
+        hasNewData  = false;
+        lastUpdated = DateTime.Now;
+        await UpdateMapMarkers();
+        StateHasChanged();
+    }
+
+    private async Task SetSatellite(bool sat)
+    {
+        llSatellite = sat;
+        try { await JS.InvokeVoidAsync("llMap.setStyle", sat); } catch { }
+    }
+
+    private async Task ToggleGeofences(ChangeEventArgs e)
+    {
+        showGeofences = (bool)(e.Value ?? false);
+        try
+        {
+            if (showGeofences)
+                await JS.InvokeVoidAsync("llMap.showGeofences", _geofenceData.ToArray());
+            else
+                await JS.InvokeVoidAsync("llMap.hideGeofences");
+        }
+        catch { }
+    }
+
+    private void ClearAllFilters()
+    {
+        filterSelectedMemberIds.Clear();
+        filterExpandedKey = "";
+    }
+
+    // ── Utilities ─────────────────────────────────────────────────
+    private static string InitialOf(string name) =>
+        !string.IsNullOrEmpty(name) ? name[0].ToString().ToUpper() : "?";
+
+    private string GetTimeAgo(DateTime dt)
+    {
+        if (dt == default) return "";
+        var d = DateTime.Now - dt;
+        if (d.TotalSeconds < 10)  return "just now";
+        if (d.TotalSeconds < 60)  return $"{(int)d.TotalSeconds}s ago";
+        if (d.TotalMinutes < 60)  return $"{(int)d.TotalMinutes} minutes ago";
+        if (d.TotalHours   < 24)  return $"{(int)d.TotalHours} hours ago";
+        return dt.ToString("MMM d");
+    }
+}
+
+<style>
+    /* ═══════════════════════════════════════════════════════════
+       LIVE LOCATIONS PAGE  (ll-)
+    ═══════════════════════════════════════════════════════════ */
+
+    .ll-page {
+        display: flex;
+        height: 100%;
+        overflow: hidden;
+        position: relative;
+        background: #f0f0f0;
+    }
+
+    /* ── Map ── */
+    .ll-map-container {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+    }
+    .ll-map {
+        width: 100%;
+        height: 100%;
+        background: #e8e8e4;
+    }
+
+    /* Map/Satellite toggle */
+    .ll-map-style-toggle {
+        position: absolute; bottom: 28px; left: 14px; z-index: 500;
+        display: flex;
+        border: 1px solid rgba(0,0,0,.2);
+        border-radius: 4px;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(0,0,0,.15);
+    }
+    .ll-ms-btn {
+        padding: 6px 14px; border: none; background: transparent;
+        font-size: 12px; font-weight: 600; color: #374151; cursor: pointer; font-family: inherit;
+    }
+    .ll-ms-btn + .ll-ms-btn  { border-left: 1px solid rgba(0,0,0,.12); }
+    .ll-ms-btn--active        { background: #e8e8e8; }
+
+    /* Geofences toggle */
+    .ll-geofences-toggle {
+        position: absolute; bottom: 28px; right: 376px; z-index: 500;
+        background: #fff; border-radius: 4px; padding: 6px 12px;
+        border: 1px solid rgba(0,0,0,.2);
+        box-shadow: 0 2px 6px rgba(0,0,0,.15);
+    }
+    .ll-gf-label {
+        display: flex; align-items: center; gap: 8px; font-size: 12px;
+        font-weight: 600; color: #374151; cursor: pointer; white-space: nowrap;
+    }
+    .ll-gf-cb { accent-color: #ff7a00; width: 14px; height: 14px; cursor: pointer; }
+
+    /* ── Map detail card ── */
+    .ll-map-card {
+        position: absolute; bottom: 80px; left: 50%;
+        transform: translateX(-50%);
+        background: #fff; border-radius: 14px;
+        box-shadow: 0 8px 32px rgba(0,0,0,.2);
+        padding: 18px 20px;
+        min-width: 300px; max-width: 380px;
+        z-index: 600;
+        animation: ll-card-in .18s ease;
+    }
+    @@keyframes ll-card-in {
+        from { transform: translateX(-50%) translateY(10px); opacity: 0; }
+        to   { transform: translateX(-50%) translateY(0);    opacity: 1; }
+    }
+    .ll-map-card-close {
+        position: absolute; top: 10px; right: 10px; width: 24px; height: 24px;
+        border: none; background: transparent; cursor: pointer; font-size: 14px; color: #9ca3af;
+        display: flex; align-items: center; justify-content: center; border-radius: 4px;
+    }
+    .ll-map-card-close:hover { color: #374151; }
+    .ll-map-card-av {
+        width: 44px; height: 44px; border-radius: 50%;
+        background: linear-gradient(135deg,#ff7a00,#ff9a3c); color: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px; font-weight: 700; margin-bottom: 10px;
+    }
+    .ll-map-card-info { margin-bottom: 12px; }
+    .ll-map-card-name { font-size: 16px; font-weight: 700; color: #111827; margin-bottom: 5px; }
+    .ll-map-card-time {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 12px; color: #6b7280; margin-bottom: 8px;
+    }
+    .ll-map-card-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ll-map-card-routes-btn {
+        width: 100%; padding: 10px; border: none; border-radius: 8px;
+        background: #ff7a00; color: #fff; font-size: 14px; font-weight: 700;
+        cursor: pointer; font-family: inherit; transition: background .15s; margin-top: 4px;
+    }
+    .ll-map-card-routes-btn:hover { background: #e66c00; }
+
+    /* ── Right panel ── */
+    .ll-right-panel {
+        width: 360px;
+        flex-shrink: 0;
+        background: #fff;
+        border-left: 1px solid #e8eaed;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .ll-panel-header {
+        padding: 14px 18px 10px;
+        border-bottom: 1px solid #f3f4f6;
+        flex-shrink: 0;
+    }
+    .ll-panel-header-top {
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .ll-panel-count-text { font-size: 13px; color: #374151; }
+    .ll-panel-count      { font-size: 14px; font-weight: 800; color: #111827; }
+    .ll-panel-updated    { font-size: 11px; color: #9ca3af; margin-top: 3px; }
+    .ll-panel-header-actions { display: flex; align-items: center; gap: 8px; }
+
+    .ll-refresh-btn {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 5px 12px; border: 1.5px solid #ff7a00; border-radius: 20px;
+        background: #fff; font-size: 12px; font-weight: 700; color: #ff7a00;
+        cursor: pointer; font-family: inherit; transition: background .15s; white-space: nowrap;
+    }
+    .ll-refresh-btn:hover { background: #fff7ed; }
+
+    .ll-filters-btn {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 5px 12px; border: 1.5px solid #e8eaed; border-radius: 6px;
+        background: #fff; font-size: 12px; font-weight: 600; color: #374151;
+        cursor: pointer; font-family: inherit; transition: border-color .15s; white-space: nowrap;
+    }
+    .ll-filters-btn:hover { border-color: #ff7a00; color: #ff7a00; }
+
+    .ll-panel-search-wrap {
+        display: flex; align-items: center; gap: 8px;
+        padding: 10px 18px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0;
+    }
+    .ll-panel-search-icon { font-size: 13px; color: #9ca3af; }
+    .ll-panel-search {
+        flex: 1; border: none; outline: none; font-size: 13px; color: #374151;
+        font-family: inherit; background: transparent;
+    }
+    .ll-panel-search::placeholder { color: #9ca3af; }
+
+    .ll-member-list { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+    .ll-member-item {
+        display: flex; align-items: center; gap: 12px;
+        padding: 13px 18px; border-bottom: 1px solid #f3f4f6; cursor: pointer;
+        transition: background .12s;
+    }
+    .ll-member-item:hover    { background: #fafafa; }
+    .ll-member-item--sel     { background: #fff7ed; border-left: 3px solid #ff7a00; }
+    .ll-member-av-wrap       { position: relative; flex-shrink: 0; }
+    .ll-member-av {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: linear-gradient(135deg,#ff7a00,#ff9a3c); color: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 15px; font-weight: 700;
+    }
+    .ll-member-dot {
+        position: absolute; bottom: 1px; right: 1px;
+        width: 11px; height: 11px; border-radius: 50%; border: 2px solid #fff;
+    }
+    .ll-member-dot--online  { background: #22c55e; }
+    .ll-member-dot--no-loc  { background: #9ca3af; }
+    .ll-member-info         { flex: 1; min-width: 0; }
+    .ll-member-name         { font-size: 14px; font-weight: 700; color: #111827; }
+    .ll-member-tags         { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+    .ll-member-right        { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; }
+    .ll-member-time         { font-size: 13px; font-weight: 600; color: #374151; }
+    .ll-member-time-ago     { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+
+    .ll-tag                 { padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .ll-tag--act            { background: #fef3c7; color: #92400e; }
+    .ll-tag--proj           { background: #f3f4f6; color: #374151; }
+    .ll-tag--noloc          { background: #fee2e2; color: #991b1b; }
+
+    .ll-empty {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        padding: 60px 24px; gap: 10px; text-align: center;
+        font-size: 13px; color: #9ca3af; line-height: 1.6;
+    }
+
+    /* Loading spinner */
+    .ll-spinner {
+        width: 32px; height: 32px; border: 3px solid #f3f4f6;
+        border-top-color: #ff7a00; border-radius: 50%;
+        animation: ll-spin .7s linear infinite;
+    }
+    @@keyframes ll-spin { to { transform: rotate(360deg); } }
+
+    /* ── Routes view ── */
+    .ll-routes-header {
+        display: flex; align-items: center; gap: 12px;
+        padding: 16px 18px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0;
+    }
+    .ll-routes-back {
+        width: 32px; height: 32px; border: 1.5px solid #e8eaed; border-radius: 8px;
+        background: #fff; cursor: pointer; font-size: 13px; color: #374151;
+        display: flex; align-items: center; justify-content: center; transition: border-color .15s; flex-shrink: 0;
+    }
+    .ll-routes-back:hover  { border-color: #ff7a00; color: #ff7a00; }
+    .ll-routes-title       { font-size: 16px; font-weight: 700; color: #111827; }
+    .ll-routes-scroll      { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+    .ll-routes-member-block {
+        display: flex; align-items: center; gap: 12px; padding: 16px 18px;
+        border-bottom: 1px solid #f3f4f6;
+    }
+    .ll-routes-av {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: linear-gradient(135deg,#ff7a00,#ff9a3c); color: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 16px; font-weight: 700; flex-shrink: 0;
+    }
+    .ll-routes-name        { font-size: 15px; font-weight: 700; color: #111827; }
+    .ll-routes-entry-row   { display: flex; align-items: center; gap: 8px; padding: 12px 18px 4px; font-size: 12px; color: #6b7280; }
+    .ll-routes-tags-row    { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 18px 12px; }
+    .ll-routes-section-title { font-size: 13px; font-weight: 700; color: #111827; padding: 14px 18px 8px; border-top: 1px solid #f3f4f6; }
+    .ll-routes-timeline-item { display: flex; align-items: center; gap: 10px; padding: 8px 18px; font-size: 13px; color: #374151; }
+    .ll-timeline-dot       { color: #ff7a00; font-size: 12px; }
+    .ll-timeline-time      { font-weight: 600; }
+    .ll-routes-info-box    { margin: 16px 18px; padding: 12px 14px; background: #f9fafb; border-radius: 8px; font-size: 12px; color: #6b7280; line-height: 1.55; }
+
+    /* ── Filters panel ── */
+    .ll-filters-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0; }
+    .ll-filters-title  { font-size: 16px; font-weight: 700; color: #111827; }
+    .ll-panel-x-btn    { width: 28px; height: 28px; border: none; background: transparent; cursor: pointer; font-size: 14px; color: #6b7280; border-radius: 5px; display: flex; align-items: center; justify-content: center; }
+    .ll-panel-x-btn:hover { color: #111827; }
+    .ll-filters-body   { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+    .ll-filter-section { border-bottom: 1px solid #f3f4f6; }
+    .ll-filter-section-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border: none; background: transparent; cursor: pointer; font-size: 14px; font-weight: 600; color: #374151; font-family: inherit; }
+    .ll-filter-section-btn:hover { background: #fafafa; }
+    .ll-filter-list    { padding: 4px 0 8px; }
+    .ll-filter-item    { display: flex; align-items: center; gap: 10px; padding: 10px 18px; font-size: 13px; color: #374151; cursor: pointer; }
+    .ll-filter-item:hover { background: #fafafa; }
+    .ll-filter-item--sel { background: #f0fdf4; }
+    .ll-fi-av          { width: 30px; height: 30px; border-radius: 50%; background: #e5e7eb; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #374151; flex-shrink: 0; }
+    .ll-fi-check       { color: #16a34a; margin-left: auto; font-size: 14px; }
+    .ll-filter-clear   { display: block; width: 100%; text-align: left; padding: 8px 18px; font-size: 12px; color: #ff7a00; cursor: pointer; background: transparent; border: none; font-family: inherit; }
+    .ll-filters-footer { display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-top: 1px solid #f3f4f6; flex-shrink: 0; }
+    .ll-filters-clear-all { padding: 9px 14px; border: none; background: transparent; font-size: 13px; font-weight: 600; color: #6b7280; cursor: pointer; font-family: inherit; }
+    .ll-filters-cancel { padding: 9px 16px; border: 1.5px solid #e8eaed; border-radius: 7px; background: #fff; font-size: 13px; font-weight: 600; color: #374151; cursor: pointer; font-family: inherit; }
+    .ll-filters-apply  { flex: 1; padding: 9px; border: none; border-radius: 7px; background: #ff7a00; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .ll-filters-apply:hover { background: #e66c00; }
+</style>

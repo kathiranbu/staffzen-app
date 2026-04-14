@@ -1,0 +1,450 @@
+@page "/settings/groups"
+@using System.Net.Http.Json
+@inject IHttpClientFactory ClientFactory
+
+<BasePage Title="Groups">
+    
+    <div class="groups-page">
+        
+        <!-- Tabs Section -->
+        <div class="groups-tabs">
+            <div class="tab" @onclick='() => NavigateToPage("/settings/people")'>Members</div>
+            <div class="tab active">Groups</div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="groups-toolbar">
+            <div class="toolbar-left">
+                <!-- Search -->
+                <div class="search-box">
+                    <i class="bi bi-search"></i>
+                    <input type="text" placeholder="Search groups..." @bind="searchText" @bind:event="oninput" />
+                </div>
+            </div>
+
+            <div class="toolbar-right">
+                <button class="add-group-btn" @onclick="OpenAddGroupModal">Add Group</button>
+                <button class="remove-groups-btn" @onclick="RemoveSelectedGroups" disabled="@(!HasSelectedGroups)">Remove Groups</button>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        @if (isLoading)
+        {
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading groups...</p>
+            </div>
+        }
+        else if (errorMessage != null)
+        {
+            <div class="error-state">
+                <i class="bi bi-exclamation-circle"></i>
+                <p>@errorMessage</p>
+                <button class="retry-btn" @onclick="LoadGroups">Retry</button>
+            </div>
+        }
+        else
+        {
+            <!-- Groups Table -->
+            <div class="groups-table-container">
+                <table class="groups-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" class="checkbox" @onchange="ToggleSelectAll" checked="@allSelected" />
+                            </th>
+                            <th style="width: 300px;">@FilteredGroups.Count group@(FilteredGroups.Count != 1 ? "s" : "")</th>
+                            <th>Description</th>
+                            <th style="width: 150px;">Members</th>
+                            <th style="width: 50px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (FilteredGroups.Any())
+                        {
+                            @foreach (var group in FilteredGroups)
+                            {
+                                <tr>
+                                    <td style="width: 40px;">
+                                        <input type="checkbox" class="checkbox" 
+                                               checked="@selectedGroups.Contains(group)" 
+                                               @onchange="@(() => ToggleGroupSelection(group))" />
+                                    </td>
+                                    <td style="width: 300px;">
+                                        <div class="group-info">
+                                            <div class="group-icon">
+                                                <i class="bi bi-people-fill"></i>
+                                            </div>
+                                            <div class="group-details">
+                                                <div class="group-name">@group.Name</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="group-description">@group.Description</td>
+                                    <td class="group-member-count">@group.MemberCount members</td>
+                                    <td style="width: 50px;">
+                                        <button class="action-btn" @onclick="() => EditGroup(group)">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                        else
+                        {
+                            <tr>
+                                <td colspan="5" class="no-groups">
+                                    @if (string.IsNullOrWhiteSpace(searchText))
+                                    {
+                                        <p>No groups found. Click "Add Group" to create your first group.</p>
+                                    }
+                                    else
+                                    {
+                                        <p>No groups match your search.</p>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+    </div>
+
+    <!-- Add/Edit Group Modal -->
+    @if (showGroupModal)
+    {
+        <div class="modal-overlay" @onclick="CloseGroupModal">
+            <div class="modal-content" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>@(editingGroup == null ? "Add New Group" : "Edit Group")</h3>
+                    <button class="close-btn" @onclick="CloseGroupModal">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Group Name *</label>
+                        <input type="text" class="form-input" @bind="groupName" placeholder="e.g., Engineering, Sales, Marketing" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea class="form-textarea" @bind="groupDescription" placeholder="Brief description of the group" rows="3"></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="cancel-btn" @onclick="CloseGroupModal">Cancel</button>
+                    <button class="save-btn" @onclick="SaveGroup" disabled="@string.IsNullOrWhiteSpace(groupName)">
+                        @(editingGroup == null ? "Create Group" : "Save Changes")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Success/Error Notifications -->
+    @if (showSuccessNotification)
+    {
+        <div class="notification success-notification">
+            <i class="bi bi-check-circle-fill"></i>
+            <span>@successMessage</span>
+            <button @onclick="HideSuccessNotification">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
+    }
+
+    @if (showErrorNotification)
+    {
+        <div class="notification error-notification">
+            <i class="bi bi-exclamation-circle-fill"></i>
+            <span>@errorNotificationMessage</span>
+            <button @onclick="HideErrorNotification">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
+    }
+
+</BasePage>
+
+@code {
+    [Inject] NavigationManager NavigationManager { get; set; } = default!;
+
+    private string searchText = "";
+    private bool showGroupModal = false;
+    private bool isLoading = true;
+    private string? errorMessage = null;
+    private bool showSuccessNotification = false;
+    private string successMessage = "";
+    private bool showErrorNotification = false;
+    private string errorNotificationMessage = "";
+    private HashSet<GroupVm> selectedGroups = new HashSet<GroupVm>();
+    private bool allSelected = false;
+
+    private List<GroupVm> groups = new List<GroupVm>();
+    private GroupVm? editingGroup = null;
+    private string groupName = "";
+    private string groupDescription = "";
+
+    private bool HasSelectedGroups => selectedGroups.Any();
+
+    private List<GroupVm> FilteredGroups
+    {
+        get
+        {
+            var filtered = groups.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                var search = searchText.ToLower();
+                filtered = filtered.Where(g =>
+                    g.Name.ToLower().Contains(search) ||
+                    (g.Description?.ToLower().Contains(search) ?? false)
+                );
+            }
+
+            return filtered.ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGroups();
+    }
+
+    private void NavigateToPage(string url)
+    {
+        NavigationManager.NavigateTo(url);
+    }
+
+    private async Task LoadGroups()
+    {
+        isLoading = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var response = await client.GetAsync("api/groups");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var data = await response.Content.ReadFromJsonAsync<List<GroupVm>>() ?? new List<GroupVm>();
+                groups = data;
+            }
+            else
+            {
+                errorMessage = "Failed to load groups. Please try again.";
+            }
+        }
+        catch (HttpRequestException)
+        {
+            errorMessage = "Unable to connect to server. Please check your connection.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "An error occurred while loading groups.";
+            Console.WriteLine($"Error loading groups: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OpenAddGroupModal()
+    {
+        editingGroup = null;
+        groupName = "";
+        groupDescription = "";
+        showGroupModal = true;
+    }
+
+    private void EditGroup(GroupVm group)
+    {
+        editingGroup = group;
+        groupName = group.Name;
+        groupDescription = group.Description ?? "";
+        showGroupModal = true;
+    }
+
+    private void CloseGroupModal()
+    {
+        showGroupModal = false;
+        editingGroup = null;
+        groupName = "";
+        groupDescription = "";
+    }
+
+    private async Task SaveGroup()
+    {
+        if (string.IsNullOrWhiteSpace(groupName))
+            return;
+
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+
+            if (editingGroup == null)
+            {
+                // POST - create new group
+                var createDto = new { name = groupName.Trim(), description = groupDescription.Trim() };
+                var response = await client.PostAsJsonAsync("api/groups", createDto);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    successMessage = $"Group '{groupName}' created successfully!";
+                    await LoadGroups();
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    errorNotificationMessage = error.Contains("already exists")
+                        ? $"A group named '{groupName}' already exists."
+                        : "Failed to create group. Please try again.";
+                    showErrorNotification = true;
+                    return;
+                }
+            }
+            else
+            {
+                // PUT - update existing group
+                var updateDto = new { name = groupName.Trim(), description = groupDescription.Trim() };
+                var response = await client.PutAsJsonAsync($"api/groups/{editingGroup.Id}", updateDto);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    successMessage = $"Group '{groupName}' updated successfully!";
+                    await LoadGroups();
+                }
+                else
+                {
+                    errorNotificationMessage = "Failed to update group. Please try again.";
+                    showErrorNotification = true;
+                    return;
+                }
+            }
+
+            showSuccessNotification = true;
+            CloseGroupModal();
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(3000);
+                showSuccessNotification = false;
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            errorNotificationMessage = "Error saving group. Please try again.";
+            showErrorNotification = true;
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task RemoveSelectedGroups()
+    {
+        if (!selectedGroups.Any())
+            return;
+
+        var groupCount = selectedGroups.Count;
+
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            int successCount = 0;
+            int errorCount = 0;
+
+            foreach (var group in selectedGroups.ToList())
+            {
+                var response = await client.DeleteAsync($"api/groups/{group.Id}");
+                if (response.IsSuccessStatusCode)
+                    successCount++;
+                else
+                    errorCount++;
+            }
+
+            selectedGroups.Clear();
+            allSelected = false;
+
+            await LoadGroups();
+
+            successMessage = $"Successfully removed {successCount} group(s).";
+            if (errorCount > 0) successMessage += $" {errorCount} failed.";
+            showSuccessNotification = true;
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(3000);
+                showSuccessNotification = false;
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            errorNotificationMessage = "Error removing groups. Please try again.";
+            showErrorNotification = true;
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+
+    private void ToggleGroupSelection(GroupVm group)
+    {
+        if (selectedGroups.Contains(group))
+        {
+            selectedGroups.Remove(group);
+        }
+        else
+        {
+            selectedGroups.Add(group);
+        }
+
+        allSelected = FilteredGroups.Any() && FilteredGroups.All(g => selectedGroups.Contains(g));
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        if (e.Value is bool isChecked)
+        {
+            allSelected = isChecked;
+
+            if (isChecked)
+            {
+                foreach (var group in FilteredGroups)
+                {
+                    selectedGroups.Add(group);
+                }
+            }
+            else
+            {
+                selectedGroups.Clear();
+            }
+        }
+    }
+
+    private void HideSuccessNotification()
+    {
+        showSuccessNotification = false;
+    }
+
+    private void HideErrorNotification()
+    {
+        showErrorNotification = false;
+    }
+
+    public class GroupVm
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? Description { get; set; }
+        public int MemberCount { get; set; }
+    }
+}

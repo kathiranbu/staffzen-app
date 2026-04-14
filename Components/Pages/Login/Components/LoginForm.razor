@@ -1,0 +1,114 @@
+@* Login form matching image 2 exactly *@
+
+<p class="text-center mb-1" style="font-size:15px; color:#999; font-weight:400; letter-spacing:0.01em;">Welcome back</p>
+<h1 class="text-center fw-bolder mb-5" style="font-size:40px; letter-spacing:-1.5px; color:#111; line-height:1.1;">
+    Login to continue
+</h1>
+
+<LoginSocialButtons OnGoogleLogin="OnGoogleLogin" />
+
+<!-- OR divider — full width line with centered 'or' -->
+<div class="position-relative text-center my-4">
+    <hr class="m-0" style="border-color:#e5e7eb;" />
+    <span class="position-absolute top-50 start-50 translate-middle bg-white px-3"
+          style="font-size:13px; color:#aaa; letter-spacing:0.02em;">or</span>
+</div>
+
+<!-- Email — floating label -->
+<div class="mb-3 login-field">
+    <input class="form-control login-input"
+           placeholder=" "
+           value="@Email"
+           @oninput="e => EmailChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+    <label>Email or Phone number</label>
+</div>
+
+<!-- Password — floating label -->
+<div class="mb-2 position-relative login-field">
+    <input type="@PasswordType"
+           class="form-control login-input @PasswordErrorClass"
+           style="padding-right:52px;"
+           placeholder=" "
+           value="@Password"
+           @oninput="e => PasswordChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+    <label>Password</label>
+    <span class="position-absolute end-0 translate-middle-y me-3 eye-toggle"
+          style="top:50%;"
+          @onclick="TogglePassword">
+        @if (PasswordType == "password")
+        {
+            <!-- eye-off (closed/strikethrough) — matches image 2 -->
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+        }
+        else
+        {
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+            </svg>
+        }
+    </span>
+</div>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p class="text-danger mb-2" style="font-size:12px;">@Error</p>
+}
+
+@if (GoogleLoading)
+{
+    <p class="text-muted text-center mb-2" style="font-size:12px;">⏳ Signing in with Google...</p>
+}
+
+<!-- Forgot password — left-aligned orange, no underline -->
+<div class="mb-4">
+    <a href="/forgot-password" class="forgot-link">Forgot your password?</a>
+</div>
+
+<!-- Login button -->
+<button class="w-100 py-3 border-0 fw-semibold login-btn @(IsFormFilled ? "login-btn-active" : "")"
+        style="font-size:15px;" @onclick="OnLogin">
+    Login
+</button>
+
+<hr class="my-4" style="border-color:#efefef;" />
+
+<p class="text-center mb-4" style="font-size:14px; color:#555; font-weight:500;">
+    Don't have an account?&nbsp;
+    <span class="fw-bold" style="color:#ff6600; cursor:pointer;" @onclick="OnShowSignup">Sign up today</span>
+</p>
+
+<!-- Language selector matching image 2: bold text + arrow + underline -->
+<div class="d-flex justify-content-center">
+    <div class="lang-selector">
+        <span style="font-weight:600;">English</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2.5">
+            <polyline points="6 9 12 15 18 9" />
+        </svg>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Email { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> EmailChanged { get; set; }
+
+    [Parameter] public string Password { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> PasswordChanged { get; set; }
+
+    [Parameter] public string Error { get; set; } = string.Empty;
+    [Parameter] public bool GoogleLoading { get; set; }
+
+    [Parameter] public EventCallback OnLogin { get; set; }
+    [Parameter] public EventCallback OnGoogleLogin { get; set; }
+    [Parameter] public EventCallback OnShowSignup { get; set; }
+
+    bool IsFormFilled => !string.IsNullOrWhiteSpace(Email) && !string.IsNullOrWhiteSpace(Password);
+    string PasswordErrorClass => string.IsNullOrEmpty(Error) ? "" : "login-input-error";
+
+    string PasswordType = "password";
+    void TogglePassword() => PasswordType = PasswordType == "password" ? "text" : "password";
+}

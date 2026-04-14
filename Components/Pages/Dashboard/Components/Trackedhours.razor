@@ -1,0 +1,506 @@
+@namespace APM.StaffZen.Blazor.Components.Pages.Dashboard.Components
+@rendermode RenderMode.InteractiveServer
+@inject AttendanceService AttendanceService
+@inject SessionService SessionService
+
+<div class="th-card">
+
+    <div class="th-header">
+        <h5 class="th-title">TRACKED HOURS</h5>
+        <a href="/timesheets" class="th-link">Go to timesheets</a>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="th-loading"><div class="th-spinner"></div><span>Loading chart...</span></div>
+    }
+    else
+    {
+        <div class="th-body">
+
+            <!-- LEFT: stats legend -->
+            <div class="th-legend">
+                <div class="th-legend-item">
+                    <span class="th-dot th-dot--worked"></span>
+                    <div>
+                        <div class="th-legend-label">WORKED HOURS</div>
+                        <div class="th-legend-value">@workedDisplay</div>
+                    </div>
+                </div>
+                <div class="th-legend-item">
+                    <span class="th-dot th-dot--breaks"></span>
+                    <div>
+                        <div class="th-legend-label">BREAKS</div>
+                        <div class="th-legend-value">0h 0m</div>
+                    </div>
+                </div>
+                <div class="th-legend-item">
+                    <span class="th-dot th-dot--overtime"></span>
+                    <div>
+                        <div class="th-legend-label">OVERTIME HOURS</div>
+                        <div class="th-legend-value">0h 0m</div>
+                    </div>
+                </div>
+            </div>
+
+            <!--
+                RIGHT: chart
+                Structure (matches reference image):
+
+                [th-chart-outer  flex-row]
+                  [th-yaxis  fixed-width, position:relative]
+                    <span> labels absolutely positioned at % top, right-aligned
+                  [th-plot-wrap  flex:1, flex-col]
+                    [th-plot  position:relative, flex:1]
+                      .th-grid  absolute lines at same % as labels
+                      .th-col   flex bars
+                    [th-xaxis  flex-row day labels]
+            -->
+            <div class="th-chart-outer">
+
+                <!-- Y-axis: fixed width column, labels absolutely positioned -->
+                <div class="th-yaxis">
+                    <div class="th-yaxis-plot-zone">
+                        @{ int n = yLabels.Count; }
+                        @for (int i = 0; i < n; i++)
+                        {
+                            double pct = n > 1 ? (double)i / n * 100.0 : 0;
+                            <span class="th-ylabel" style="top:@pct.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%">@yLabels[i]</span>
+                        }
+                        <!-- 0s on the bottom border -->
+                        <span class="th-ylabel th-ylabel--zero">0s</span>
+                    </div>
+                    <!-- spacer matches x-axis row height so y-axis aligns perfectly -->
+                    <div class="th-yaxis-x-spacer"></div>
+                </div>
+
+                <!-- Plot area + x-axis stacked -->
+                <div class="th-plot-wrap @(ActiveTab == "Month" ? "th-plot-wrap--month" : "")"
+                     style="@(ActiveTab == "Month" ? "overflow-x:auto;" : "")">
+
+                    <div class="th-plot">
+                        <!-- Grid lines at same % positions as labels -->
+                        @{ int gc = yLabels.Count; }
+                        @for (int g = 0; g < gc; g++)
+                        {
+                            double gp = gc > 1 ? (double)g / gc * 100.0 : 0;
+                            <div class="th-grid" style="top:@gp.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)%"></div>
+                        }
+
+                        <!-- Bar columns -->
+                        @foreach (var bar in bars)
+                        {
+                            double pct = maxMinutes > 0 ? Math.Min((bar.Minutes / maxMinutes) * 100.0, 100) : 0;
+                            var capturedBar = bar;
+
+                            <div class="th-col">
+                                <div class="th-track">
+                                    @if (bar.Minutes > 0)
+                                    {
+                                        <div class="th-fill"
+                                             style="height:@pct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%"
+                                             @onmouseenter="(e) => ShowTip(e, capturedBar)"
+                                             @onmouseleave="HideTip">
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- X-axis day labels -->
+                    <div class="th-xaxis">
+                        @foreach (var bar in bars)
+                        {
+                            var cx = bar;
+                            <div class="th-xlabel"
+                                 @onmouseenter="(e) => ShowLabelTip(e, cx)"
+                                 @onmouseleave="HideTip">@bar.Label</div>
+                        }
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+
+        <p class="th-note">Does not include manually entered payroll hours</p>
+    }
+
+</div>
+
+@* Floating tooltip *@
+@if (tipVisible && tipBar != null)
+{
+    <div class="th-tip-float @(tipMode == "label" ? "th-tip-float--down" : "")"
+         style="left:@(tipX.ToString("F0", System.Globalization.CultureInfo.InvariantCulture))px; top:@(tipY.ToString("F0", System.Globalization.CultureInfo.InvariantCulture))px">
+        @if (tipMode == "bar")
+        {
+            <div class="th-tip-date">@tipBar.Date.ToString("ddd, MMM d yyyy")</div>
+            <div class="th-tip-row">
+                <span class="th-tip-dot"></span>
+                <span class="th-tip-hours">@FormatTime(tipBar.Minutes)</span>
+            </div>
+        }
+        else
+        {
+            <div class="th-tip-day-only">@tipBar.Date.ToString("dddd")</div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string ActiveTab { get; set; } = "Week";
+
+    private bool isLoading = true;
+    private string workedDisplay = "0h 0m";
+    private double maxMinutes = 0;
+    private List<string> yLabels = new();
+    private List<BarItem> bars = new();
+    private string _lastTab = "";
+
+    protected override async Task OnInitializedAsync() { _lastTab = ActiveTab; await LoadChart(); }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ActiveTab != _lastTab) { _lastTab = ActiveTab; await LoadChart(); }
+    }
+
+    private async Task LoadChart()
+    {
+        isLoading = true; StateHasChanged();
+        int empId = SessionService.Id;
+        var today = DateTime.Today;
+        try
+        {
+            if (ActiveTab == "Day") await LoadDay(empId, today);
+            else if (ActiveTab == "Week") { int dow = (int)today.DayOfWeek; await LoadWeek(empId, today.AddDays(-(dow == 0 ? 6 : dow - 1))); }
+            else await LoadMonth(empId, today);
+        }
+        catch { bars = new(); workedDisplay = "0h 0m"; }
+        isLoading = false; StateHasChanged();
+    }
+
+    private async Task LoadDay(int empId, DateTime date)
+    {
+        var e = await AttendanceService.GetHistoryByDateAsync(empId, date, SessionService.ActiveOrganizationId);
+        double m = SumMin(e); workedDisplay = Fmt(m);
+        bars = new() { new() { Label = date.ToString("ddd")[..1], Date = date, Minutes = m } };
+        maxMinutes = Math.Max(m, 60); BuildY(maxMinutes);
+    }
+
+    private async Task LoadWeek(int empId, DateTime ws)
+    {
+        var e = await AttendanceService.GetHistoryByWeekAsync(empId, ws, SessionService.ActiveOrganizationId);
+        string[] dn = { "M", "T", "W", "T", "F", "S", "S" }; bars = new(); double tot = 0;
+        for (int i = 0; i < 7; i++)
+        {
+            var d = ws.AddDays(i);
+            double m = SumMin(e.Where(x => x.ClockIn.Date == d.Date).ToList());
+            tot += m;
+            bars.Add(new() { Label = dn[i], Date = d, Minutes = m });
+        }
+        workedDisplay = Fmt(tot);
+        maxMinutes = bars.Max(b => b.Minutes) is double mx && mx > 0 ? mx : 60;
+        BuildY(maxMinutes);
+    }
+
+    private async Task LoadMonth(int empId, DateTime today)
+    {
+        var ms = new DateTime(today.Year, today.Month, 1);
+        int dim = DateTime.DaysInMonth(today.Year, today.Month);
+        var all = new List<TimeEntryRecord>(); var fetched = new HashSet<DateTime>();
+        // Iterate day by day through the month, fetching each unique week once
+        for (int d = 1; d <= dim; d++)
+        {
+            var ptr = new DateTime(today.Year, today.Month, d);
+            int dow = (int)ptr.DayOfWeek;
+            var ws = ptr.AddDays(-(dow == 0 ? 6 : dow - 1));
+            if (!fetched.Contains(ws)) { fetched.Add(ws); all.AddRange(await AttendanceService.GetHistoryByWeekAsync(empId, ws, SessionService.ActiveOrganizationId)); }
+        }
+        string[] di = { "S", "M", "T", "W", "T", "F", "S" }; bars = new(); double tot = 0;
+        for (int d = 1; d <= dim; d++)
+        {
+            var day = new DateTime(today.Year, today.Month, d);
+            double m = SumMin(all.Where(x => x.ClockIn.Date == day.Date).ToList());
+            tot += m;
+            bars.Add(new() { Label = di[(int)day.DayOfWeek], Date = day, Minutes = m });
+        }
+        workedDisplay = Fmt(tot);
+        maxMinutes = bars.Max(b => b.Minutes) is double mx && mx > 0 ? mx : 60;
+        BuildY(maxMinutes);
+    }
+
+    private void BuildY(double maxM)
+    {
+        double mh = maxM / 60.0;
+        double step = mh <= 2 ? 0.5 : mh <= 5 ? 1 : mh <= 10 ? 2 : mh <= 15 ? 3 : mh <= 24 ? 4 : mh <= 50 ? 10 : 20;
+        double top = Math.Ceiling(mh / step) * step; if (top == 0) top = step;
+        maxMinutes = top * 60; yLabels = new();
+        // 6 labels top→bottom (index 6 down to 1); "0s" rendered separately
+        for (int i = 6; i >= 1; i--)
+        {
+            double h = top * i / 6.0;
+            int hh = (int)h; int mm = (int)Math.Round((h - hh) * 60);
+            yLabels.Add(mm == 0 ? $"{hh}h" : $"{hh}h {mm}m");
+        }
+    }
+
+    private static double SumMin(List<TimeEntryRecord> e) => Math.Max(e.Sum(x => ((x.ClockOut ?? DateTime.Now) - x.ClockIn).TotalMinutes), 0);
+    private static string Fmt(double m) { if (m <= 0) return "0h 0m"; int h = (int)(m / 60), mn = (int)(m % 60); return h > 0 ? $"{h}h {mn}m" : $"{mn}m"; }
+    private static string FormatTime(double m) => Fmt(m);
+
+    public class BarItem { public string Label { get; set; } = ""; public DateTime Date { get; set; } public double Minutes { get; set; } }
+
+    private bool tipVisible = false;
+    private BarItem? tipBar = null;
+    private double tipX = 0, tipY = 0;
+    private string tipMode = "bar";
+
+    private void ShowTip(MouseEventArgs e, BarItem bar)
+    {
+        tipBar = bar; tipVisible = true; tipMode = "bar";
+        tipX = e.ClientX; tipY = e.ClientY - 90;
+        StateHasChanged();
+    }
+
+    private void ShowLabelTip(MouseEventArgs e, BarItem bar)
+    {
+        tipBar = bar; tipVisible = true; tipMode = "label";
+        tipX = e.ClientX; tipY = e.ClientY + 16;
+        StateHasChanged();
+    }
+
+    private void HideTip() { tipVisible = false; tipBar = null; StateHasChanged(); }
+}
+
+<style>
+    /* ── Card ── */
+    .th-card {
+        background: #fff;
+        border-radius: 14px;
+        padding: 24px 28px 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 6px rgba(0,0,0,.07);
+    }
+
+    /* ── Header ── */
+    .th-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .th-title { font-size: 11px; font-weight: 700; color: #111827; letter-spacing: .9px; text-transform: uppercase; margin: 0; }
+    .th-link { font-size: 13px; color: #374151; text-decoration: none; font-weight: 400; }
+    .th-link:hover { color: #111827; }
+
+    /* ── Body ── */
+    .th-body { display: flex; align-items: stretch; gap: 16px; }
+
+    /* ── Legend ── */
+    .th-legend { display: flex; flex-direction: column; justify-content: flex-start; gap: 20px; flex-shrink: 0; width: 150px; }
+    .th-legend-item { display: flex; align-items: flex-start; gap: 10px; }
+    .th-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .th-dot--worked   { background: #4ade80; }
+    .th-dot--breaks   { background: #facc15; }
+    .th-dot--overtime { background: #f87171; }
+    .th-legend-label { font-size: 10px; font-weight: 600; color: #9ca3af; letter-spacing: .5px; text-transform: uppercase; line-height: 1.4; }
+    .th-legend-value { font-size: 16px; font-weight: 700; color: #111827; margin-top: 2px; }
+
+    /* ═══════════════════════════════════════════════════════
+       CHART LAYOUT
+       th-chart-outer: flex row
+         th-yaxis:     fixed 62px wide, position:relative, height = th-plot height
+         th-plot-wrap: flex:1, flex column (plot + x-axis)
+    ═══════════════════════════════════════════════════════ */
+    .th-chart-outer {
+        flex: 1;
+        display: flex;
+        flex-direction: row;
+        align-items: stretch;
+        min-width: 0;
+    }
+
+    /* Y-axis: same height as th-plot. We achieve this by making th-yaxis
+       a flex column that only covers the plot height (not the x-axis row).
+       th-plot-wrap is flex-col; we use a matching spacer at the bottom. */
+    .th-yaxis {
+        position: relative;
+        flex-shrink: 0;
+        width: 62px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* This inner div stretches to match th-plot height exactly */
+    .th-yaxis-plot-zone {
+        flex: 1;
+        position: relative;
+        min-height: 260px;
+    }
+
+    /* Spacer at bottom of th-yaxis to match th-xaxis height (28px) */
+    .th-yaxis-x-spacer {
+        height: 28px;
+        flex-shrink: 0;
+    }
+
+    /* Each label: absolutely positioned inside th-yaxis-plot-zone
+       top: X% matches exactly the grid line top: X%
+       translateY(-50%) centres label vertically on the line */
+    .th-ylabel {
+        position: absolute;
+        right: 8px;
+        transform: translateY(-50%);
+        font-size: 11px;
+        color: #9ca3af;
+        font-weight: 400;
+        white-space: nowrap;
+        user-select: none;
+        line-height: 1;
+    }
+
+    /* "0s" sits on the bottom border (top:100%) */
+    .th-ylabel--zero {
+        top: 100%;
+        right: 8px;
+        transform: translateY(-50%);
+        position: absolute;
+        font-size: 11px;
+        color: #9ca3af;
+        font-weight: 400;
+        white-space: nowrap;
+        user-select: none;
+        line-height: 1;
+    }
+
+    /* Plot wrap: stacks th-plot and th-xaxis vertically, takes remaining width */
+    .th-plot-wrap {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        border-left: 1px solid #e5e7eb;
+    }
+    /* Month view: ensure bars have enough room by setting a minimum inner width */
+    .th-plot-wrap--month .th-plot,
+    .th-plot-wrap--month .th-xaxis {
+        min-width: 600px;
+    }
+
+    /* Plot: bar area */
+    .th-plot {
+        flex: 1;
+        position: relative;
+        display: flex;
+        align-items: flex-end;
+        border-bottom: 1px solid #e5e7eb;
+        min-height: 260px;
+    }
+
+    /* Horizontal grid lines */
+    .th-grid {
+        position: absolute;
+        left: 0; right: 0;
+        height: 1px;
+        background: #e5e7eb;
+        pointer-events: none;
+        z-index: 0;
+    }
+    /* last grid line coincides with border-bottom — hide duplicate */
+    .th-grid:last-of-type { display: none; }
+
+    /* Bar columns */
+    .th-col {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        position: relative;
+        z-index: 1;
+        padding: 0 3px;
+        min-width: 12px;
+        box-sizing: border-box;
+    }
+
+    .th-track {
+        width: 100%; height: 100%;
+        display: flex; align-items: flex-end;
+    }
+
+    .th-fill {
+        width: 100%;
+        border-radius: 3px 3px 0 0;
+        background: #4ade80;
+        cursor: pointer;
+        transition: background .2s ease, box-shadow .2s ease;
+        min-height: 2px;
+    }
+    .th-fill:hover {
+        background: #22c55e;
+        box-shadow: 0 -3px 12px rgba(34,197,94,.45);
+    }
+
+    /* X-axis day labels */
+    .th-xaxis {
+        display: flex;
+        height: 28px;
+        flex-shrink: 0;
+    }
+    .th-xlabel {
+        flex: 1;
+        text-align: center;
+        font-size: 11px;
+        color: #9ca3af;
+        font-weight: 400;
+        line-height: 28px;
+        user-select: none;
+        cursor: default;
+        transition: color .12s;
+        min-width: 12px;
+    }
+    .th-xlabel:hover { color: #111827; font-weight: 600; }
+
+    /* ── Tooltip ── */
+    @@keyframes th-tip-up {
+        from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+        to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    @@keyframes th-tip-down {
+        from { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+        to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    .th-tip-float {
+        position: fixed;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 12px 18px 14px;
+        box-shadow: 0 8px 28px rgba(0,0,0,.13);
+        white-space: nowrap;
+        z-index: 9999;
+        pointer-events: none;
+        transform: translateX(-50%);
+        min-width: 150px;
+        animation: th-tip-up .18s ease both;
+    }
+    .th-tip-float--down { animation: th-tip-down .18s ease both; }
+    .th-tip-date { font-size: 12px; font-weight: 500; color: #6b7280; margin-bottom: 6px; letter-spacing: .2px; }
+    .th-tip-row  { display: flex; align-items: center; gap: 8px; }
+    .th-tip-dot  { width: 10px; height: 10px; border-radius: 50%; background: #4ade80; flex-shrink: 0; }
+    .th-tip-hours { font-size: 18px; font-weight: 700; color: #111827; line-height: 1; }
+    .th-tip-day-only { font-size: 14px; font-weight: 500; color: #6b7280; padding: 2px 0; }
+
+    /* ── Footer note ── */
+    .th-note { margin-top: 10px; margin-bottom: 0; font-size: 11px; color: #9ca3af; line-height: 1.5; }
+
+    /* ── Loading ── */
+    .th-loading { display: flex; align-items: center; justify-content: center; gap: 10px; height: 260px; color: #9ca3af; font-size: 13px; }
+    .th-spinner  { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #f3f4f6; border-top-color: #4ade80; animation: th-spin .7s linear infinite; }
+    @@keyframes th-spin { to { transform: rotate(360deg); } }
+
+    /* ── Responsive ── */
+    @@media (max-width: 768px) {
+        .th-body   { flex-direction: column; }
+        .th-legend { flex-direction: row; flex-wrap: wrap; width: auto; gap: 16px; margin-bottom: 4px; }
+    }
+    @@media (max-width: 576px) {
+        .th-card { padding: 16px 12px; }
+    }
+</style>

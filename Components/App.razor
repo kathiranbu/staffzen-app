@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+
+    <link href="lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="app.css" rel="stylesheet" />
+    <link href="css/timeoff.css" rel="stylesheet" />
+    <link href="APM.StaffZen.Blazor.styles.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <!-- Flatpickr — beautiful date/time picker -->
+    <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet" />
+
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes @rendermode="RenderMode.InteractiveServer" />
+
+    <!-- 1. Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- 2. Google Identity Services (loads async) -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <!-- 3. GoogleAuth JS helper — bridges Google popup to Blazor JSInvokable -->
+    <script>
+        window.GoogleAuth = (function () {
+
+            const CLIENT_ID = '332391881500-9b97lpva1ocsj50pdli55i4gbgd9q5u0.apps.googleusercontent.com';
+
+            let _dotNet = null;
+            let _isSignup = false;
+
+            function registerCallback(dotNetRef) {
+                _dotNet = dotNetRef;
+                waitForGoogle(function () {
+                    google.accounts.id.initialize({
+                        client_id: CLIENT_ID,
+                        callback: onOneTapCredential,
+                        auto_select: false,
+                        cancel_on_tap_outside: true
+                    });
+                });
+            }
+
+            // Login panel Google button
+            function openLogin() {
+                _isSignup = false;
+                openPopup();
+            }
+
+            // Signup panel Google button
+            function openSignup() {
+                _isSignup = true;
+                openPopup();
+            }
+
+            // Single OAuth popup — passes _isSignup flag back to Blazor
+            function openPopup() {
+                waitForGoogle(function () {
+                    var tokenClient = google.accounts.oauth2.initTokenClient({
+                        client_id: CLIENT_ID,
+                        scope: 'openid email profile',
+                        prompt: 'select_account',
+                        error_callback: function () {
+                            if (_dotNet) _dotNet.invokeMethodAsync('OnGoogleError', '');
+                        },
+                        callback: function (tokenResponse) {
+                            if (!tokenResponse || !tokenResponse.access_token) {
+                                if (_dotNet) _dotNet.invokeMethodAsync('OnGoogleError', '');
+                                return;
+                            }
+                            fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                                headers: { 'Authorization': 'Bearer ' + tokenResponse.access_token }
+                            })
+                            .then(r => r.json())
+                            .then(info => {
+                                if (_dotNet && info.email) {
+                                    _dotNet.invokeMethodAsync('OnGoogleSignIn', info.email, _isSignup);
+                                } else {
+                                    if (_dotNet) _dotNet.invokeMethodAsync('OnGoogleError', '');
+                                }
+                            })
+                            .catch(() => {
+                                if (_dotNet)
+                                    _dotNet.invokeMethodAsync('OnGoogleError', 'Failed to get account info from Google.');
+                            });
+                        }
+                    });
+                    tokenClient.requestAccessToken();
+                });
+            }
+
+            // One Tap (login panel only — always isSignup=false)
+            function onOneTapCredential(response) {
+                if (!response || !response.credential) return;
+                try {
+                    var parts = response.credential.split('.');
+                    var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+                    if (_dotNet && payload.email) {
+                        _dotNet.invokeMethodAsync('OnGoogleSignIn', payload.email, false);
+                    }
+                } catch (e) {
+                    if (_dotNet)
+                        _dotNet.invokeMethodAsync('OnGoogleError', 'Could not read Google account info.');
+                }
+            }
+
+            function waitForGoogle(cb) {
+                if (typeof google !== 'undefined' && google.accounts) { cb(); }
+                else { setTimeout(() => waitForGoogle(cb), 150); }
+            }
+
+            return { registerCallback, openLogin, openSignup };
+        })();
+    </script>
+
+    <!-- Flatpickr JS -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script>
+        window.FlatpickrHelper = {
+            initDate: function (dateInputId, dotNetRef) {
+                var dateEl = document.getElementById(dateInputId);
+                if (dateEl && dateEl._flatpickr) dateEl._flatpickr.destroy();
+                if (!dateEl) return;
+
+                flatpickr(dateEl, {
+                    dateFormat: 'Y-m-d',
+                    defaultDate: new Date(),
+                    maxDate: new Date(),
+                    disableMobile: true,
+                    allowInput: false,
+                    // Append to body so it's outside any overflow/scroll containers
+                    appendTo: document.body,
+                    onChange: function(sel, str) {
+                        dotNetRef.invokeMethodAsync('OnDateChangedJs', str);
+                    },
+                    onOpen: function(sel, str, fp) {
+                        // Read the field rect at open time (after any layout changes)
+                        // and pin the calendar directly below it using fixed positioning
+                        var field = document.getElementById(dateInputId);
+                        if (!field) return;
+                        var rect = field.closest('.cci-field').getBoundingClientRect();
+                        var cal  = fp.calendarContainer;
+                        cal.style.position = 'fixed';
+                        cal.style.top      = (rect.bottom + 6) + 'px';
+                        cal.style.left     = rect.left + 'px';
+                        cal.style.width    = rect.width + 'px';
+                        cal.style.zIndex   = '9999';
+                        cal.style.bottom   = 'auto';
+                        cal.style.right    = 'auto';
+                    }
+                });
+            },
+            open: function(inputId) {
+                var el = document.getElementById(inputId);
+                if (el && el._flatpickr) el._flatpickr.open();
+            },
+            close: function(inputId) {
+                var el = document.getElementById(inputId);
+                if (el && el._flatpickr) el._flatpickr.close();
+            }
+        };
+    </script>
+
+    <!-- 4. Blazor (must be last) -->
+    <script>
+        window.SessionStorage = {
+            save: function (key, value) {
+                try { localStorage.setItem(key, value); } catch (e) { }
+            },
+            load: function (key) {
+                try { return localStorage.getItem(key); } catch (e) { return null; }
+            },
+            remove: function (key) {
+                try { localStorage.removeItem(key); } catch (e) { }
+            }
+        };
+    </script>
+
+    <!-- Firebase Push Notifications -->
+    <script src="/js/firebase-push.js" type="module"></script>
+
+    <!-- Google Maps JS API — used by Locations & Live Locations pages -->
+    <script>
+        // Callback invoked by Google Maps once the API is fully loaded
+        function initGoogleMaps() {
+            window._googleMapsReady = true;
+            if (window._googleMapsReadyCbs) {
+                window._googleMapsReadyCbs.forEach(fn => fn());
+                window._googleMapsReadyCbs = [];
+            }
+        }
+        window._googleMapsReadyCbs = [];
+        window.onGoogleMapsReady = function(cb) {
+            if (window._googleMapsReady) cb();
+            else window._googleMapsReadyCbs.push(cb);
+        };
+    </script>
+    <!-- IMPORTANT: Replace YOUR_GOOGLE_MAPS_API_KEY below with your actual Google Maps API key -->
+    <!-- Get one at: https://console.cloud.google.com → APIs & Services → Credentials -->
+    <!-- Enable: Maps JavaScript API + Places API for your key -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCG5O8MCPV0O72dAQlFKL3ZlD1goMD_SKA&libraries=places&callback=initGoogleMaps" async defer></script>
+    <!-- Map helpers for Locations + Live Locations -->
+    <script src="/js/maps.js"></script>
+
+    <!-- Face recognition (must load BEFORE Blazor so components can call face functions immediately) -->
+    <script src="https://cdn.jsdelivr.net/npm/@@vladmandic/face-api/dist/face-api.js"></script>
+    <script src="js/faceRecognition.js"></script>
+
+    <!-- 5. Blazor (must be last) -->
+    <script src="_framework/blazor.web.js"></script>
+
+    <!-- Kick off model download immediately after scripts are loaded — models will be ready
+         by the time the user actually clicks a face button, avoiding a cold-start delay. -->
+    <script>
+        if (typeof window.preloadFaceModels === 'function') {
+            window.preloadFaceModels();
+        }
+    </script>
+</body>
+</html>

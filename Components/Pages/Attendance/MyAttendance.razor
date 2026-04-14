@@ -1,0 +1,1268 @@
+@page "/my-attendance"
+@rendermode RenderMode.InteractiveServer
+@inject SessionService SessionService
+@inject AttendanceCorrectionService CorrectionService
+@inject IHttpClientFactory Http
+@inject NotificationBus NotificationBus
+@using System.Net.Http.Json
+@using System.Text.Json
+@using APM.StaffZen.Blazor.Services
+@implements IDisposable
+
+<BasePage Title="My Attendance" OnClockAction="LoadAll">
+
+    <div class="ma-page">
+
+        @* ── Header ── *@
+        <div class="ma-header">
+            <div>
+                <h1 class="ma-title">My Attendance</h1>
+                <p class="ma-subtitle">View your attendance status and submit correction requests</p>
+            </div>
+            <div class="ma-header-right">
+                <button class="ma-btn-refresh" @onclick="LoadAll">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="ma-loading">
+                <div class="ma-spinner"></div>
+                <span>Loading your attendance…</span>
+            </div>
+        }
+        else
+        {
+            @* ── Today Status Card ── *@
+            <div class="ma-today-card">
+                <div class="ma-today-header">
+                    <div class="ma-today-date">
+                        <i class="bi bi-calendar3"></i>
+                        <span>@DateTime.Today.ToString("dddd, MMMM d, yyyy")</span>
+                    </div>
+                    @if (_todayEntry != null)
+                    {
+                        <span class="ma-status-badge ma-status-badge--@(_todayEntry.AttendanceStatus?.ToLower() ?? "unknown")">
+                            @StatusIcon(_todayEntry.AttendanceStatus ?? "") @(_todayEntry.AttendanceStatus ?? "—")
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="ma-status-badge ma-status-badge--absent">✗ Absent</span>
+                    }
+                </div>
+
+                @* ── Contextual status banner ── *@
+                @{
+                    var todayStatus  = _todayEntry?.AttendanceStatus;
+                    bool stillActive = _todayEntry != null && !_todayEntry.ClockOut.HasValue
+                                       && todayStatus != "Unmarked" && todayStatus != "Pending";
+                }
+                @if (_todayEntry == null)
+                {
+                    @* ── ABSENT: never clocked in ── *@
+                    <div class="ma-status-info ma-status-info--absent">
+                        <i class="bi bi-x-circle-fill"></i>
+                        <div>
+                            <strong>❌ No attendance recorded today</strong>
+                            <p>You haven't clocked in yet today. Your attendance will be marked as Absent if no clock-in is recorded for this working day.</p>
+                        </div>
+                    </div>
+                }
+                else if (stillActive && (todayStatus == null || todayStatus == "" || todayStatus == "Present" || todayStatus == "Late"))
+                {
+                    @* ── CLOCKED IN: active session (status may already be set at clock-in) ── *@
+                    <div class="ma-status-info ma-status-info--@(todayStatus == "Late" ? "late" : "active")">
+                        <i class="bi bi-@(todayStatus == "Late" ? "clock-fill" : "activity")"></i>
+                        <div>
+                            <strong>@(todayStatus == "Late" ? "🟡 Late — clocked in after grace period" : "✅ You are clocked in")</strong>
+                            <p>Clocked in at <strong>@_todayEntry.ClockIn.ToString("hh:mm tt")</strong>. Your attendance status (Present or Late) will be recorded when you clock out. Remember to clock out at the end of your shift.</p>
+                        </div>
+                    </div>
+                }
+                else if (todayStatus == "Present")
+                {
+                    @* ── PRESENT: clocked in on time ── *@
+                    <div class="ma-status-info ma-status-info--present">
+                        <i class="bi bi-check-circle-fill"></i>
+                        <div>
+                            <strong>✅ Present — attendance recorded</strong>
+                            <p>Clocked in at <strong>@_todayEntry.ClockIn.ToString("hh:mm tt")</strong> — on time.
+                            @if (_todayEntry.ClockOut.HasValue)
+                            { <text> Clocked out at <strong>@_todayEntry.ClockOut.Value.ToString("hh:mm tt")</strong>.</text> }
+                            else
+                            { <text> Remember to clock out at the end of your shift.</text> }</p>
+                        </div>
+                    </div>
+                }
+                else if (todayStatus == "Late")
+                {
+                    @* ── LATE: clocked in after grace period ── *@
+                    <div class="ma-status-info ma-status-info--late">
+                        <i class="bi bi-clock-fill"></i>
+                        <div>
+                            <strong>🟡 Late — clocked in after grace period</strong>
+                            <p>Clocked in at <strong>@_todayEntry.ClockIn.ToString("hh:mm tt")</strong>, which was after the allowed grace period.
+                            @if (_todayEntry.ClockOut.HasValue)
+                            { <text> Clocked out at <strong>@_todayEntry.ClockOut.Value.ToString("hh:mm tt")</strong>.</text> }
+                            else
+                            { <text> Remember to clock out at the end of your shift.</text> }</p>
+                        </div>
+                    </div>
+                }
+                else if (todayStatus == "Absent")
+                {
+                    @* ── ABSENT: marked absent by admin or system ── *@
+                    <div class="ma-status-info ma-status-info--absent">
+                        <i class="bi bi-x-circle-fill"></i>
+                        <div>
+                            <strong>❌ Absent</strong>
+                            <p>You have been marked absent for today. If this is incorrect, please contact your admin.</p>
+                        </div>
+                    </div>
+                }
+                else if (todayStatus == "Pending")
+                {
+                    @* ── PENDING: correction request submitted ── *@
+                    <div class="ma-status-info ma-status-info--pending">
+                        <i class="bi bi-hourglass-split"></i>
+                        <div>
+                            <strong>🕐 Correction request pending</strong>
+                            <p>Your correction request has been submitted and is awaiting admin review. You will be notified once it is approved or rejected.</p>
+                        </div>
+                    </div>
+                }
+
+                @* ── Unmarked Alert + Request Correction ── *@
+                @* Show for: Unmarked (missed clock-out, system flagged) OR any open session with no ClockOut *@
+                @if (IsUnmarkedToday())
+                {
+                    <div class="ma-unmarked-alert">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <div>
+                            <strong>Attendance Unmarked</strong>
+                            <p>You forgot to clock out. Please submit a correction request so your attendance can be approved by your admin.</p>
+                        </div>
+                    </div>
+
+                    @if (_hasPendingRequest)
+                    {
+                        <div class="ma-pending-notice">
+                            <i class="bi bi-hourglass-split"></i>
+                            Your correction request is <strong>pending admin review</strong>.
+                        </div>
+                    }
+                    else if (!_showCorrectionForm)
+                    {
+                        <button class="ma-btn-request" @onclick="OpenCorrectionForm">
+                            <i class="bi bi-pencil-square"></i> Request Correction
+                        </button>
+                    }
+                }
+                else if (CanRequestCorrection())
+                {
+                    @* ── ACTIVE SESSION: employee can still submit a correction (e.g. forgot to clock out yesterday or wants to pre-submit) ── *@
+                    @if (_hasPendingRequest)
+                    {
+                        <div class="ma-pending-notice">
+                            <i class="bi bi-hourglass-split"></i>
+                            Your correction request is <strong>pending admin review</strong>.
+                        </div>
+                    }
+                    else if (!_showCorrectionForm)
+                    {
+                        <div class="ma-info-notice">
+                            <i class="bi bi-info-circle-fill"></i>
+                            <div>
+                                <strong>Didn't clock out?</strong>
+                                <p>If you are unable to clock out, you can submit a correction request and your admin will update your attendance.</p>
+                            </div>
+                        </div>
+                        <button class="ma-btn-request" @onclick="OpenCorrectionForm">
+                            <i class="bi bi-pencil-square"></i> Request Correction
+                        </button>
+                    }
+                }
+
+                @* ── "Request Correction for a Past Date" — always visible when not clocked in ── *@
+                @if (!_showCorrectionForm && (_todayEntry == null || _todayEntry.ClockOut.HasValue))
+                {
+                    <button class="ma-btn-request ma-btn-request--past" @onclick="OpenPastCorrectionForm">
+                        <i class="bi bi-calendar-plus"></i> Request Correction for a Past Date
+                    </button>
+                }
+
+                @* ── Correction Request Form ── *@
+                @if (_showCorrectionForm)
+                {
+                    <div class="ma-correction-form">
+                        <h3 class="ma-form-title">Submit Correction Request</h3>
+
+                        <div class="ma-form-row">
+                            <label>Select Date *</label>
+                            <input type="date" class="ma-form-input"
+                                   value="@_correctionDate.ToString("yyyy-MM-dd")"
+                                   max="@DateTime.Today.ToString("yyyy-MM-dd")"
+                                   @onchange="OnCorrectionDateChanged" />
+                        </div>
+
+                        @if (_correctionDateLoading)
+                        {
+                            <div class="ma-form-loading"><span class="ma-spinner-sm"></span> Loading entry…</div>
+                        }
+                        else if (_correctionEntryForDate != null)
+                        {
+                            <div class="ma-form-row">
+                                <label>Clock In on that day</label>
+                                <span class="ma-form-static">@_correctionEntryForDate.ClockIn.ToString("hh:mm tt")</span>
+                            </div>
+                        }
+                        else if (_correctionDateSearched)
+                        {
+                            <div class="ma-form-warning">⚠ No clock-in record found for @_correctionDate.ToString("dd MMM yyyy"). You can only request a correction for a day where you clocked in.</div>
+                        }
+
+                        <div class="ma-form-row">
+                            <label>Requested Clock Out *</label>
+                            <input type="time" class="ma-form-input"
+                                   value="@_correctionClockOutTime"
+                                   @onchange="OnClockOutTimeChanged" />
+                        </div>
+                        <div class="ma-form-row">
+                            <label>Reason *</label>
+                            <textarea class="ma-form-textarea" rows="3"
+                                      placeholder="Explain why you couldn't clock out…"
+                                      @bind="_correctionReason"></textarea>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(_correctionError))
+                        {
+                            <div class="ma-form-error">@_correctionError</div>
+                        }
+                        @if (!string.IsNullOrEmpty(_correctionSuccess))
+                        {
+                            <div class="ma-form-success">@_correctionSuccess</div>
+                        }
+
+                        <div class="ma-form-actions">
+                            <button class="ma-btn-cancel" @onclick="CloseCorrectionForm">Cancel</button>
+                            <button class="ma-btn-submit" @onclick="SubmitCorrection" disabled="@(_submitting || _correctionEntryForDate == null)">
+                                @if (_submitting)
+                                { <span class="ma-spinner-sm"></span> }
+                                else
+                                { <i class="bi bi-send"></i> }
+                                Submit Request
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @* ── My Correction Requests History ── *@
+            @if (_myRequests.Any())
+            {
+                <div class="ma-section">
+                    <h2 class="ma-section-title">My Correction Requests</h2>
+                    <div class="ma-req-list">
+                        @foreach (var req in _myRequests.Take(10))
+                        {
+                            <div class="ma-req-item ma-req-item--@req.Status.ToLower()">
+                                <div class="ma-req-left">
+                                    <span class="ma-req-date">@req.AttendanceDate.ToString("dd MMM yyyy")</span>
+                                    <span class="ma-req-time">Requested: @req.RequestedClockOut.ToString("hh:mm tt")</span>
+                                    @if (!string.IsNullOrEmpty(req.Reason))
+                                    {
+                                        <span class="ma-req-reason">"@req.Reason"</span>
+                                    }
+                                </div>
+                                <div class="ma-req-right">
+                                    <span class="ma-req-status ma-req-status--@req.Status.ToLower()">
+                                        @ReqStatusIcon(req.Status) @req.Status
+                                    </span>
+                                    @if (req.Status == "Approved" && req.ApprovedClockOut.HasValue)
+                                    {
+                                        <span class="ma-req-approved-time">
+                                            Approved: @req.ApprovedClockOut.Value.ToString("hh:mm tt")
+                                        </span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(req.AdminNote))
+                                    {
+                                        <span class="ma-req-note">Note: @req.AdminNote</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @* ── Attendance History ── *@
+            <div class="ma-section">
+                <div class="ma-section-hdr">
+                    <h2 class="ma-section-title">Attendance History</h2>
+                    <div class="ma-history-tabs">
+                        <button class="ma-hist-tab @(_histDays == 7 ? "ma-hist-tab--active" : "")"
+                                @onclick='() => SetHistDays(7)'>Last 7 Days</button>
+                        <button class="ma-hist-tab @(_histDays == 30 ? "ma-hist-tab--active" : "")"
+                                @onclick='() => SetHistDays(30)'>Last 30 Days</button>
+                    </div>
+                </div>
+
+                @if (!_history.Any())
+                {
+                    <div class="ma-empty">
+                        <i class="bi bi-calendar-x" style="font-size:36px;color:#d1d5db;"></i>
+                        <p>No attendance records found for this period.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="ma-history-list">
+                        @foreach (var day in _history)
+                        {
+                            <div class="ma-hist-row ma-hist-row--@(day.Status.ToLower())">
+                                <div class="ma-hist-date">
+                                    <span class="ma-hist-dow">@day.Date.ToString("ddd")</span>
+                                    <span class="ma-hist-d">@day.Date.ToString("dd MMM")</span>
+                                </div>
+                                <div class="ma-hist-times">
+                                    <span>In: @(day.ClockIn.HasValue ? day.ClockIn.Value.ToString("hh:mm tt") : "—")</span>
+                                    <span>Out: @(day.ClockOut.HasValue ? day.ClockOut.Value.ToString("hh:mm tt") : "—")</span>
+                                </div>
+                                <div class="ma-hist-status-wrap">
+                                    <span class="ma-hist-status ma-hist-status--@(day.Status.ToLower())">
+                                        @StatusIcon(day.Status) @day.Status
+                                    </span>
+                                    <span class="ma-hist-status-note">
+                                        @(day.Status switch {
+                                            "Present"  => "Clocked in on time",
+                                            "Late"     => "Clocked in after grace period",
+                                            "Absent"   => "No clock-in recorded",
+                                            "Unmarked" => "Forgot to clock out",
+                                            "Pending"  => "Correction pending review",
+                                            _          => ""
+                                        })
+                                    </span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+    </div>
+
+</BasePage>
+
+@code {
+    private bool    _loading          = true;
+    private bool    _showCorrectionForm = false;
+    private bool    _submitting       = false;
+    private bool    _hasPendingRequest = false;
+    private int     _histDays         = 7;
+
+    private System.Threading.Timer? _refreshTimer;
+
+    private TodayEntryVm? _todayEntry;
+    private List<CorrectionRequestVm> _myRequests = new();
+    private List<AttendanceDayVm>     _history    = new();
+
+    // Correction form fields
+    private string        _correctionClockOutTime  = "";
+    private string        _correctionReason        = "";
+    private string        _correctionError         = "";
+    private string        _correctionSuccess       = "";
+    private DateTime      _correctionDate          = DateTime.Today;
+    private TodayEntryVm? _correctionEntryForDate  = null;
+    private bool          _correctionDateLoading   = false;
+    private bool          _correctionDateSearched  = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAll();
+        // Silent background refresh every 30 s — does NOT show the loading spinner
+        _refreshTimer = new System.Threading.Timer(async _ =>
+        {
+            try { await InvokeAsync(SilentRefresh); }
+            catch { }
+        }, null, 30_000, 30_000);
+    }
+
+    public void Dispose() => _refreshTimer?.Dispose();
+
+    /// <summary>Background refresh — reloads data without showing the loading spinner.</summary>
+    private async Task SilentRefresh()
+    {
+        var empId = SessionService.Id;
+        var orgId = SessionService.OrganizationId;
+        await Task.WhenAll(
+            LoadTodayEntry(empId, orgId),
+            LoadMyRequests(empId, orgId),
+            LoadHistory(empId, orgId)
+        );
+        if (_todayEntry != null && (IsUnmarkedToday() || CanRequestCorrection()))
+            _hasPendingRequest = _myRequests.Any(r => r.AttendanceDate.Date == DateTime.Today && r.Status == "Pending");
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAll()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var empId = SessionService.Id;
+        var orgId = SessionService.OrganizationId;
+
+        await Task.WhenAll(
+            LoadTodayEntry(empId, orgId),
+            LoadMyRequests(empId, orgId),
+            LoadHistory(empId, orgId)
+        );
+
+        // Check if there's already a pending request for today's entry
+        if (_todayEntry != null && (IsUnmarkedToday() || CanRequestCorrection()))
+        {
+            _hasPendingRequest = _myRequests.Any(r =>
+                r.AttendanceDate.Date == DateTime.Today &&
+                r.Status == "Pending");
+        }
+
+        _loading = false;
+    }
+
+    private async Task LoadTodayEntry(int empId, int? orgId)
+    {
+        try
+        {
+            var client  = Http.CreateClient("API");
+            var dateStr = DateTime.Today.ToString("yyyy-MM-dd");
+            var url     = $"api/Attendance/history/{empId}/bydate?date={dateStr}";
+            if (orgId.HasValue && orgId.Value > 0) url += $"&organizationId={orgId.Value}";
+
+            var resp = await client.GetAsync(url);
+            if (!resp.IsSuccessStatusCode) return;
+
+            var json = await resp.Content.ReadAsStringAsync();
+            var arr  = JsonDocument.Parse(json).RootElement;
+
+            foreach (var item in arr.EnumerateArray())
+            {
+                bool isManual    = item.TryGetProperty("isManual",    out var im) && im.GetBoolean();
+                bool isHourEntry = item.TryGetProperty("isHourEntry", out var ih) && ih.GetBoolean();
+                bool isBreak     = item.TryGetProperty("isBreakEntry",out var ib) && ib.GetBoolean();
+                if (isManual || isHourEntry || isBreak) continue;
+
+                _todayEntry = new TodayEntryVm
+                {
+                    Id              = item.GetProperty("id").GetInt32(),
+                    ClockIn         = item.GetProperty("clockIn").GetDateTime(),
+                    ClockOut        = item.TryGetProperty("clockOut", out var co) && co.ValueKind != JsonValueKind.Null
+                                        ? co.GetDateTime() : null,
+                    WorkedHours     = item.TryGetProperty("workedHours", out var wh) && wh.ValueKind != JsonValueKind.Null
+                                        ? wh.GetString() : null,
+                    AttendanceStatus = item.TryGetProperty("attendanceStatus", out var st) && st.ValueKind != JsonValueKind.Null
+                                        ? st.GetString() : null
+                };
+                break; // take first real entry
+            }
+        }
+        catch { }
+    }
+
+    private async Task LoadMyRequests(int empId, int? orgId)
+    {
+        try
+        {
+            _myRequests = await CorrectionService.GetForEmployeeAsync(empId, orgId);
+        }
+        catch { _myRequests = new(); }
+    }
+
+    private async Task LoadHistory(int empId, int? orgId)
+    {
+        try
+        {
+            // Load per-day summary via the daily timesheet endpoint for each day
+            var client = Http.CreateClient("API");
+            _history   = new();
+
+            for (int i = 0; i < _histDays; i++)
+            {
+                var date    = DateTime.Today.AddDays(-i);
+                var dateStr = date.ToString("yyyy-MM-dd");
+                var url     = $"api/Attendance/history/{empId}/bydate?date={dateStr}";
+                if (orgId.HasValue && orgId.Value > 0) url += $"&organizationId={orgId.Value}";
+
+                try
+                {
+                    var resp = await client.GetAsync(url);
+                    if (!resp.IsSuccessStatusCode) { _history.Add(AbsentDay(date)); continue; }
+
+                    var json = await resp.Content.ReadAsStringAsync();
+                    var arr  = JsonDocument.Parse(json).RootElement;
+
+                    DateTime? firstIn  = null;
+                    DateTime? lastOut  = null;
+                    string?   wh       = null;
+                    string    status   = "Absent";
+                    bool      hasReal  = false;
+
+                    foreach (var item in arr.EnumerateArray())
+                    {
+                        bool isManual    = item.TryGetProperty("isManual",    out var im) && im.GetBoolean();
+                        bool isHourEntry = item.TryGetProperty("isHourEntry", out var ih) && ih.GetBoolean();
+                        bool isBreak     = item.TryGetProperty("isBreakEntry",out var ib) && ib.GetBoolean();
+                        if (isHourEntry || isBreak) continue;
+
+                        hasReal = true;
+                        var ci  = item.GetProperty("clockIn").GetDateTime();
+                        var co  = item.TryGetProperty("clockOut", out var cop) && cop.ValueKind != JsonValueKind.Null
+                                    ? cop.GetDateTime() : (DateTime?)null;
+                        var whv = item.TryGetProperty("workedHours", out var whp) && whp.ValueKind != JsonValueKind.Null
+                                    ? whp.GetString() : null;
+                        var ast = item.TryGetProperty("attendanceStatus", out var stp) && stp.ValueKind != JsonValueKind.Null
+                                    ? stp.GetString() : null;
+
+                        if (firstIn == null || ci < firstIn) firstIn = ci;
+                        if (co.HasValue && (lastOut == null || co > lastOut)) lastOut = co;
+                        if (wh == null && whv != null) wh = whv;
+                        if (status == "Absent" && ast != null) status = ast;
+                    }
+
+                    if (!hasReal) { _history.Add(AbsentDay(date)); continue; }
+
+                    // Derive status if not set by AttendanceStatus column
+                    if (status == "Absent" && firstIn.HasValue)
+                        status = lastOut.HasValue ? "Present" : "Unmarked";
+
+                    _history.Add(new AttendanceDayVm
+                    {
+                        Date        = date,
+                        ClockIn     = firstIn,
+                        ClockOut    = lastOut,
+                        WorkedHours = wh,
+                        Status      = status
+                    });
+                }
+                catch { _history.Add(AbsentDay(date)); }
+            }
+        }
+        catch { }
+    }
+
+    private static AttendanceDayVm AbsentDay(DateTime date) => new()
+    {
+        Date   = date,
+        Status = "Absent"
+    };
+
+    private bool IsUnmarkedToday() =>
+        _todayEntry?.AttendanceStatus == "Unmarked";
+
+    // True when the employee has an open session (no ClockOut) and the status is not yet
+    // set to a final closed state — meaning they are still clocked in (active).
+    // This includes Present and Late statuses set at clock-in time.
+    private bool CanRequestCorrection() =>
+        _todayEntry != null &&
+        !_todayEntry.ClockOut.HasValue &&
+        _todayEntry.AttendanceStatus != "Unmarked" &&
+        _todayEntry.AttendanceStatus != "Pending"  &&
+        _todayEntry.AttendanceStatus != "Absent";
+
+    private void OnClockOutTimeChanged(ChangeEventArgs e)
+    {
+        _correctionClockOutTime = e.Value?.ToString() ?? string.Empty;
+    }
+
+    // Opens correction form for today's unmarked/active entry
+    private async Task OpenCorrectionForm()
+    {
+        _correctionClockOutTime = "";
+        _correctionReason       = "";
+        _correctionError        = "";
+        _correctionSuccess      = "";
+        _correctionDate         = _todayEntry?.ClockIn.Date ?? DateTime.Today;
+        _correctionEntryForDate = _todayEntry;
+        _correctionDateSearched = _todayEntry != null;
+        _correctionDateLoading  = false;
+        _showCorrectionForm     = true;
+    }
+
+    // Opens correction form for an arbitrary past date (no pre-selected entry)
+    private void OpenPastCorrectionForm()
+    {
+        _correctionClockOutTime = "";
+        _correctionReason       = "";
+        _correctionError        = "";
+        _correctionSuccess      = "";
+        _correctionDate         = DateTime.Today.AddDays(-1); // default: yesterday
+        _correctionEntryForDate = null;
+        _correctionDateSearched = false;
+        _correctionDateLoading  = false;
+        _showCorrectionForm     = true;
+        // Kick off a lookup for yesterday immediately
+        _ = FetchEntryForDateAsync(_correctionDate);
+    }
+
+    private async Task OnCorrectionDateChanged(ChangeEventArgs e)
+    {
+        if (!DateTime.TryParse(e.Value?.ToString(), out var chosen)) return;
+        if (chosen > DateTime.Today) chosen = DateTime.Today;
+        _correctionDate = chosen;
+        await FetchEntryForDateAsync(chosen);
+    }
+
+    private async Task FetchEntryForDateAsync(DateTime date)
+    {
+        _correctionDateLoading  = true;
+        _correctionEntryForDate = null;
+        _correctionDateSearched = false;
+        StateHasChanged();
+
+        try
+        {
+            var client  = Http.CreateClient("API");
+            var dateStr = date.ToString("yyyy-MM-dd");
+            var orgId   = SessionService.OrganizationId;
+            var url     = $"api/Attendance/history/{SessionService.Id}/bydate?date={dateStr}";
+            if (orgId.HasValue && orgId.Value > 0) url += $"&organizationId={orgId.Value}";
+
+            var resp = await client.GetAsync(url);
+            if (resp.IsSuccessStatusCode)
+            {
+                var json = await resp.Content.ReadAsStringAsync();
+                var arr  = System.Text.Json.JsonDocument.Parse(json).RootElement;
+
+                foreach (var item in arr.EnumerateArray())
+                {
+                    bool isManual    = item.TryGetProperty("isManual",    out var im) && im.GetBoolean();
+                    bool isHourEntry = item.TryGetProperty("isHourEntry", out var ih) && ih.GetBoolean();
+                    bool isBreak     = item.TryGetProperty("isBreakEntry",out var ib) && ib.GetBoolean();
+                    if (isManual || isHourEntry || isBreak) continue;
+
+                    // Only allow correction if ClockOut is missing
+                    var hasClockOut = item.TryGetProperty("clockOut", out var co) && co.ValueKind != JsonValueKind.Null;
+                    if (hasClockOut) continue; // already clocked out — no correction needed
+
+                    _correctionEntryForDate = new TodayEntryVm
+                    {
+                        Id               = item.GetProperty("id").GetInt32(),
+                        ClockIn          = item.GetProperty("clockIn").GetDateTime(),
+                        ClockOut         = null,
+                        AttendanceStatus = item.TryGetProperty("attendanceStatus", out var st) && st.ValueKind != JsonValueKind.Null
+                                            ? st.GetString() : null
+                    };
+                    break;
+                }
+            }
+        }
+        catch { }
+
+        _correctionDateLoading  = false;
+        _correctionDateSearched = true;
+        StateHasChanged();
+    }
+
+    private void CloseCorrectionForm()
+    {
+        _showCorrectionForm     = false;
+        _correctionError        = "";
+        _correctionSuccess      = "";
+        _correctionEntryForDate = null;
+        _correctionDateSearched = false;
+    }
+
+    private async Task SubmitCorrection()
+    {
+        _correctionError = "";
+        if (string.IsNullOrWhiteSpace(_correctionClockOutTime))
+        {
+            _correctionError = "Please enter a requested clock-out time.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_correctionReason))
+        {
+            _correctionError = "Please provide a reason for the correction.";
+            return;
+        }
+        if (_correctionEntryForDate == null)
+        {
+            _correctionError = "No clock-in entry found for the selected date.";
+            return;
+        }
+
+        _submitting = true;
+        StateHasChanged();
+
+        var (success, error, _) = await CorrectionService.SubmitAsync(
+            SessionService.Id,
+            _correctionEntryForDate.Id,
+            _correctionClockOutTime,
+            _correctionReason);
+
+        _submitting = false;
+
+        if (success)
+        {
+            _correctionSuccess  = "✓ Correction request submitted! Your admin will review it soon.";
+            _showCorrectionForm = false;
+            // If the correction was for today, reflect pending status on the today card
+            if (_correctionDate.Date == DateTime.Today)
+            {
+                _hasPendingRequest = true;
+                if (_todayEntry != null) _todayEntry.AttendanceStatus = "Pending";
+            }
+            _correctionEntryForDate = null;
+            _correctionDateSearched = false;
+            await LoadMyRequests(SessionService.Id, SessionService.OrganizationId);
+
+            // Instantly notify the admin's bell — no waiting for the 30 s poll
+            var dateStr = _correctionDate.ToString("dd MMM yyyy");
+            await NotificationBus.NotifyAsync(
+                "📋 New Correction Request",
+                $"{SessionService.FullName ?? "An employee"} submitted a correction request for {dateStr}. Please review it in the Attendance Dashboard.");
+        }
+        else
+        {
+            _correctionError = error ?? "Failed to submit request. Please try again.";
+        }
+    }
+
+    private async Task SetHistDays(int days)
+    {
+        _histDays = days;
+        await LoadHistory(SessionService.Id, SessionService.OrganizationId);
+    }
+
+    private static string StatusIcon(string status) => status switch
+    {
+        "Present"  => "✓",
+        "Late"     => "⏰",
+        "Absent"   => "✗",
+        "Unmarked" => "⚠",
+        "Pending"  => "⏳",
+        _          => ""
+    };
+
+    private static string ReqStatusIcon(string status) => status switch
+    {
+        "Pending"  => "⏳",
+        "Approved" => "✓",
+        "Rejected" => "✗",
+        _          => ""
+    };
+
+    // ── View Models ──────────────────────────────────────────────────────
+    private class TodayEntryVm
+    {
+        public int       Id               { get; set; }
+        public DateTime  ClockIn          { get; set; }
+        public DateTime? ClockOut         { get; set; }
+        public string?   WorkedHours      { get; set; }
+        public string?   AttendanceStatus { get; set; }
+    }
+
+    private class AttendanceDayVm
+    {
+        public DateTime  Date        { get; set; }
+        public DateTime? ClockIn     { get; set; }
+        public DateTime? ClockOut    { get; set; }
+        public string?   WorkedHours { get; set; }
+        public string    Status      { get; set; } = "Absent";
+    }
+}
+
+<style>
+    .ma-page {
+        padding: 28px 32px;
+        max-width: 900px;
+        font-family: 'Inter', -apple-system, sans-serif;
+    }
+
+    /* ── Header ── */
+    .ma-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 28px;
+    }
+
+    .ma-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0;
+    }
+
+    .ma-subtitle {
+        font-size: 13px;
+        color: #6b7280;
+        margin: 4px 0 0;
+    }
+
+    .ma-btn-refresh {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 13px;
+        font-weight: 500;
+        color: #374151;
+        cursor: pointer;
+    }
+
+    .ma-btn-refresh:hover { background: #f9fafb; }
+
+    /* ── Today Card ── */
+    .ma-today-card {
+        background: #fff;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 24px 28px;
+        margin-bottom: 28px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .ma-today-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .ma-today-date {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    /* ── Status Badges ── */
+    .ma-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 14px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .ma-status-badge--present  { background: #dcfce7; color: #15803d; }
+    .ma-status-badge--late     { background: #fef9c3; color: #854d0e; }
+    .ma-status-badge--absent   { background: #fee2e2; color: #b91c1c; }
+    .ma-status-badge--unmarked { background: #ffedd5; color: #c2410c; }
+    .ma-status-badge--pending  { background: #e0e7ff; color: #3730a3; }
+    .ma-status-badge--unknown  { background: #f3f4f6; color: #6b7280; }
+
+    /* ── Status Info Banners (Present / Late / Absent / Pending) ── */
+    .ma-status-info {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        border-radius: 10px;
+        padding: 14px 18px;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+
+    .ma-status-info i {
+        font-size: 20px;
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .ma-status-info strong { display: block; font-size: 14px; margin-bottom: 3px; }
+    .ma-status-info p { margin: 0; }
+
+    .ma-status-info--present {
+        background: #f0fdf4;
+        border: 1.5px solid #bbf7d0;
+        color: #14532d;
+    }
+    .ma-status-info--present i { color: #16a34a; }
+
+    .ma-status-info--late {
+        background: #fffbeb;
+        border: 1.5px solid #fde68a;
+        color: #78350f;
+    }
+    .ma-status-info--late i { color: #d97706; }
+
+    .ma-status-info--absent {
+        background: #fef2f2;
+        border: 1.5px solid #fecaca;
+        color: #7f1d1d;
+    }
+    .ma-status-info--absent i { color: #dc2626; }
+
+    .ma-status-info--pending {
+        background: #eef2ff;
+        border: 1.5px solid #c7d2fe;
+        color: #1e1b4b;
+    }
+    .ma-status-info--pending i { color: #6366f1; }
+
+    .ma-status-info--active {
+        background: #f0fdf4;
+        border: 1.5px solid #86efac;
+        color: #14532d;
+    }
+    .ma-status-info--active i { color: #16a34a; }
+
+    /* ── Unmarked Alert ── */
+    .ma-unmarked-alert {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        background: #fff7ed;
+        border: 1.5px solid #fed7aa;
+        border-radius: 10px;
+        padding: 16px 20px;
+        color: #92400e;
+    }
+
+    .ma-unmarked-alert i {
+        font-size: 22px;
+        color: #f97316;
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .ma-unmarked-alert strong { display: block; margin-bottom: 4px; font-size: 14px; }
+    .ma-unmarked-alert p { margin: 0; font-size: 13px; color: #b45309; }
+
+    /* ── Info Notice (active session correction hint) ── */
+    .ma-info-notice {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        background: #eff6ff;
+        border: 1.5px solid #bfdbfe;
+        border-radius: 10px;
+        padding: 14px 18px;
+        color: #1e40af;
+    }
+
+    .ma-info-notice i {
+        font-size: 18px;
+        color: #3b82f6;
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .ma-info-notice strong { display: block; margin-bottom: 3px; font-size: 13px; }
+    .ma-info-notice p { margin: 0; font-size: 12px; color: #1d4ed8; }
+
+    .ma-pending-notice {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #eff6ff;
+        border: 1.5px solid #bfdbfe;
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-size: 13px;
+        color: #1d4ed8;
+    }
+
+    .ma-btn-request {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        align-self: flex-start;
+    }
+
+    .ma-btn-request:hover { background: #4f46e5; }
+
+    .ma-btn-request--past {
+        background: #ffffff;
+        color: #6366f1;
+        border: 1.5px solid #6366f1;
+        margin-top: 12px;
+    }
+
+    .ma-btn-request--past:hover {
+        background: #eef2ff;
+    }
+
+    /* ── Correction Form ── */
+    .ma-correction-form {
+        background: #f9fafb;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 20px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .ma-form-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0 0 4px;
+    }
+
+    .ma-form-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .ma-form-row label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: .3px;
+    }
+
+    .ma-form-static {
+        font-size: 14px;
+        font-weight: 500;
+        color: #374151;
+    }
+
+    .ma-form-input,
+    .ma-form-textarea {
+        padding: 8px 12px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 7px;
+        font-size: 14px;
+        color: #374151;
+        background: #fff;
+        width: 100%;
+        box-sizing: border-box;
+        font-family: inherit;
+    }
+
+    .ma-form-input:focus,
+    .ma-form-textarea:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99,102,241,.1);
+    }
+
+    .ma-form-error   { background: #fee2e2; color: #b91c1c; border-radius: 7px; padding: 10px 14px; font-size: 13px; }
+    .ma-form-success { background: #dcfce7; color: #15803d; border-radius: 7px; padding: 10px 14px; font-size: 13px; }
+    .ma-form-warning { background: #fef9c3; color: #854d0e; border-radius: 7px; padding: 10px 14px; font-size: 13px; border: 1px solid #fde68a; }
+    .ma-form-loading { display: flex; align-items: center; gap: 8px; color: #6b7280; font-size: 13px; padding: 6px 0; }
+
+    .ma-form-actions { display: flex; gap: 10px; }
+
+    .ma-btn-cancel {
+        padding: 9px 20px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 7px;
+        background: #fff;
+        font-size: 13px;
+        font-weight: 500;
+        color: #374151;
+        cursor: pointer;
+    }
+
+    .ma-btn-submit {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 9px 20px;
+        background: #16a34a;
+        color: #fff;
+        border: none;
+        border-radius: 7px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .ma-btn-submit:hover:not(:disabled) { background: #15803d; }
+    .ma-btn-submit:disabled { opacity: .6; cursor: not-allowed; }
+
+    /* ── Sections ── */
+    .ma-section { margin-bottom: 32px; }
+
+    .ma-section-hdr {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+    }
+
+    .ma-section-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0 0 14px;
+    }
+
+    .ma-section-hdr .ma-section-title { margin-bottom: 0; }
+
+    /* ── Correction Request List ── */
+    .ma-req-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .ma-req-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 14px 18px;
+        border-radius: 10px;
+        border: 1.5px solid #e5e7eb;
+        background: #fff;
+    }
+
+    .ma-req-item--approved { border-color: #bbf7d0; background: #f0fdf4; }
+    .ma-req-item--rejected { border-color: #fecaca; background: #fef2f2; }
+    .ma-req-item--pending  { border-color: #c7d2fe; background: #eef2ff; }
+
+    .ma-req-left  { display: flex; flex-direction: column; gap: 3px; }
+    .ma-req-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+
+    .ma-req-date  { font-weight: 600; font-size: 14px; color: #111827; }
+    .ma-req-time  { font-size: 12px; color: #6b7280; }
+    .ma-req-reason { font-size: 12px; color: #9ca3af; font-style: italic; }
+
+    .ma-req-status {
+        font-size: 12px;
+        font-weight: 700;
+        padding: 2px 10px;
+        border-radius: 20px;
+    }
+
+    .ma-req-status--pending  { background: #e0e7ff; color: #3730a3; }
+    .ma-req-status--approved { background: #dcfce7; color: #15803d; }
+    .ma-req-status--rejected { background: #fee2e2; color: #b91c1c; }
+
+    .ma-req-approved-time { font-size: 11px; color: #6b7280; }
+    .ma-req-note          { font-size: 11px; color: #9ca3af; font-style: italic; max-width: 200px; text-align: right; }
+
+    /* ── History ── */
+    .ma-history-tabs { display: flex; gap: 4px; }
+
+    .ma-hist-tab {
+        padding: 5px 12px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 6px;
+        background: #fff;
+        font-size: 12px;
+        font-weight: 500;
+        color: #6b7280;
+        cursor: pointer;
+    }
+
+    .ma-hist-tab--active { background: #6366f1; color: #fff; border-color: #6366f1; }
+
+    .ma-history-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .ma-hist-row {
+        display: grid;
+        grid-template-columns: 80px 1fr auto auto;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 18px;
+        border-radius: 10px;
+        border: 1.5px solid #f3f4f6;
+        background: #fff;
+    }
+
+    .ma-hist-row--absent   { border-color: #fecaca; background: #fff5f5; }
+    .ma-hist-row--unmarked { border-color: #fed7aa; background: #fffbf5; }
+    .ma-hist-row--pending  { border-color: #c7d2fe; background: #f5f7ff; }
+
+    .ma-hist-date { display: flex; flex-direction: column; gap: 1px; }
+    .ma-hist-dow  { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; }
+    .ma-hist-d    { font-size: 13px; font-weight: 600; color: #374151; }
+
+    .ma-hist-times {
+        display: flex;
+        gap: 16px;
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .ma-hist-hours { font-size: 12px; font-weight: 600; color: #374151; }
+
+    .ma-hist-status-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 3px;
+    }
+
+    .ma-hist-status-note {
+        font-size: 10px;
+        color: #9ca3af;
+        font-style: italic;
+    }
+
+    .ma-hist-status {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 20px;
+    }
+
+    .ma-hist-status--present  { background: #dcfce7; color: #15803d; }
+    .ma-hist-status--late     { background: #fef9c3; color: #854d0e; }
+    .ma-hist-status--absent   { background: #fee2e2; color: #b91c1c; }
+    .ma-hist-status--unmarked { background: #ffedd5; color: #c2410c; }
+    .ma-hist-status--pending  { background: #e0e7ff; color: #3730a3; }
+
+    /* ── Loading / Empty ── */
+    .ma-loading {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 60px 20px;
+        color: #6b7280;
+        font-size: 14px;
+    }
+
+    .ma-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 40px 20px;
+        color: #6b7280;
+        font-size: 14px;
+    }
+
+    .ma-spinner {
+        width: 28px;
+        height: 28px;
+        border: 3px solid #e5e7eb;
+        border-top-color: #6366f1;
+        border-radius: 50%;
+        animation: ma-spin .8s linear infinite;
+    }
+
+    .ma-spinner-sm {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255,255,255,.4);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: ma-spin .8s linear infinite;
+    }
+
+    @@keyframes ma-spin { to { transform: rotate(360deg); } }
+</style>

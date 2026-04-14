@@ -1,0 +1,284 @@
+/* ===================================================
+   LOGIN PAGE — scoped styles for Login.razor only
+   Input/button/label styles are in wwwroot/app.css
+   (global) so they reach child components too
+=================================================== */
+
+.login-page-root h1,
+.login-page-root h2,
+.login-page-root h3 {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.login-page-root {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    width: 100%;
+    overflow-x: hidden;
+}
+
+    .login-page-root > .row {
+        flex: 1;
+    }
+
+/* ── Left panel ── */
+.left-panel {
+    background: #eef1f6;
+    overflow-y: auto;
+}
+
+/* ── Right panel ── */
+.right-panel {
+    overflow-y: auto;
+    background: #fff;
+}
+
+.right-inner {
+    max-width: 520px;
+    margin: 0 auto;
+}
+
+/* ── Social icon circles ── */
+.login-social-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: #fff;
+    border: 1.5px solid #e0e3e8;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+    .login-social-icon:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.13);
+    }
+
+/* Legacy for signup panel */
+.social-circle {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1.5px solid #e5e7eb;
+    background: #fff;
+}
+
+.bg-fb {
+    background: #1877f2 !important;
+    border-color: #1877f2 !important;
+}
+
+/* ── "and more" toggle ── */
+.and-more-btn {
+    color: #777;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: color 0.15s;
+}
+
+    .and-more-btn:hover { color: #111; }
+
+/* ── Full-width social buttons (expanded drawer) ── */
+.social-full-btn {
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    font-family: inherit;
+    border: 1.5px solid #e5e7eb !important;
+}
+
+    .social-full-btn:hover {
+        border-color: #aaa !important;
+        background: #fafafa !important;
+    }
+
+.social-intuit:hover { background: #f0f8ff !important; }
+
+/* ── Carousel dots ── */
+.carousel-dot {
+    width: 8px !important;
+    height: 8px !important;
+    border-radius: 50% !important;
+    background-color: #ccc !important;
+    border: none !important;
+    opacity: 1 !important;
+    margin: 0 3px !important;
+    transition: all 0.2s !important;
+}
+
+    .carousel-dot.active {
+        background-color: #ff6600 !important;
+        width: 22px !important;
+        border-radius: 4px !important;
+    }
+
+#testimonialCarousel { height: 210px; }
+
+    #testimonialCarousel .carousel-inner,
+    #testimonialCarousel .carousel-item { height: 100%; }
+
+        #testimonialCarousel .carousel-item > div {
+            height: 100%;
+            display: flex !important;
+            flex-direction: column;
+            justify-content: center;
+            margin-bottom: 0 !important;
+            box-sizing: border-box;
+        }
+
+/* ── Error border ── */
+.login-input-error {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 3px rgba(220,53,69,0.1) !important;
+}
+
+/* ── Eye toggle ── */
+.eye-toggle {
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+    .eye-toggle:hover svg { stroke: #555; }
+
+/* ── Signup tab toggle ── */
+.signup-tab {
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+}
+
+.signup-tab-active {
+    background: #fff5ed !important;
+    color: #ff6600 !important;
+}
+
+/* ── Signup checkboxes ── */
+.signup-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: #22c55e;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* ── Signup links ── */
+.signup-link {
+    color: #ff6600;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+    .signup-link:hover { text-decoration: underline; }
+
+/* ── Account exists modal ── */
+.exists-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: fadeInBackdrop 0.18s ease;
+}
+
+@@keyframes fadeInBackdrop {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.exists-modal {
+    background: #fff;
+    border-radius: 16px;
+    padding: 36px 32px 28px;
+    max-width: 420px;
+    width: 90%;
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+    animation: slideUpModal 0.2s ease;
+}
+
+@@keyframes slideUpModal {
+    from { transform: translateY(16px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.exists-modal-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: #f3f4f6;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+    .exists-modal-close:hover { background: #e5e7eb; }
+
+.exists-modal-msg {
+    font-size: 15px;
+    color: #222;
+    line-height: 1.6;
+    margin: 0 0 28px;
+    padding-right: 8px;
+}
+
+.exists-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.exists-btn-cancel {
+    background: none;
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    color: #555;
+    cursor: pointer;
+    padding: 10px 20px;
+    border-radius: 8px;
+    transition: background 0.15s;
+}
+
+    .exists-btn-cancel:hover { background: #f3f4f6; }
+
+.exists-btn-login {
+    background: #ff6600;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 28px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+    .exists-btn-login:hover { background: #e55a00; }
+
+@@media (max-width: 991.98px) {
+    .right-panel { min-height: 100vh; }
+}

@@ -1,0 +1,370 @@
+@page "/organization/settings"
+@rendermode RenderMode.InteractiveServer
+
+@using APM.StaffZen.Blazor.Services
+@using APM.StaffZen.Blazor.ViewModels
+@inject SessionService SessionService
+@inject OrgService OrgService
+@inject NavigationManager Nav
+
+<BasePage Title="Organization">
+<div class="mo-page">
+
+    <!-- Page title -->
+    <div class="mo-page-title-row">
+        <h1 class="mo-page-h1">Organization</h1>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="mo-tabs">
+        <button class="mo-tab @(_tab == "organization" ? "mo-tab--active" : "")" @onclick='() => _tab = "organization"'>Organization</button>
+        <button class="mo-tab @(_tab == "subscription" ? "mo-tab--active" : "")" @onclick='() => _tab = "subscription"'>Subscription</button>
+        <button class="mo-tab @(_tab == "permissions" ? "mo-tab--active" : "")" @onclick='() => _tab = "permissions"'>Permissions</button>
+        <button class="mo-tab @(_tab == "api" ? "mo-tab--active" : "")" @onclick='() => _tab = "api"'>API Credentials</button>
+        <button class="mo-tab @(_tab == "notifications" ? "mo-tab--active" : "")" @onclick='() => _tab = "notifications"'>Notifications</button>
+    </div>
+
+    <!-- Organization tab content -->
+    @if (_tab == "organization")
+    {
+        <!-- DETAILS card -->
+        <div class="mo-card">
+            <div class="mo-card-header">
+                <span class="mo-card-title">DETAILS</span>
+                <button class="mo-info-btn" title="About organization details"><i class="bi bi-info-circle"></i></button>
+                @if (IsAdmin && !_editing)
+                {
+                    <button class="mo-edit-btn" @onclick="StartEdit" title="Edit organization details">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                }
+            </div>
+
+            @if (_editing)
+            {
+                <!-- Edit mode -->
+                <div class="mo-detail-grid">
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Organization name</span>
+                        <input class="mo-detail-input" @bind="_editName" placeholder="Organization name" maxlength="100"/>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Country</span>
+                        <input class="mo-detail-input" @bind="_editCountry" placeholder="Country"/>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Start week on</span>
+                        <select class="mo-detail-select" @bind="_editWeekStart">
+                            <option>Monday</option><option>Sunday</option><option>Saturday</option>
+                        </select>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Start month</span>
+                        <select class="mo-detail-select" @bind="_editStartMonth">
+                            <option>January</option><option>February</option><option>March</option>
+                            <option>April</option><option>May</option><option>June</option>
+                            <option>July</option><option>August</option><option>September</option>
+                            <option>October</option><option>November</option><option>December</option>
+                        </select>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Time format</span>
+                        <select class="mo-detail-select" @bind="_editTimeFormat">
+                            <option value="12">12-hour clock (am/pm) (09:30 pm)</option>
+                            <option value="24">24-hour clock (21:30)</option>
+                        </select>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Timezone</span>
+                        <input class="mo-detail-input" @bind="_editTimezone" placeholder="e.g. Asia/Calcutta (GMT+5:30)"/>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Timesheet Timezone</span>
+                        <input class="mo-detail-input" @bind="_editTimesheetTz" placeholder="e.g. Asia/Calcutta (GMT+5:30)"/>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Duration format</span>
+                        <select class="mo-detail-select" @bind="_editDurationFmt">
+                            <option value="XXh YYm">XXh YYm (2h 11m)</option>
+                            <option value="decimal">Decimal (2.18)</option>
+                        </select>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Geofence Radius</span>
+                        <select class="mo-detail-select" @bind="_editGeofence">
+                            <option>Meters</option><option>Kilometers</option><option>Miles</option>
+                        </select>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Language</span>
+                        <select class="mo-detail-select" @bind="_editLanguage">
+                            <option>English</option><option>Spanish</option><option>French</option>
+                        </select>
+                    </div>
+                </div>
+                @if (!string.IsNullOrEmpty(_editError))
+                {
+                    <div class="mo-edit-error">@_editError</div>
+                }
+                <div class="mo-edit-actions">
+                    <button class="mo-btn-cancel" @onclick="CancelEdit">Cancel</button>
+                    <button class="mo-btn-save" @onclick="SaveEdit" disabled="@_saving">
+                        @if (_saving) { <span class="mo-mini-spin"></span> } Save Changes
+                    </button>
+                </div>
+            }
+            else
+            {
+                <!-- View mode -->
+                <div class="mo-detail-grid">
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Organization name</span>
+                        <span class="mo-detail-value mo-detail-bold">@_orgName</span>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Country</span>
+                        <span class="mo-detail-value">@_country</span>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Start week on</span>
+                        <span class="mo-detail-value">@_weekStart</span>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Start month</span>
+                        <span class="mo-detail-value">@_startMonth</span>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Time format</span>
+                        <span class="mo-detail-value">@(_timeFormat == "12" ? "12-hour clock (am/pm) (09:30 pm)" : "24-hour clock (21:30)")</span>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Timezone</span>
+                        <span class="mo-detail-value">@_timezone</span>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Timesheet Timezone</span>
+                        <span class="mo-detail-value">@_timesheetTz</span>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Duration format</span>
+                        <span class="mo-detail-value">@(_durationFmt == "XXh YYm" ? "XXh YYm (2h 11m)" : "Decimal (2.18)")</span>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Geofence Radius</span>
+                        <span class="mo-detail-value">@_geofence</span>
+                    </div>
+                    <div class="mo-detail-row">
+                        <span class="mo-detail-label">Language</span>
+                        <span class="mo-detail-value">@_language</span>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- REPORTING CURRENCY card -->
+        <div class="mo-card">
+            <div class="mo-card-header">
+                <span class="mo-card-title">REPORTING CURRENCY</span>
+                <button class="mo-info-btn" title="About reporting currency"><i class="bi bi-info-circle"></i></button>
+            </div>
+            <div class="mo-detail-grid">
+                <div class="mo-detail-row">
+                    <span class="mo-detail-label">Currency</span>
+                    <span class="mo-detail-value">@_currency</span>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_tab != "organization")
+    {
+        <div class="mo-card mo-coming-soon">
+            <i class="bi bi-tools" style="font-size:40px;color:#d1d5db;margin-bottom:12px;"></i>
+            <p style="font-size:15px;font-weight:600;color:#374151;margin:0 0 4px;">@(_tab.Replace("api","API Credentials").Replace("notifications","Notifications").Replace("permissions","Permissions").Replace("subscription","Subscription")) settings</p>
+            <p style="font-size:13px;color:#9ca3af;margin:0;">Coming soon.</p>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="mo-toast @(_toastError ? "mo-toast--err" : "mo-toast--ok")">
+            <i class="bi @(_toastError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @_toast
+        </div>
+    }
+
+</div>
+</BasePage>
+
+<style>
+.mo-page { padding: 0; }
+
+/* Page title */
+.mo-page-title-row { margin-bottom: 4px; }
+.mo-page-h1 { font-size: 22px; font-weight: 700; color: #111; margin: 0 0 16px; letter-spacing: -.3px; }
+
+/* Tabs */
+.mo-tabs { display: flex; gap: 0; border-bottom: 2px solid #e5e7eb; margin-bottom: 24px; overflow-x: auto; }
+.mo-tab {
+    padding: 10px 20px; background: none; border: none; cursor: pointer;
+    font-size: 14px; font-weight: 500; color: #6b7280;
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+    transition: color .15s, border-color .15s; white-space: nowrap;
+}
+.mo-tab:hover { color: #374151; }
+.mo-tab--active { color: #FF6B00; border-bottom-color: #FF6B00; font-weight: 600; }
+
+/* Card */
+.mo-card {
+    background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 12px; margin-bottom: 20px; overflow: hidden;
+}
+.mo-card-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 16px 20px 14px; border-bottom: 1px solid #f3f4f6;
+}
+.mo-card-title { font-size: 13px; font-weight: 700; color: #374151; letter-spacing: .04em; flex: 1; }
+.mo-info-btn { background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 15px; padding: 2px 4px; border-radius: 4px; transition: color .15s; }
+.mo-info-btn:hover { color: #374151; }
+.mo-edit-btn { background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 15px; padding: 6px 8px; border-radius: 6px; margin-left: auto; transition: color .15s, background .15s; }
+.mo-edit-btn:hover { color: #374151; background: #f3f4f6; }
+
+/* Detail grid */
+.mo-detail-grid { padding: 4px 0; }
+.mo-detail-row {
+    display: flex; align-items: center;
+    padding: 13px 20px; border-bottom: 1px solid #f9fafb;
+}
+.mo-detail-row:last-child { border-bottom: none; }
+.mo-detail-label { width: 220px; flex-shrink: 0; font-size: 13px; color: #6b7280; }
+.mo-detail-value { font-size: 14px; color: #374151; }
+.mo-detail-bold  { font-weight: 700; color: #111; }
+.mo-detail-input {
+    flex: 1; max-width: 340px; padding: 7px 11px;
+    border: 1px solid #d1d5db; border-radius: 7px;
+    font-size: 14px; outline: none; color: #111;
+    transition: border-color .15s, box-shadow .15s;
+}
+.mo-detail-input:focus { border-color: #FF6B00; box-shadow: 0 0 0 3px rgba(255,107,0,.1); }
+.mo-detail-select {
+    flex: 1; max-width: 340px; padding: 7px 11px;
+    border: 1px solid #d1d5db; border-radius: 7px;
+    font-size: 14px; outline: none; color: #111; background: #fff;
+    transition: border-color .15s;
+}
+.mo-detail-select:focus { border-color: #FF6B00; }
+.mo-edit-error { margin: 4px 20px 0; padding: 8px 12px; background: #fee2e2; color: #991b1b; border-radius: 7px; font-size: 13px; }
+.mo-edit-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid #f3f4f6; }
+.mo-btn-cancel { padding: 8px 18px; border: 1px solid #d1d5db; border-radius: 7px; background: #fff; font-size: 14px; cursor: pointer; color: #374151; transition: background .15s; }
+.mo-btn-cancel:hover { background: #f3f4f6; }
+.mo-btn-save { display: inline-flex; align-items: center; gap: 8px; padding: 8px 22px; background: #FF6B00; border: none; border-radius: 7px; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; }
+.mo-btn-save:hover:not(:disabled) { background: #e05f00; }
+.mo-btn-save:disabled { opacity: .7; cursor: not-allowed; }
+
+/* Coming soon */
+.mo-coming-soon { display: flex; flex-direction: column; align-items: center; padding: 64px 20px; text-align: center; }
+
+/* Misc */
+.mo-loading { display: flex; align-items: center; gap: 10px; padding: 24px 20px; color: #9ca3af; font-size: 14px; }
+.mo-empty   { text-align: center; padding: 48px 20px; }
+.mo-mini-spin { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,107,0,.2); border-top-color: #FF6B00; border-radius: 50%; animation: mo-spin .7s linear infinite; flex-shrink: 0; }
+@@keyframes mo-spin { to { transform: rotate(360deg); } }
+.mo-toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.15); z-index: 3000; animation: mo-toast-in .2s ease; }
+.mo-toast--ok  { background: #10b981; color: #fff; }
+.mo-toast--err { background: #ef4444; color: #fff; }
+@@keyframes mo-toast-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+</style>
+
+@code {
+    // Tab
+    private string _tab = "organization";
+
+    // Org details (view)
+    private string _orgName     = "";
+    private string _country     = "India";
+    private string _weekStart   = "Monday";
+    private string _startMonth  = "January";
+    private string _timeFormat  = "12";
+    private string _timezone    = "Asia/Calcutta (GMT+5:30)";
+    private string _timesheetTz = "Asia/Calcutta (GMT+5:30)";
+    private string _durationFmt = "XXh YYm";
+    private string _geofence    = "Meters";
+    private string _language    = "English";
+    private string _currency    = "Indian rupee (INR)";
+
+    // Edit mode
+    private bool   _editing     = false;
+    private bool   _saving      = false;
+    private string _editError   = "";
+    private string _editName = string.Empty, _editCountry = string.Empty, _editWeekStart = string.Empty, _editStartMonth = string.Empty;
+    private string _editTimeFormat = string.Empty, _editTimezone = string.Empty, _editTimesheetTz = string.Empty;
+    private string _editDurationFmt = string.Empty, _editGeofence = string.Empty, _editLanguage = string.Empty;
+
+    // Toast
+    private string _toast = ""; private bool _toastError = false;
+
+    private bool IsAdmin => string.Equals(SessionService.ActiveOrgRole ?? SessionService.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        if (!SessionService.IsLoggedIn) { var ok = await SessionService.TryRestoreAsync(); if (!ok) { Nav.NavigateTo("/login"); return; } }
+
+        _orgName = SessionService.ActiveOrganizationName ?? "Organization";
+        StateHasChanged();
+    }
+
+    private void StartEdit()
+    {
+        _editName = _orgName; _editCountry = _country; _editWeekStart = _weekStart;
+        _editStartMonth = _startMonth; _editTimeFormat = _timeFormat; _editTimezone = _timezone;
+        _editTimesheetTz = _timesheetTz; _editDurationFmt = _durationFmt;
+        _editGeofence = _geofence; _editLanguage = _language;
+        _editError = ""; _editing = true;
+    }
+
+    private void CancelEdit() { _editing = false; _editError = ""; }
+
+    private async Task SaveEdit()
+    {
+        if (string.IsNullOrWhiteSpace(_editName)) { _editError = "Organization name is required."; return; }
+        _saving = true; _editError = ""; StateHasChanged();
+
+        var orgId = SessionService.ActiveOrganizationId;
+        if (!orgId.HasValue) { _editError = "No active organization."; _saving = false; return; }
+
+        var ok = await OrgService.UpdateOrgAsync(orgId.Value, new { Name = _editName.Trim() });
+        if (ok)
+        {
+            _orgName = _editName.Trim(); _country = _editCountry ?? _country;
+            _weekStart = _editWeekStart ?? _weekStart; _startMonth = _editStartMonth ?? _startMonth;
+            _timeFormat = _editTimeFormat ?? _timeFormat; _timezone = _editTimezone ?? _timezone;
+            _timesheetTz = _editTimesheetTz ?? _timesheetTz; _durationFmt = _editDurationFmt ?? _durationFmt;
+            _geofence = _editGeofence ?? _geofence; _language = _editLanguage ?? _language;
+            _editing = false;
+            await SessionService.SwitchOrganizationAsync(orgId.Value, _orgName, SessionService.ActiveOrgRole ?? "Admin");
+            ShowToast("Organization updated.", false);
+        }
+        else { _editError = "Failed to save. Please try again."; }
+
+        _saving = false; StateHasChanged();
+    }
+
+    private void ShowToast(string msg, bool err)
+    {
+        _toast = msg; _toastError = err; StateHasChanged();
+        _ = Task.Run(async () => { await Task.Delay(3500); _toast = ""; await InvokeAsync(StateHasChanged); });
+    }
+
+    private static string Initials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var p = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return p.Length == 1 ? p[0][..1].ToUpper() : (p[0][..1] + p[^1][..1]).ToUpper();
+    }
+
+    private static string GetColor(string name)
+    {
+        var c = new[] { "#FF6B00","#0ea5e9","#10b981","#8b5cf6","#f59e0b","#ec4899","#14b8a6","#ef4444" };
+        return c[string.IsNullOrEmpty(name) ? 0 : Math.Abs(name.GetHashCode()) % c.Length];
+    }
+}

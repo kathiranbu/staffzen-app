@@ -1,0 +1,99 @@
+@namespace APM.StaffZen.Blazor.Components.Layout
+@inherits LayoutComponentBase
+@inject SessionService SessionService
+@inject NavigationManager NavManager
+@inject ProfileService ProfileService
+
+@if (_ready)
+{
+    <CascadingValue Value="this">
+        <div class="layout-container">
+            <Sidebar @ref="sidebarRef" />
+            <div class="main-content @(SidebarCollapsed ? "sidebar-collapsed" : "")">
+                @Body
+            </div>
+        </div>
+    </CascadingValue>
+}
+else
+{
+    @* Invisible placeholder — ensures OnAfterRenderAsync fires *@
+    <div style="display:none"></div>
+}
+
+@code {
+    private Sidebar? sidebarRef;
+    public bool SidebarCollapsed { get; private set; }
+    private bool _ready = false;
+    private bool _checked = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_checked) return;
+        _checked = true;
+
+        // 1. Restore session from localStorage if not already in memory
+        if (!SessionService.IsLoggedIn)
+        {
+            var restored = await SessionService.TryRestoreAsync();
+
+            if (!restored)
+            {
+                var path = NavManager.ToBaseRelativePath(NavManager.Uri).ToLower();
+        bool isPublic = path == "" || path == "login" ||
+                       path.StartsWith("forgot-password") ||
+                       path.StartsWith("reset-password") ||
+                       path.StartsWith("google") ||
+                       path.StartsWith("organization/switcher");
+                if (!isPublic)
+                {
+                    NavManager.NavigateTo("/login", forceLoad: false);
+                    return;
+                }
+            }
+        }
+
+        // 1b. If OrganizationName is missing from the session (e.g. old localStorage),
+        //     fetch it from the profile API and re-persist so the sidebar shows it.
+        if (SessionService.IsLoggedIn && string.IsNullOrEmpty(SessionService.OrganizationName))
+        {
+            var profile = await ProfileService.GetProfileAsync(SessionService.Id);
+            if (profile?.OrganizationName != null)
+            {
+                SessionService.OrganizationName = profile.OrganizationName;
+                await SessionService.PersistAsync();
+                // Notify sidebar and other subscribers to re-render with the new org name
+                await SessionService.NotifySessionUpdatedAsync();
+            }
+        }
+
+        // 2. Onboarding guard — if not onboarded, force to getting-started
+        if (SessionService.IsLoggedIn && !SessionService.IsOnboarded)
+        {
+            var path = NavManager.ToBaseRelativePath(NavManager.Uri).ToLower().TrimEnd('/');
+            if (path != "getting-started")
+            {
+                NavManager.NavigateTo("/getting-started", forceLoad: false);
+                return;
+            }
+        }
+
+        // 3. All checks passed — show the page
+        _ready = true;
+        StateHasChanged();
+
+        // Notify sidebar to re-render with current session data (org name etc.)
+        await SessionService.NotifySessionUpdatedAsync();
+    }
+
+    public void SetSidebarState(bool collapsed)
+    {
+        SidebarCollapsed = collapsed;
+        StateHasChanged();
+    }
+
+    public void ToggleMobileSidebar()
+    {
+        sidebarRef?.ToggleMobileSidebar();
+    }
+}

@@ -1,0 +1,858 @@
+@page "/approval"
+@rendermode RenderMode.InteractiveServer
+@inject SessionService SessionService
+@inject IHttpClientFactory ClientFactory
+
+<BasePage Title="Approval">
+
+    <div class="appr-page">
+
+        @* ── Top tab bar (matches Timesheets dtl-topbar style) ── *@
+        <div class="appr-topbar">
+            <div class="appr-tabs">
+                @if (IsTeamLead && IsHR)
+                {
+                    <button class='appr-tab @(activePanel == "teamlead" ? "appr-tab--active" : "")'
+                            @onclick='() => SwitchPanel("teamlead")'>
+                        <i class="bi bi-person-check"></i> Team Lead
+                    </button>
+                    <button class='appr-tab @(activePanel == "hr" ? "appr-tab--active" : "")'
+                            @onclick='() => SwitchPanel("hr")'>
+                        <i class="bi bi-shield-check"></i> HR
+                    </button>
+                }
+                else if (IsTeamLead)
+                {
+                    <button class="appr-tab appr-tab--active">
+                        <i class="bi bi-person-check"></i> Team Lead
+                    </button>
+                }
+                else if (IsHR)
+                {
+                    <button class="appr-tab appr-tab--active">
+                        <i class="bi bi-shield-check"></i> HR
+                    </button>
+                }
+            </div>
+        </div>
+
+        @* ── Filter / search bar ── *@
+        <div class="appr-filterbar">
+            <div class="appr-search-wrap">
+                <i class="bi bi-search appr-search-icon"></i>
+                <input class="appr-search-input" type="text" placeholder="Search by employee name"
+                       @bind="searchQuery" @bind:event="oninput" />
+            </div>
+            @if (activePanel == "teamlead")
+            {
+                <select class="appr-filter-select" @bind="statusFilter">
+                    <option value="All">All</option>
+                    <option value="Pending_TeamLead">Pending with Team Lead</option>
+                    <option value="Rejected_TeamLead">Rejected by Team Lead</option>
+                </select>
+            }
+            else
+            {
+                <select class="appr-filter-select" @bind="statusFilter">
+                    <option value="All">All</option>
+                    <option value="Pending_HR">Pending with HR</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Rejected_HR">Rejected by HR</option>
+                </select>
+            }
+        </div>
+
+        @* ── Table area ── *@
+        <div class="appr-table-wrap">
+            @if (isLoading)
+            {
+                <div class="appr-loading">
+                    <div class="appr-loader-ring"></div>
+                    <span>Loading requests…</span>
+                </div>
+            }
+            else
+            {
+                var filtered = leaveRequests
+                    .Where(r =>
+                        (string.IsNullOrWhiteSpace(searchQuery) ||
+                         r.EmployeeName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) &&
+                        (statusFilter == "All" || r.Status == statusFilter))
+                    .ToList();
+
+                if (!filtered.Any())
+                {
+                    <div class="appr-empty-state">
+                        <div class="appr-empty-icon">
+                            @if (activePanel == "teamlead") { <i class="bi bi-person-check"></i> }
+                            else { <i class="bi bi-shield-check"></i> }
+                        </div>
+                        <div class="appr-empty-title">No requests here</div>
+                        <div class="appr-empty-sub">
+                            @if (activePanel == "teamlead")
+                            { <span>Leave requests pending your review will appear here.</span> }
+                            else
+                            { <span>Requests forwarded to HR will appear here for final review.</span> }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <table class="appr-table">
+                        <thead>
+                            <tr class="appr-thead-row">
+                                <th class="appr-th appr-th--name">Employee</th>
+                                <th class="appr-th">Date Range</th>
+                                <th class="appr-th">Reason</th>
+                                <th class="appr-th">Status</th>
+                                <th class="appr-th appr-th--actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var req in filtered)
+                            {
+                                <tr class="appr-row">
+
+                                    @* Employee *@
+                                    <td class="appr-td appr-td--name">
+                                        <div class="appr-name-cell">
+                                            <div class="appr-av">@GetInitials(req.EmployeeName)</div>
+                                            <div>
+                                                <div class="appr-name">@req.EmployeeName</div>
+                                                <div class="appr-sub">Submitted @req.CreatedAt.ToString("MMM dd, yyyy")</div>
+                                            </div>
+                                        </div>
+                                    </td>
+
+                                    @* Dates *@
+                                    <td class="appr-td">
+                                        <div class="appr-date-cell">
+                                            <i class="bi bi-calendar3 appr-cal-icon"></i>
+                                            <span>
+                                                @req.StartDate.ToString("MMM dd, yyyy")
+                                                @if ((req.EndDate ?? req.StartDate).Date != req.StartDate.Date)
+                                                {
+                                                    <span class="appr-date-arrow"> → </span>@((req.EndDate ?? req.StartDate).ToString("MMM dd, yyyy"))
+                                                }
+                                            </span>
+                                        </div>
+                                    </td>
+
+                                    @* Reason *@
+                                    <td class="appr-td">
+                                        <span class="appr-reason">
+                                            @(string.IsNullOrWhiteSpace(req.Reason) ? "—" : req.Reason)
+                                        </span>
+                                    </td>
+
+                                    @* Status *@
+                                    <td class="appr-td appr-td--status">
+                                        @{ var (badgeCls, badgeLabel) = GetBadge(req.Status); }
+                                        <span class="appr-status-pill @badgeCls">
+                                            <span class="appr-status-dot"></span>
+                                            @badgeLabel
+                                        </span>
+                                        @if ((req.Status == "Rejected_TeamLead" || req.Status == "Rejected_HR")
+                                             && !string.IsNullOrWhiteSpace(req.RejectReason))
+                                        {
+                                            <div class="appr-reject-note">
+                                                <i class="bi bi-chat-left-text"></i> @req.RejectReason
+                                            </div>
+                                        }
+                                    </td>
+
+                                    @* Actions *@
+                                    <td class="appr-td appr-td--actions">
+                                        @if (activePanel == "teamlead" && req.Status == "Pending_TeamLead")
+                                        {
+                                            <div class="appr-action-btns">
+                                                <button class="appr-act-btn appr-act-btn--approve"
+                                                        @onclick="() => OpenTLApproveModal(req)" title="Approve">
+                                                    <i class="bi bi-check-lg"></i>
+                                                </button>
+                                                <button class="appr-act-btn appr-act-btn--reject"
+                                                        @onclick='() => OpenRejectModal(req, "TeamLead")' title="Reject">
+                                                    <i class="bi bi-x-lg"></i>
+                                                </button>
+                                            </div>
+                                        }
+                                        else if (activePanel == "hr" && req.Status == "Pending_HR")
+                                        {
+                                            <div class="appr-action-btns">
+                                                <button class="appr-act-btn appr-act-btn--approve"
+                                                        @onclick="() => OpenHRApproveModal(req)" title="Approve">
+                                                    <i class="bi bi-check-lg"></i>
+                                                </button>
+                                                <button class="appr-act-btn appr-act-btn--reject"
+                                                        @onclick='() => OpenRejectModal(req, "HR")' title="Reject">
+                                                    <i class="bi bi-x-lg"></i>
+                                                </button>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <span class="appr-no-action">—</span>
+                                        }
+                                    </td>
+
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            }
+        </div>
+
+    </div>
+
+    @* ════════════════════════════════════════════
+       TEAM LEAD APPROVE MODAL
+       Choose: Forward to HR  /  Direct Approval
+       ════════════════════════════════════════════ *@
+    @if (showTLApproveModal && selectedRequest != null)
+    {
+        <div class="appr-overlay" @onclick="CloseModals">
+            <div class="appr-modal appr-modal--choice" @onclick:stopPropagation="true">
+
+                <div class="appr-modal-header">
+                    <span class="appr-modal-title">Approve Leave Request</span>
+                    <button class="appr-modal-close" @onclick="CloseModals">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+
+                <div class="appr-modal-info-row">
+                    <div class="appr-av appr-avatar--lg">
+                        @GetInitials(selectedRequest.EmployeeName)
+                    </div>
+                    <div>
+                        <div class="appr-modal-emp-name">@selectedRequest.EmployeeName</div>
+                        <div class="appr-modal-emp-dates">
+                            @selectedRequest.StartDate.ToString("MMM dd") – @(selectedRequest.EndDate ?? selectedRequest.StartDate).ToString("MMM dd, yyyy")
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(selectedRequest.Reason))
+                        {
+                            <div class="appr-modal-emp-reason">"@selectedRequest.Reason"</div>
+                        }
+                    </div>
+                </div>
+
+                <p class="appr-modal-choice-label">How would you like to proceed?</p>
+
+                <div class="appr-choice-cards">
+
+                    @* Forward to HR *@
+                    <div class="appr-choice-card @(tlApproveChoice == "forward_to_hr" ? "appr-choice-card--selected" : "")"
+                         @onclick='() => { tlApproveChoice = "forward_to_hr"; choiceErr = false; }'>
+                        <div class="appr-choice-card-icon appr-choice-card-icon--forward">
+                            <i class="bi bi-diagram-3"></i>
+                        </div>
+                        <div class="appr-choice-card-body">
+                            <div class="appr-choice-card-title">Forward to HR</div>
+                            <div class="appr-choice-card-desc">
+                                Request moves to HR for final approval.
+                                Status becomes <strong>Pending with HR</strong>.
+                            </div>
+                        </div>
+                        <div class="appr-choice-radio">
+                            <div class="appr-radio-outer">
+                                @if (tlApproveChoice == "forward_to_hr") { <div class="appr-radio-inner"></div> }
+                            </div>
+                        </div>
+                    </div>
+
+                    @* Direct Approval *@
+                    <div class="appr-choice-card @(tlApproveChoice == "direct_approve" ? "appr-choice-card--selected" : "")"
+                         @onclick='() => { tlApproveChoice = "direct_approve"; choiceErr = false; }'>
+                        <div class="appr-choice-card-icon appr-choice-card-icon--direct">
+                            <i class="bi bi-check2-circle"></i>
+                        </div>
+                        <div class="appr-choice-card-body">
+                            <div class="appr-choice-card-title">Direct Approval</div>
+                            <div class="appr-choice-card-desc">
+                                Approve immediately without HR involvement.
+                                Status becomes <strong>Approved</strong>.
+                            </div>
+                        </div>
+                        <div class="appr-choice-radio">
+                            <div class="appr-radio-outer">
+                                @if (tlApproveChoice == "direct_approve") { <div class="appr-radio-inner"></div> }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                @if (choiceErr)
+                {
+                    <p class="appr-modal-err appr-modal-err--inline">
+                        <i class="bi bi-exclamation-circle"></i> Please select an option.
+                    </p>
+                }
+
+                <div class="appr-modal-actions">
+                    <button class="appr-modal-btn appr-modal-btn--cancel" @onclick="CloseModals">Cancel</button>
+                    <button class="appr-modal-btn appr-modal-btn--approve"
+                            @onclick="SubmitTLApprove" disabled="@isSaving">
+                        @if (isSaving) { <span class="appr-mini-spin"></span> }
+                        else { <span>Confirm</span> }
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(actionError))
+                {
+                    <p class="appr-modal-err appr-modal-err--inline">@actionError</p>
+                }
+            </div>
+        </div>
+    }
+
+    @* ════════════════════════════════════════════
+       HR FINAL APPROVE CONFIRM MODAL
+       ════════════════════════════════════════════ *@
+    @if (showHRApproveModal && selectedRequest != null)
+    {
+        <div class="appr-overlay" @onclick="CloseModals">
+            <div class="appr-modal appr-modal--confirm" @onclick:stopPropagation="true">
+                <div class="appr-confirm-icon appr-confirm-icon--hr">
+                    <i class="bi bi-shield-check"></i>
+                </div>
+                <div class="appr-confirm-title">Final Approval</div>
+                <p class="appr-confirm-sub">
+                    You are about to <strong>finally approve</strong> the leave request for
+                    <strong>@selectedRequest.EmployeeName</strong>
+                    (@selectedRequest.StartDate.ToString("MMM dd") – @(selectedRequest.EndDate ?? selectedRequest.StartDate).ToString("MMM dd, yyyy")).
+                    This action cannot be undone.
+                </p>
+                <div class="appr-modal-actions appr-modal-actions--centered">
+                    <button class="appr-modal-btn appr-modal-btn--cancel" @onclick="CloseModals">Cancel</button>
+                    <button class="appr-modal-btn appr-modal-btn--approve"
+                            @onclick="SubmitHRApprove" disabled="@isSaving">
+                        @if (isSaving) { <span class="appr-mini-spin"></span> } else { <span>Approve</span> }
+                    </button>
+                </div>
+                @if (!string.IsNullOrEmpty(actionError))
+                {
+                    <p class="appr-modal-err" style="text-align:center;margin:0 24px 16px">@actionError</p>
+                }
+            </div>
+        </div>
+    }
+
+    @* ════════════════════════════════════════════
+       REJECT MODAL — shared by Team Lead and HR
+       ════════════════════════════════════════════ *@
+    @if (showRejectModal && selectedRequest != null)
+    {
+        <div class="appr-overlay" @onclick="CloseModals">
+            <div class="appr-modal" @onclick:stopPropagation="true">
+
+                <div class="appr-modal-header">
+                    <span class="appr-modal-title">Reject Leave Request</span>
+                    <button class="appr-modal-close" @onclick="CloseModals">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+
+                <div class="appr-modal-info-row">
+                    <div class="appr-av appr-avatar--lg">
+                        @GetInitials(selectedRequest.EmployeeName)
+                    </div>
+                    <div>
+                        <div class="appr-modal-emp-name">@selectedRequest.EmployeeName</div>
+                        <div class="appr-modal-emp-dates">
+                            @selectedRequest.StartDate.ToString("MMM dd") – @(selectedRequest.EndDate ?? selectedRequest.StartDate).ToString("MMM dd, yyyy")
+                        </div>
+                    </div>
+                </div>
+
+                <div class="appr-modal-field">
+                    <label class="appr-modal-label">
+                        Reason for rejection <span class="appr-required">*</span>
+                    </label>
+                    <textarea class="appr-modal-textarea @(rejectErr ? "appr-modal-textarea--err" : "")"
+                              placeholder="Provide a clear reason so the employee understands the decision…"
+                              @bind="rejectReason" rows="4"></textarea>
+                    @if (rejectErr)
+                    {
+                        <p class="appr-modal-err appr-modal-err--inline">
+                            <i class="bi bi-exclamation-circle"></i> A rejection reason is required.
+                        </p>
+                    }
+                </div>
+
+                <div class="appr-modal-actions">
+                    <button class="appr-modal-btn appr-modal-btn--cancel" @onclick="CloseModals">Cancel</button>
+                    <button class="appr-modal-btn appr-modal-btn--reject"
+                            @onclick="SubmitReject" disabled="@isSaving">
+                        @if (isSaving) { <span class="appr-mini-spin"></span> } else { <span>Reject Request</span> }
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(actionError))
+                {
+                    <p class="appr-modal-err appr-modal-err--inline">@actionError</p>
+                }
+            </div>
+        </div>
+    }
+
+</BasePage>
+
+@code {
+
+    // ── State ──────────────────────────────────────────────────────
+    private string  searchQuery  = string.Empty;
+    private string  statusFilter = "All";
+    private bool    isLoading    = true;
+    private bool    isSaving     = false;
+    private string  actionError  = string.Empty;
+    private string  activePanel  = "teamlead";       // "teamlead" | "hr"
+
+    // Modal visibility
+    private bool    showTLApproveModal = false;
+    private bool    showHRApproveModal = false;
+    private bool    showRejectModal    = false;
+
+    // Modal state
+    private bool    rejectErr         = false;
+    private bool    choiceErr         = false;
+    private string  rejectReason      = string.Empty;
+    private string  pendingReviewedBy = string.Empty; // "TeamLead" | "HR"
+    private string  tlApproveChoice   = string.Empty; // "forward_to_hr" | "direct_approve"
+
+    private LeaveRequestVm?      selectedRequest = null;
+    private List<LeaveRequestVm> leaveRequests   = new();
+
+    // ── Role helpers ───────────────────────────────────────────────
+    private bool IsTeamLead =>
+        string.Equals(SessionService.ActiveOrgRole, "Team Lead", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(SessionService.ActiveOrgRole, "TeamLead",  StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(SessionService.ActiveOrgRole, "Admin",     StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(SessionService.ActiveOrgRole, "Manager",   StringComparison.OrdinalIgnoreCase);
+
+    private bool IsHR =>
+        string.Equals(SessionService.ActiveOrgRole, "HR",      StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(SessionService.ActiveOrgRole, "Admin",   StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(SessionService.ActiveOrgRole, "Manager", StringComparison.OrdinalIgnoreCase);
+
+    // ── Lifecycle ──────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        activePanel = (!IsTeamLead && IsHR) ? "hr" : "teamlead";
+        await LoadAsync();
+    }
+
+    private async Task SwitchPanel(string panel)
+    {
+        activePanel  = panel;
+        statusFilter = "All";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true; StateHasChanged();
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var res    = await client.GetAsync($"api/leave-requests?panel={activePanel}");
+            if (res.IsSuccessStatusCode)
+            {
+                var json = await res.Content.ReadAsStringAsync();
+                var opts = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+                var arr  = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement[]>(json, opts);
+                leaveRequests = arr?.Select(Map).ToList() ?? new();
+            }
+            else leaveRequests = new();
+        }
+        catch { leaveRequests = new(); }
+        finally { isLoading = false; StateHasChanged(); }
+    }
+
+    private static LeaveRequestVm Map(System.Text.Json.JsonElement e) => new()
+    {
+        Id           = e.GetProperty("id").GetInt32(),
+        EmployeeId   = e.GetProperty("employeeId").GetInt32(),
+        EmployeeName = e.GetProperty("employeeName").GetString() ?? "",
+        StartDate    = DateTime.Parse(e.GetProperty("startDate").GetString()!),
+        EndDate      = e.TryGetProperty("endDate", out var ed2) && ed2.ValueKind != System.Text.Json.JsonValueKind.Null ? DateTime.Parse(ed2.GetString()!) : (DateTime?)null,
+        Reason       = e.TryGetProperty("reason",       out var r)  && r.ValueKind  != System.Text.Json.JsonValueKind.Null ? r.GetString()  : "",
+        Status       = e.GetProperty("status").GetString() ?? "Pending_TeamLead",
+        ReviewedBy   = e.TryGetProperty("reviewedBy",   out var rb) && rb.ValueKind != System.Text.Json.JsonValueKind.Null ? rb.GetString() : null,
+        RejectReason = e.TryGetProperty("rejectReason", out var rr) && rr.ValueKind != System.Text.Json.JsonValueKind.Null ? rr.GetString() : null,
+        CreatedAt    = e.TryGetProperty("createdAt",    out var ca) && ca.ValueKind != System.Text.Json.JsonValueKind.Null
+                           ? DateTime.Parse(ca.GetString()!) : DateTime.MinValue,
+    };
+
+    // ── Modal openers ──────────────────────────────────────────────
+    private void OpenTLApproveModal(LeaveRequestVm req)
+    {
+        selectedRequest    = req;
+        tlApproveChoice    = string.Empty;
+        choiceErr          = false;
+        actionError        = string.Empty;
+        showTLApproveModal = true;
+    }
+
+    private void OpenHRApproveModal(LeaveRequestVm req)
+    {
+        selectedRequest    = req;
+        pendingReviewedBy  = "HR";
+        actionError        = string.Empty;
+        showHRApproveModal = true;
+    }
+
+    private void OpenRejectModal(LeaveRequestVm req, string reviewedBy)
+    {
+        selectedRequest   = req;
+        pendingReviewedBy = reviewedBy;
+        rejectReason      = string.Empty;
+        rejectErr         = false;
+        actionError       = string.Empty;
+        showRejectModal   = true;
+    }
+
+    private void CloseModals()
+    {
+        showTLApproveModal = false;
+        showHRApproveModal = false;
+        showRejectModal    = false;
+        selectedRequest    = null;
+        rejectReason       = string.Empty;
+        tlApproveChoice    = string.Empty;
+        rejectErr          = false;
+        choiceErr          = false;
+        actionError        = string.Empty;
+        isSaving           = false;
+    }
+
+    // ── Submit: Team Lead (Forward to HR or Direct Approve) ────────
+    private async Task SubmitTLApprove()
+    {
+        if (string.IsNullOrEmpty(tlApproveChoice)) { choiceErr = true; return; }
+        if (selectedRequest == null) return;
+        isSaving = true; actionError = string.Empty; StateHasChanged();
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var body   = new { action = tlApproveChoice, reviewedBy = "TeamLead" };
+            var res    = await client.PatchAsJsonAsync($"api/leave-requests/{selectedRequest.Id}/review", body);
+            if (res.IsSuccessStatusCode) { CloseModals(); await LoadAsync(); }
+            else actionError = await ParseError(res);
+        }
+        catch { actionError = "An error occurred. Please try again."; }
+        finally { isSaving = false; StateHasChanged(); }
+    }
+
+    // ── Submit: HR final approval ──────────────────────────────────
+    private async Task SubmitHRApprove()
+    {
+        if (selectedRequest == null) return;
+        isSaving = true; actionError = string.Empty; StateHasChanged();
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var body   = new { action = "approve", reviewedBy = "HR" };
+            var res    = await client.PatchAsJsonAsync($"api/leave-requests/{selectedRequest.Id}/review", body);
+            if (res.IsSuccessStatusCode) { CloseModals(); await LoadAsync(); }
+            else actionError = await ParseError(res);
+        }
+        catch { actionError = "An error occurred. Please try again."; }
+        finally { isSaving = false; StateHasChanged(); }
+    }
+
+    // ── Submit: Reject (Team Lead or HR) ──────────────────────────
+    private async Task SubmitReject()
+    {
+        rejectErr = string.IsNullOrWhiteSpace(rejectReason);
+        if (rejectErr || selectedRequest == null) return;
+        isSaving = true; actionError = string.Empty; StateHasChanged();
+        try
+        {
+            var client = ClientFactory.CreateClient("API");
+            var body   = new { action = "reject", reviewedBy = pendingReviewedBy, rejectReason = rejectReason.Trim() };
+            var res    = await client.PatchAsJsonAsync($"api/leave-requests/{selectedRequest.Id}/review", body);
+            if (res.IsSuccessStatusCode) { CloseModals(); await LoadAsync(); }
+            else actionError = await ParseError(res);
+        }
+        catch { actionError = "An error occurred. Please try again."; }
+        finally { isSaving = false; StateHasChanged(); }
+    }
+
+    private static async Task<string> ParseError(HttpResponseMessage res)
+    {
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            return doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() ?? "Error." : "Error.";
+        }
+        catch { return "An error occurred."; }
+    }
+
+    // ── Display helpers ────────────────────────────────────────────
+    private static (string cls, string label) GetBadge(string status) => status switch
+    {
+        "Pending_TeamLead"  => ("appr-pill--pending-tl", "Pending with Team Lead"),
+        "Pending_HR"        => ("appr-pill--pending-hr", "Pending with HR"),
+        "Approved"          => ("appr-pill--approved",   "Approved"),
+        "Rejected_TeamLead" => ("appr-pill--rejected",   "Rejected by Team Lead"),
+        "Rejected_HR"       => ("appr-pill--rejected",   "Rejected by HR"),
+        _                   => ("appr-pill--pending-tl", status)
+    };
+
+    private static string GetInitials(string name)
+    {
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[0][0]}{parts[^1][0]}".ToUpper()
+            : name.Length > 0 ? name[0].ToString().ToUpper() : "?";
+    }
+
+    private static string GetAvatarColor(string name)
+    {
+        var colors = new[] { "blue", "green", "amber", "pink", "teal" };
+        var hash   = name.Aggregate(0, (acc, c) => acc + c);
+        return colors[hash % colors.Length];
+    }
+
+}
+
+
+<style>
+    /* ══ PAGE SHELL ══ */
+    .appr-page { display:flex;flex-direction:column;width:100%;height:calc(100vh - 60px);background:#f8f9fb;overflow:hidden;position:relative;font-family:inherit; }
+
+    /* ══ TOP TAB BAR — matches dtl-topbar ══ */
+    .appr-topbar { display:flex;align-items:center;padding:0 32px;background:#fff;border-bottom:1px solid #eaedf0;flex-shrink:0;height:52px; }
+    .appr-tabs   { display:flex;height:100%;gap:4px; }
+    .appr-tab {
+        padding:0 20px;border:none;background:transparent;
+        font-size:13px;font-weight:500;color:#9ca3af;
+        cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;
+        font-family:inherit;letter-spacing:.1px;transition:color .15s;
+        display:inline-flex;align-items:center;gap:7px;
+    }
+    .appr-tab:hover { color:#374151; }
+    .appr-tab--active { color:#ff7a00 !important;border-bottom-color:#ff7a00 !important;font-weight:700; }
+
+    /* ══ FILTER BAR ══ */
+    .appr-filterbar {
+        display:flex;align-items:center;gap:12px;padding:10px 32px;
+        background:#fff;border-bottom:1px solid #eaedf0;flex-shrink:0;
+    }
+    .appr-search-wrap {
+        display:flex;align-items:center;gap:9px;
+        border:1.5px solid #e5e7eb;border-radius:8px;
+        padding:8px 14px 8px 10px;flex:1;max-width:380px;
+        background:#fff;transition:border-color .15s;
+    }
+    .appr-search-wrap:focus-within { border-color:#ff7a00; }
+    .appr-search-icon  { color:#9ca3af;font-size:13px;flex-shrink:0;display:flex;align-items:center;line-height:1;margin-left:4px; }
+    .appr-search-input {
+        border:none;outline:none;font-size:13px;color:#111827;
+        background:transparent;flex:1;font-family:inherit;
+    }
+    .appr-search-input::placeholder { color:#9ca3af; }
+    .appr-filter-select {
+        border:1.5px solid #e5e7eb;border-radius:8px;
+        padding:8px 14px;font-size:13px;color:#374151;
+        background:#fff;cursor:pointer;font-family:inherit;
+        outline:none;transition:border-color .15s;
+    }
+    .appr-filter-select:focus { border-color:#ff7a00; }
+
+    /* ══ TABLE WRAP ══ */
+    .appr-table-wrap { flex:1;overflow-y:auto;overflow-x:hidden;background:#f8f9fb;scrollbar-width:thin; }
+
+    /* ══ TABLE — matches dtl-table ══ */
+    .appr-table { width:100%;border-collapse:separate;border-spacing:0;background:#fff; }
+
+    /* ── Header row ── */
+    .appr-thead-row { border-bottom:1px solid #eaedf0; }
+    .appr-th {
+        padding:0 20px;height:44px;text-align:left;
+        font-size:11px;font-weight:600;color:#64748b;
+        background:#f8f9fb;border-bottom:1px solid #eaedf0;
+        white-space:nowrap;letter-spacing:.5px;text-transform:uppercase;
+    }
+    .appr-th--name    { padding-left:28px;min-width:240px; }
+    .appr-th--actions { min-width:100px;text-align:center; }
+
+    /* ── Data rows ── */
+    .appr-row { border-bottom:1px solid #f1f5f9;transition:background .1s; }
+    .appr-row:hover { background:#fefaf7; }
+
+    /* ── Data cells ── */
+    .appr-td         { padding:0 20px;height:64px;vertical-align:middle;font-size:13px;color:#374151; }
+    .appr-td--name   { padding-left:28px; }
+    .appr-td--status { }
+    .appr-td--actions{ text-align:center; }
+
+    /* ── Name cell ── */
+    .appr-name-cell { display:flex;align-items:center;gap:12px; }
+    .appr-av {
+        width:36px;height:36px;border-radius:10px;
+        background:linear-gradient(135deg,#667eea,#764ba2);
+        color:#fff;display:flex;align-items:center;justify-content:center;
+        font-size:13px;font-weight:700;flex-shrink:0;
+    }
+    .appr-name { font-size:14px;font-weight:600;color:#0f172a;white-space:nowrap; }
+    .appr-sub  { font-size:11px;color:#9ca3af;margin-top:2px; }
+
+    /* ── Date cell ── */
+    .appr-date-cell  { display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#374151;white-space:nowrap; }
+    .appr-cal-icon   { color:#9ca3af;font-size:13px; }
+    .appr-date-arrow { color:#9ca3af; }
+
+    /* ── Reason ── */
+    .appr-reason {
+        font-size:13px;color:#374151;
+        display:-webkit-box;-webkit-line-clamp:2;
+        -webkit-box-orient:vertical;overflow:hidden;max-width:220px;
+    }
+
+    /* ── Status pill — matches apv-status style ── */
+    .appr-status-pill { display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500; }
+    .appr-status-dot  { width:10px;height:10px;border-radius:50%;flex-shrink:0;border:2px solid currentColor;background:transparent; }
+
+    .appr-pill--pending-tl { color:#f97316; }
+    .appr-pill--pending-tl .appr-status-dot { border-color:#f97316; }
+
+    .appr-pill--pending-hr { color:#3b82f6; }
+    .appr-pill--pending-hr .appr-status-dot { border-color:#3b82f6; }
+
+    .appr-pill--approved { color:#22c55e; }
+    .appr-pill--approved .appr-status-dot { border-color:#22c55e;background:#22c55e; }
+
+    .appr-pill--rejected { color:#ef4444; }
+    .appr-pill--rejected .appr-status-dot { border-color:#ef4444; }
+
+    /* ── Reject note ── */
+    .appr-reject-note { display:flex;align-items:flex-start;gap:5px;margin-top:5px;font-size:12px;color:#dc2626;max-width:220px;line-height:1.4; }
+
+    /* ── Action buttons — matches apv-approve-btn style ── */
+    .appr-action-btns { display:inline-flex;align-items:center;gap:8px;justify-content:center; }
+    .appr-act-btn {
+        width:32px;height:32px;border-radius:50%;border:none;
+        display:inline-flex;align-items:center;justify-content:center;
+        font-size:15px;font-weight:700;cursor:pointer;
+        transition:background .15s,transform .1s;
+    }
+    .appr-act-btn:hover { transform:scale(1.1); }
+    .appr-act-btn--approve { background:#22c55e;color:#fff; }
+    .appr-act-btn--approve:hover { background:#16a34a; }
+    .appr-act-btn--reject  { background:#e5e7eb;color:#6b7280; }
+    .appr-act-btn--reject:hover  { background:#fecaca;color:#dc2626; }
+    .appr-no-action { color:#d1d5db;font-size:14px; }
+
+    /* ══ LOADING ══ */
+    .appr-loading { display:flex;align-items:center;justify-content:center;gap:12px;padding:80px 0;color:#9ca3af;font-size:14px; }
+    .appr-loader-ring { width:24px;height:24px;border-radius:50%;border:3px solid #f3f4f6;border-top-color:#ff7a00;animation:appr-spin .7s linear infinite; }
+    @@keyframes appr-spin { to { transform:rotate(360deg); } }
+
+    /* ══ EMPTY STATE ══ */
+    .appr-empty-state { display:flex;flex-direction:column;align-items:center;padding:80px 20px;text-align:center; }
+    .appr-empty-icon  { font-size:2.5rem;color:#d1d5db;margin-bottom:14px; }
+    .appr-empty-title { font-size:1.05rem;font-weight:700;color:#374151;margin-bottom:8px; }
+    .appr-empty-sub   { font-size:.875rem;color:#9ca3af;max-width:380px; }
+
+    /* ══ OVERLAY ══ */
+    .appr-overlay {
+        position:fixed;inset:0;z-index:1060;
+        background:rgba(0,0,0,.48);backdrop-filter:blur(2px);
+        display:flex;align-items:center;justify-content:center;padding:16px;
+    }
+
+    /* ══ MODAL ══ */
+    .appr-modal {
+        background:#fff;border-radius:16px;
+        width:520px;max-width:100%;
+        box-shadow:0 24px 60px rgba(0,0,0,.22);
+        animation:appr-modal-in .2s cubic-bezier(.4,0,.2,1);
+        overflow:hidden;
+    }
+    @@keyframes appr-modal-in {
+        from { opacity:0;transform:scale(.96) translateY(8px); }
+        to   { opacity:1;transform:scale(1)  translateY(0); }
+    }
+    .appr-modal-header { display:flex;align-items:center;justify-content:space-between;padding:20px 24px 16px;border-bottom:1px solid #f3f4f6; }
+    .appr-modal-title  { font-size:1.05rem;font-weight:700;color:#111827; }
+    .appr-modal-close  { width:32px;height:32px;border:none;background:transparent;border-radius:7px;cursor:pointer;color:#9ca3af;font-size:14px;display:flex;align-items:center;justify-content:center; }
+    .appr-modal-close:hover { background:#f3f4f6;color:#374151; }
+
+    /* ── Employee info strip ── */
+    .appr-modal-info-row  { display:flex;align-items:center;gap:14px;padding:16px 24px;background:#fafafa;border-bottom:1px solid #f3f4f6; }
+    .appr-modal-emp-name  { font-size:1rem;font-weight:700;color:#111827; }
+    .appr-modal-emp-dates { font-size:.82rem;color:#6b7280;margin-top:2px; }
+    .appr-modal-emp-reason{ font-size:.82rem;color:#9ca3af;font-style:italic;margin-top:4px; }
+    .appr-avatar--lg      { width:44px;height:44px;font-size:1rem; }
+
+    /* ── Choice label ── */
+    .appr-modal-choice-label { padding:16px 24px 8px;font-size:.82rem;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px; }
+
+    /* ── Choice cards ── */
+    .appr-choice-cards { display:flex;flex-direction:column;gap:10px;padding:0 24px 8px; }
+    .appr-choice-card {
+        display:flex;align-items:center;gap:14px;
+        padding:15px 16px;border:2px solid #e5e7eb;border-radius:12px;
+        cursor:pointer;background:#fff;transition:border-color .15s,background .15s;
+    }
+    .appr-choice-card:hover          { border-color:#ff7a00;background:#fff7ed; }
+    .appr-choice-card--selected       { border-color:#ff7a00;background:#fff7ed; }
+    .appr-choice-card-icon            { width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0; }
+    .appr-choice-card-icon--forward   { background:#eff6ff;color:#3b82f6; }
+    .appr-choice-card-icon--direct    { background:#f0fdf4;color:#16a34a; }
+    .appr-choice-card-body            { flex:1; }
+    .appr-choice-card-title           { font-size:.9rem;font-weight:700;color:#111827;margin-bottom:3px; }
+    .appr-choice-card-desc            { font-size:.8rem;color:#6b7280;line-height:1.5; }
+    .appr-choice-radio                { display:flex;align-items:center;padding-left:4px; }
+    .appr-radio-outer                 { width:18px;height:18px;border-radius:50%;border:2px solid #d1d5db;display:flex;align-items:center;justify-content:center;transition:border-color .15s; }
+    .appr-choice-card--selected .appr-radio-outer { border-color:#ff7a00; }
+    .appr-radio-inner                 { width:9px;height:9px;border-radius:50%;background:#ff7a00; }
+
+    /* ── Confirm modal variant ── */
+    .appr-modal--confirm    { text-align:center;padding:36px 32px 28px; }
+    .appr-confirm-icon      { font-size:2.8rem;margin-bottom:14px;color:#16a34a; }
+    .appr-confirm-icon--hr  { color:#3b82f6; }
+    .appr-confirm-title     { font-size:1.2rem;font-weight:800;color:#111827;margin-bottom:10px; }
+    .appr-confirm-sub       { font-size:.9rem;color:#6b7280;line-height:1.6;margin-bottom:24px; }
+
+    /* ── Textarea field ── */
+    .appr-modal-field   { padding:16px 24px 4px; }
+    .appr-modal-label   { display:block;font-size:.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px; }
+    .appr-required      { color:#ef4444; }
+    .appr-modal-textarea {
+        width:100%;border:1.5px solid #e5e7eb;border-radius:9px;
+        padding:12px 14px;font-size:.9rem;color:#111827;
+        font-family:inherit;resize:vertical;outline:none;
+        transition:border-color .15s;box-sizing:border-box;min-height:100px;
+    }
+    .appr-modal-textarea:focus     { border-color:#ff7a00;box-shadow:0 0 0 3px rgba(255,122,0,.08); }
+    .appr-modal-textarea--err       { border-color:#ef4444; }
+
+    /* ── Modal footer actions ── */
+    .appr-modal-actions           { display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:16px 24px;border-top:1px solid #f3f4f6;margin-top:8px; }
+    .appr-modal-actions--centered { justify-content:center;border-top:none;padding-top:0;margin-top:0; }
+    .appr-modal-btn               { padding:10px 24px;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px;transition:background .15s; }
+    .appr-modal-btn:disabled      { opacity:.6;cursor:not-allowed; }
+    .appr-modal-btn--cancel       { background:#f3f4f6;color:#374151; }
+    .appr-modal-btn--cancel:hover { background:#e5e7eb; }
+    .appr-modal-btn--approve      { background:#ff7a00;color:#fff; }
+    .appr-modal-btn--approve:hover:not(:disabled) { background:#e06800; }
+    .appr-modal-btn--reject       { background:#dc2626;color:#fff; }
+    .appr-modal-btn--reject:hover:not(:disabled)  { background:#b91c1c; }
+
+    /* ── Inline errors ── */
+    .appr-modal-err--inline { display:flex;align-items:center;gap:6px;font-size:.82rem;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:7px;padding:8px 12px;margin:4px 24px 12px; }
+
+    /* ── Mini spinner ── */
+    .appr-mini-spin { width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:appr-spin .6s linear infinite;display:inline-block; }
+
+    @@media (max-width:640px) {
+        .appr-topbar  { padding:0 16px; }
+        .appr-filterbar { padding:10px 16px; }
+        .appr-table-wrap { overflow-x:auto; }
+        .appr-td--name { padding-left:16px; }
+        .appr-th--name { padding-left:16px; }
+    }
+</style>

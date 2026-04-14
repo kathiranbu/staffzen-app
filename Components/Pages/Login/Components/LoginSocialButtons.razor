@@ -1,0 +1,122 @@
+@* Social icons row + expandable full buttons (Login panel) *@
+
+<p class="text-center mb-3" style="font-size:13px; color:#999;">Connect with</p>
+
+<!-- Top icon row -->
+<div class="d-flex align-items-center justify-content-center gap-2 mb-3">
+
+    <!-- Facebook — solid blue filled circle with white f -->
+    <div class="social-icon-btn" title="Facebook">
+        <svg width="38" height="38" viewBox="0 0 38 38">
+            <circle cx="19" cy="19" r="19" fill="#1877F2"/>
+            <path d="M21.5 20.5h2.5l1-4H21.5v-2c0-1.1.4-2 1.6-2H25V9s-1.2-.2-2.8-.2c-3 0-4.7 1.8-4.7 5v2.7H15v4h2.5V30h4V20.5z" fill="white"/>
+        </svg>
+    </div>
+
+    <!-- Google — white circle with coloured G -->
+    <div class="social-icon-btn social-icon-border" title="Sign in with Google" @onclick="OnGoogleClicked" style="cursor:pointer;">
+        <svg width="38" height="38" viewBox="0 0 38 38">
+            <circle cx="19" cy="19" r="18" fill="white" stroke="#e0e0e0" stroke-width="1"/>
+            <g transform="translate(9, 9)">
+                <path d="M19.6 10.23c0-.82-.07-1.42-.23-2.05H10v3.72h5.46c-.11.93-.72 2.33-2.07 3.27l-.02.12 3 2.33.21.02c1.91-1.77 3.02-4.36 3.02-7.41z" fill="#4285F4"/>
+                <path d="M10 20c2.7 0 4.96-.89 6.62-2.41l-3.16-2.45c-.84.59-1.97 1-3.46 1-2.64 0-4.88-1.77-5.68-4.21l-.11.01-3.12 2.42-.04.1C2.96 17.75 6.23 20 10 20z" fill="#34A853"/>
+                <path d="M4.32 11.93A6.16 6.16 0 0 1 4 10c0-.68.12-1.34.31-1.93l-.01-.13L1.14 5.48l-.1.04A9.96 9.96 0 0 0 0 10c0 1.61.39 3.13 1.04 4.48l3.28-2.55z" fill="#FBBC05"/>
+                <path d="M10 3.96c1.87 0 3.13.81 3.85 1.48l2.81-2.74C14.95.99 12.7 0 10 0 6.23 0 2.96 2.25 1.04 5.52l3.27 2.55C5.12 5.73 7.36 3.96 10 3.96z" fill="#EA4335"/>
+            </g>
+        </svg>
+    </div>
+
+    <!-- Microsoft — white circle with 4-colour grid -->
+    <div class="social-icon-btn social-icon-border" title="Microsoft" style="cursor:pointer;">
+        <svg width="38" height="38" viewBox="0 0 38 38">
+            <circle cx="19" cy="19" r="18" fill="white" stroke="#e0e0e0" stroke-width="1"/>
+            <rect x="11" y="11" width="7.5" height="7.5" fill="#F25022"/>
+            <rect x="19.5" y="11" width="7.5" height="7.5" fill="#7FBA00"/>
+            <rect x="11" y="19.5" width="7.5" height="7.5" fill="#00A4EF"/>
+            <rect x="19.5" y="19.5" width="7.5" height="7.5" fill="#FFB900"/>
+        </svg>
+    </div>
+
+    <!-- Apple — white circle with black Apple logo -->
+    <div class="social-icon-btn social-icon-border" title="Apple" style="cursor:pointer;">
+        <svg width="38" height="38" viewBox="0 0 38 38">
+            <circle cx="19" cy="19" r="18" fill="white" stroke="#e0e0e0" stroke-width="1"/>
+            <!-- Apple logo path, centered -->
+            <g transform="translate(11.5, 9)">
+                <path d="M13.26 7.55c-.02-2.57 2.1-3.82 2.2-3.88-1.2-1.75-3.07-1.99-3.73-2.02-1.59-.16-3.1.94-3.91.94-.8 0-2.03-.92-3.35-.89C2.8 1.74 1.17 2.67.35 4.14c-1.67 2.88-.43 7.14 1.2 9.48.8 1.15 1.74 2.44 2.99 2.39 1.2-.05 1.66-.77 3.11-.77s1.87.77 3.14.74c1.29-.02 2.11-1.17 2.9-2.32.92-1.33 1.29-2.62 1.31-2.68-.03-.01-2.52-.97-2.54-3.43z" fill="#111"/>
+                <path d="M10.81 1.2c.67-.81 1.12-1.94 1-3.07-.96.04-2.13.64-2.82 1.45-.62.71-1.16 1.86-1.02 2.96 1.07.08 2.17-.54 2.84-1.34z" fill="#111" transform="translate(0, 2)"/>
+            </g>
+        </svg>
+    </div>
+
+    <!-- and more chevron -->
+    <span class="and-more-btn" @onclick="ToggleMore">
+        and more
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+             style="transition:transform 0.25s; transform:@(ShowMore ? "rotate(180deg)" : "rotate(0deg)")">
+            <polyline points="6 9 12 15 18 9" />
+        </svg>
+    </span>
+</div>
+
+<!-- Expanded social drawer -->
+<div class="d-flex flex-column align-items-center gap-2"
+     style="overflow:hidden; transition:max-height 0.35s ease, margin-bottom 0.35s ease;
+            max-height:@(ShowMore ? "440px" : "0px");
+            margin-bottom:@(ShowMore ? "8px" : "0px");">
+
+    <button class="social-full-btn d-flex align-items-center justify-content-center gap-2 py-2 border rounded-2 bg-white" style="width:200px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#1877f2;display:flex;align-items:center;justify-content:center;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+            </svg>
+        </div>
+        <span class="fw-medium" style="font-size:14px;">Facebook</span>
+    </button>
+
+    <button class="social-full-btn google-btn d-flex align-items-center justify-content-center gap-2 py-2 border rounded-2 bg-white"
+            style="width:200px;" @onclick="OnGoogleClicked">
+        <div style="width:24px;height:24px;border-radius:50%;border:1px solid #e0e0e0;display:flex;align-items:center;justify-content:center;">
+            <svg width="13" height="13" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+            </svg>
+        </div>
+        <span class="fw-medium" style="font-size:14px;">Google</span>
+    </button>
+
+    <button class="social-full-btn d-flex align-items-center justify-content-center gap-2 py-2 border rounded-2 bg-white" style="width:200px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#000;display:flex;align-items:center;justify-content:center;">
+            <svg width="10" height="12" viewBox="0 0 814 1000" fill="white">
+                <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105.4-57.6-155.5-127.9C46.7 790.7 0 663 0 541.8c0-207.5 135.4-317.5 270-317.5 67.2 0 123.1 44.5 166 44.5 40.8 0 103.7-47.5 179.3-47.5 26.6 0 108.2 2.6 163.4 96.4zm-230.2-130.4c-14.7 58.9-75.3 108.3-137.5 108.3-2 0-4 0-5.9-.3 1.5-59.2 48.3-117.8 109.4-140.3 6.4-2.3 13.1-4.1 20-5.3 3.1-.5 6.2-.7 9.2-.7 1.7 0 3.4.1 5.1.2-.1 12.6 0 25.1-.3 38.1z" />
+            </svg>
+        </div>
+        <span class="fw-medium" style="font-size:14px;">Apple</span>
+    </button>
+    <button class="social-full-btn d-flex align-items-center justify-content-center gap-2 py-2 border rounded-2 bg-white" style="width:200px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#f15a29;display:flex;align-items:center;justify-content:center;">
+            <span class="text-white fw-bold" style="font-size:10px;">P</span>
+        </div>
+        <span class="fw-medium" style="font-size:14px;">PayrollPanda</span>
+    </button>
+    <button class="social-full-btn d-flex align-items-center justify-content-center gap-2 py-2 border rounded-2 bg-white" style="width:200px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#13b5ea;display:flex;align-items:center;justify-content:center;">
+            <span class="text-white fw-bold" style="font-size:8px;">xero</span>
+        </div>
+        <span class="fw-medium" style="font-size:14px;">Xero</span>
+    </button>
+    <button class="social-full-btn social-intuit d-flex align-items-center justify-content-center py-2 rounded-2 fw-semibold"
+            style="font-size:14px; border:1.5px solid #0077c5; color:#0077c5; background:#fff; width:200px;">
+        Sign in with Intuit
+    </button>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnGoogleLogin { get; set; }
+
+    bool ShowMore = false;
+    void ToggleMore() => ShowMore = !ShowMore;
+    private async Task OnGoogleClicked() => await OnGoogleLogin.InvokeAsync();
+}

@@ -1,0 +1,2398 @@
+@inject IJSRuntime JS
+@inject IHttpClientFactory HttpClientFactory
+
+<!-- ═══ TOAST NOTIFICATION ═══ -->
+@if (toastVisible)
+{
+    <div class="ht-toast @(toastFading ? "ht-toast--fade" : "")">
+        <i class="bi bi-check-circle-fill ht-toast-icon"></i>
+        <span>@toastMessage</span>
+    </div>
+}
+
+<!-- ═══ THREE-DOT TOOLTIP ═══ -->
+@if (showDotsMenu)
+{
+    <div style="position:fixed;inset:0;z-index:8000;" @onclick="CloseDotsMenu"></div>
+    <div class="ht-dots-menu" style="top:@(dotsMenuTop)px;left:@(dotsMenuLeft)px;">
+        <div class="ht-dots-menu-item" @onclick="OpenRefreshModal" @onclick:stopPropagation="true">
+            <i class="bi bi-arrow-clockwise"></i>
+            <span>Refresh calendar</span>
+        </div>
+    </div>
+}
+
+<!-- ═══ REFRESH MODAL ═══ -->
+@if (showRefreshModal)
+{
+    <div class="ht-modal-back" @onclick="CloseRefreshModal">
+        <div class="ht-modal ht-refresh-modal" @onclick:stopPropagation="true">
+            <div class="ht-modal-head">
+                <span>Refresh @selectedCalendar?.Name calendar</span>
+                <button class="ht-modal-close" @onclick="CloseRefreshModal"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="ht-modal-body">
+                <p class="ht-refresh-desc">Update imported calendars to include the latest holiday data.</p>
+                <div class="ht-refresh-options-label">
+                    Refresh options
+                    <i class="bi bi-info-circle ht-info-icon" title="Choose which dates to refresh."></i>
+                </div>
+                <div class="ht-refresh-options">
+                    <label class="ht-refresh-opt @(refreshOption == "all" ? "ht-refresh-opt--active" : "")" @onclick='() => refreshOption = "all"'>
+                        <div class="ht-refresh-radio @(refreshOption == "all" ? "ht-refresh-radio--checked" : "")">
+                            @if (refreshOption == "all") { <i class="bi bi-check-lg"></i> }
+                        </div>
+                        <span>All dates</span>
+                    </label>
+                    <label class="ht-refresh-opt @(refreshOption == "future" ? "ht-refresh-opt--active" : "")" @onclick='() => refreshOption = "future"'>
+                        <div class="ht-refresh-radio @(refreshOption == "future" ? "ht-refresh-radio--checked" : "")">
+                            @if (refreshOption == "future") { <i class="bi bi-check-lg"></i> }
+                        </div>
+                        <span>Future dates</span>
+                    </label>
+                    <label class="ht-refresh-opt @(refreshOption == "specific" ? "ht-refresh-opt--active" : "")" @onclick='() => refreshOption = "specific"'>
+                        <div class="ht-refresh-radio @(refreshOption == "specific" ? "ht-refresh-radio--checked" : "")">
+                            @if (refreshOption == "specific") { <i class="bi bi-check-lg"></i> }
+                        </div>
+                        <span>From a specific date</span>
+                    </label>
+                </div>
+
+                @if (refreshOption == "specific")
+                {
+                    <div class="ht-specific-date-wrap">
+                        <label class="ht-specific-date-label">Selected date</label>
+                        <div class="ht-specific-date-input-wrap">
+                            <input type="date" class="ht-specific-date-input"
+                                   @bind="specificRefreshDate" />
+                            <i class="bi bi-calendar3 ht-specific-date-icon"></i>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="ht-modal-foot">
+                <button class="ht-btn-cancel" @onclick="CloseRefreshModal">Cancel</button>
+                <button class="ht-btn-save" @onclick="DoRefreshCalendar" disabled="@isRefreshing">
+                    @if (isRefreshing)
+                    {
+                        <span class="ht-mini-spin"></span><span>Refreshing...</span>
+                    }
+                    else
+                    {
+                        <span>Refresh</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="ht-layout">
+
+    <!-- ═══ LEFT SIDEBAR ═══ -->
+    <div class="ht-sidebar">
+        <div class="ht-sidebar-search">
+            <i class="bi bi-search ht-search-icon"></i>
+            <input type="text" class="ht-search-input" placeholder="Search..."
+                   @bind="calSearch" @bind:event="oninput" />
+        </div>
+
+        <div class="ht-add-btn" @onclick="OpenAddCalendar">
+            <i class="bi bi-plus-lg"></i>
+            <span>Add new calendar</span>
+        </div>
+
+        @if (!calendars.Any())
+        {
+            <div class="ht-no-calendars">No calendars added yet</div>
+        }
+        else
+        {
+            @foreach (var cal in FilteredCalendars)
+            {
+                var c = cal;
+                <div class='ht-cal-item @(selectedCalendar?.Id == c.Id ? "ht-cal-item--active" : "")'
+                     @onclick="() => SelectCalendar(c)">
+                    <div class="ht-cal-item-top">
+                        <span class="ht-cal-name">@c.Name</span>
+                        <i class="bi bi-download ht-cal-dl"></i>
+                    </div>
+                    @if (c.IsDefault)
+                    {
+                        <span class="ht-cal-default">DEFAULT</span>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    <!-- ═══ MAIN CONTENT ═══ -->
+    <div class="ht-main">
+
+        @if (showAddForm)
+        {
+            <div class="ht-form-card">
+                <div class="ht-form-name-preview">@newCalName</div>
+
+                <!-- Calendar name -->
+                <div class="ht-form-row">
+                    <label class="ht-form-label">Calendar name</label>
+                    <input type="text"
+                           class='ht-form-input @(calNameErr ? "ht-form-input--err" : "")'
+                           placeholder="Calendar name"
+                           @bind="newCalName" @bind:event="oninput"
+                           @onfocus="() => calNameErr = false" />
+                    @if (calNameErr)
+                    {
+                        <span class="ht-err-msg">Calendar name is required.</span>
+                    }
+                </div>
+
+                <!-- Make default -->
+                <div class="ht-default-row">
+                    <input type="checkbox" id="ht-make-default" class="ht-checkbox"
+                           @bind="newCalMakeDefault" />
+                    <label for="ht-make-default" class="ht-checkbox-label">
+                        Make default
+                        <span class="ht-tooltip-wrap">
+                            <i class="bi bi-info-circle ht-info-icon"></i>
+                            <span class="ht-tooltip-box">
+                                By making this the default calendar, members or groups that aren't directly assigned will be put to the default calendar.<br/><br/>
+                                To switch the default calendar to another, make the other calendar the default instead.
+                            </span>
+                        </span>
+                    </label>
+                </div>
+
+                @if (!editMode)
+                {
+                    <div class="ht-form-row">
+                        <label class="ht-form-label">Holidays</label>
+
+                        <!-- Import from a calendar -->
+                        <div class='ht-radio-option @(!addManually ? "ht-radio-option--selected" : "")'
+                             @onclick="() => { addManually = false; StateHasChanged(); }">
+                            <div class='@(!addManually ? "ht-radio-check" : "ht-radio-circle")'>
+                                @if (!addManually) { <i class="bi bi-check-lg"></i> }
+                            </div>
+                            <span>Import from a calendar</span>
+                        </div>
+
+                        @if (!addManually)
+                        {
+                            <div class="ht-country-wrap" @ref="triggerRef">
+                                <div class='ht-country-trigger @(countryDropOpen ? "ht-country-trigger--open" : "")'
+                                     @onclick="ToggleCountryDropAsync">
+                                    <span class='@(selectedCountry == null ? "ht-placeholder" : "")'>
+                                        @(selectedCountry ?? "Select country or region")
+                                    </span>
+                                    <i class='bi bi-chevron-@(countryDropOpen ? "up" : "down")'></i>
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Add manually -->
+                        <div class='ht-radio-option @(addManually ? "ht-radio-option--selected" : "")'
+                             style="margin-top:12px;"
+                             @onclick="() => { addManually = true; selectedCountry = null; countryDropOpen = false; StateHasChanged(); }">
+                            <div class='@(addManually ? "ht-radio-check" : "ht-radio-circle")'>
+                                @if (addManually) { <i class="bi bi-check-lg"></i> }
+                            </div>
+                            <span>Add manually</span>
+                        </div>
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(selectedCountry))
+                {
+                    <div class="ht-edit-country">Country: @selectedCountry</div>
+                }
+
+                <!-- Members -->
+                <div class="ht-members-section">
+                    <div class="ht-members-title">
+                        MEMBERS
+                        <span class="ht-tooltip-wrap">
+                            <i class="bi bi-info-circle ht-info-icon"></i>
+                            <span class="ht-tooltip-box ht-tooltip-box--sm">
+                                Members or groups assigned to this calendar will follow its holiday rules.
+                            </span>
+                        </span>
+                    </div>
+                    <div class="ht-people-link" style="margin-bottom:0;">
+                        <a href="#" class="ht-link">Go to People Settings</a>
+                        <span> to view or edit Members and Groups assignment for this calendar</span>
+                    </div>
+                </div>
+
+                <div class="ht-form-actions">
+                    <button class="ht-btn-cancel" @onclick="CancelAdd">Cancel</button>
+                    <button class="ht-btn-save" @onclick="SaveCalendar" disabled="@importLoading">
+                        @if (importLoading)
+                        {
+                            <span class="ht-mini-spin"></span><span>Importing from Google Calendar...</span>
+                        }
+                        else
+                        {
+                            <span>Save</span>
+                        }
+                    </button>
+                </div>
+
+                @if (importError != null)
+                {
+                    <div class="ht-import-err">
+                        <i class="bi bi-exclamation-triangle"></i> @importError
+                    </div>
+                }
+            </div>
+        }
+                else if (selectedCalendar != null)
+        {
+            <div class="ht-cal-detail">
+
+                <div class="ht-cal-header-card">
+                    <div class="ht-cal-header-left">
+                        <span class="ht-cal-title">@selectedCalendar.Name</span>
+                        <div class="ht-tooltip-wrap" style="position:relative;display:inline-flex;">
+                        <button class="ht-icon-btn"><i class="bi bi-download"></i></button>
+                        <div class="ht-tooltip-box" style="bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);white-space:nowrap;">
+                            Imported from Google Calendar
+                        </div>
+                    </div>
+                    </div>
+                    <div class="ht-cal-header-right">
+                        <button class="ht-icon-btn" title="More" @ref="dotsButtonRef"
+                                @onclick="ToggleDotsMenu"><i class="bi bi-three-dots"></i></button>
+                        <button class="ht-icon-btn" title="Edit"
+                                @onclick="() => OpenEditCalendar(selectedCalendar)">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="ht-icon-btn" title="Collapse">
+                            <i class="bi bi-chevron-down"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="ht-holidays-panel">
+                    <div class="ht-year-bar">
+                        <div class="ht-year-tabs">
+                            @foreach (var y in new[] { selectedYear - 1, selectedYear, selectedYear + 1 })
+                            {
+                                var yr = y;
+                                <button class='ht-year-tab @(yr == selectedYear ? "ht-year-tab--active" : "")'
+                                        @onclick="() => selectedYear = yr">@yr</button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="ht-table-head">
+                        <div class="ht-th ht-th--name">Holiday name</div>
+                        <div class="ht-th ht-th--date">Date <i class="bi bi-arrow-up" style="font-size:10px;margin-left:3px;"></i></div>
+                        <div class="ht-th ht-th--day">Day</div>
+                        <div class="ht-th ht-th--actions">
+                            <button class="ht-add-holiday-btn" @onclick="OpenAddHoliday">Add Holiday</button>
+                        </div>
+                    </div>
+
+                    @{
+                        var yearRows = selectedCalendar.Holidays
+                            .Where(h => h.Date.Year == selectedYear)
+                            .OrderBy(h => h.Date)
+                            .ToList();
+                    }
+
+                    @if (!yearRows.Any())
+                    {
+                        <div class="ht-no-holidays">
+                            <div class="ht-no-holidays-icon">
+                                <i class="bi bi-calendar3-event"></i>
+                            </div>
+                            <div class="ht-no-holidays-title">No holidays</div>
+                            <div class="ht-no-holidays-sub">Remember to take some time off!</div>
+                            <button class="ht-add-holiday-btn ht-add-holiday-btn--center" @onclick="OpenAddHoliday">
+                                Add Holiday
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var h in yearRows)
+                        {
+                            var holiday = h;
+                            <div class="ht-holiday-row">
+                                <div class="ht-td ht-td--name">@holiday.Name</div>
+                                <div class="ht-td ht-td--date ht-td--muted">@holiday.DateDisplay</div>
+                                <div class="ht-td ht-td--day ht-td--muted">@holiday.DayOfWeek</div>
+                                <div class="ht-td ht-td--actions">
+                                    <button class="ht-icon-btn ht-icon-btn--sm" title="Edit"
+                                            @onclick="() => OpenEditHoliday(holiday)">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="ht-icon-btn ht-icon-btn--sm ht-icon-btn--del"
+                                            title="Delete"
+                                            @onclick="() => AskDeleteHoliday(holiday)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+
+            </div>
+        }
+        else
+        {
+            <div class="ht-empty-state">
+                <div class="ht-empty-icon"><i class="bi bi-calendar3"></i></div>
+                <div class="ht-empty-title">No calendar selected</div>
+                <div class="ht-empty-sub">Add a new calendar or select one from the list</div>
+                <button class="ht-btn-save" style="margin-top:8px;" @onclick="OpenAddCalendar">
+                    <i class="bi bi-plus-lg"></i> Add new calendar
+                </button>
+            </div>
+        }
+
+    </div>
+</div>
+
+<!-- ── Fixed-position country dropdown (escapes all overflow clipping) ── -->
+@if (countryDropOpen)
+{
+    <!-- Backdrop -->
+    <div style="position:fixed;inset:0;z-index:9990;" @onclick="CloseCountryDrop"></div>
+
+    <!-- Dropdown panel, positioned via JS -->
+    <div class="ht-fixed-dropdown" style="top:@(dropTop)px;left:@(dropLeft)px;width:@(dropWidth)px;">
+        <div class="ht-country-search-wrap">
+            <i class="bi bi-search"></i>
+            <input type="text"
+                   class="ht-country-search"
+                   placeholder="Search country..."
+                   value="@countrySearch"
+                   @oninput="OnCountrySearchInput"
+                   @onclick:stopPropagation="true"
+                   @ref="searchInputRef" />
+        </div>
+        <div class="ht-country-list">
+            @{
+                var shown = string.IsNullOrWhiteSpace(countrySearch)
+                    ? AllCountries
+                    : AllCountries.Where(x => x.Contains(countrySearch, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+            @if (!shown.Any())
+            {
+                <div class="ht-country-empty">No countries found</div>
+            }
+            @foreach (var country in shown)
+            {
+                var cn = country;
+                <div class='ht-country-item @(selectedCountry == cn ? "ht-country-item--sel" : "")'
+                     @onclick="() => PickCountry(cn)"
+                     @onclick:stopPropagation="true">
+                    @cn
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<!-- ═══ ADD HOLIDAY PANEL (Jibble-style right slide-in) ═══ -->
+@if (showAddHolidayModal)
+{
+    <!-- Backdrop -->
+    <div class="ah-backdrop" @onclick="CloseAddHolidayPanel"></div>
+
+    <!-- Right panel -->
+    <div class="ah-panel" @onclick:stopPropagation="true">
+
+        <!-- Header -->
+        <div class="ah-header">
+            <span class="ah-title">Add Holiday</span>
+            <button class="ah-close" @onclick="CloseAddHolidayPanel"><i class="bi bi-x-lg"></i></button>
+        </div>
+
+        <!-- Body -->
+        <div class="ah-body">
+
+            <!-- Holiday Name -->
+            <div class="ah-section-label">Holiday Name</div>
+            <div class="ah-input-wrap @(ahNameErr ? "ah-input-wrap--err" : "")">
+                <input class="ah-text-input"
+                       placeholder="Holiday Name"
+                       @bind="newHolidayName" @bind:event="oninput"
+                       @onfocus="() => ahNameErr = false" />
+            </div>
+            @if (ahNameErr)
+            {
+                <div class="ah-err-msg">Holiday name is required.</div>
+            }
+
+            <!-- Dates -->
+            <div class="ah-section-label" style="margin-top:28px;">Dates</div>
+            <div class="ah-dates-row">
+                <!-- Start date -->
+                <div class="ah-date-field @(ahStartDateOpen ? "ah-date-field--active" : "")"
+                     @onclick="() => { ahStartDateOpen = !ahStartDateOpen; ahEndDateOpen = false; }">
+                    <span class="ah-date-val @(newHolidayStartDate == null ? "ah-date-placeholder" : "")">
+                        @(newHolidayStartDate.HasValue ? newHolidayStartDate.Value.ToString("d MMM yyyy") : "Start date")
+                    </span>
+                    <i class="bi bi-calendar3 ah-date-icon"
+                       @onclick="() => { ahCalViewStart = DateTime.Today; ahStartDateOpen = true; ahEndDateOpen = false; StateHasChanged(); }"
+                       @onclick:stopPropagation="true"></i>
+                </div>
+                <!-- End date -->
+                <div class="ah-date-field @(ahEndDateOpen ? "ah-date-field--active" : "")"
+                     @onclick="() => { ahEndDateOpen = !ahEndDateOpen; ahStartDateOpen = false; }">
+                    <span class="ah-date-val @(newHolidayEndDate == null ? "ah-date-placeholder" : "")">
+                        @(newHolidayEndDate.HasValue ? newHolidayEndDate.Value.ToString("d MMM yyyy") : "End date (optional)")
+                    </span>
+                    <i class="bi bi-calendar3 ah-date-icon"
+                       @onclick="() => { ahCalViewEnd = DateTime.Today; ahEndDateOpen = true; ahStartDateOpen = false; StateHasChanged(); }"
+                       @onclick:stopPropagation="true"></i>
+                </div>
+            </div>
+
+            <!-- Inline calendars -->
+            @if (ahStartDateOpen)
+            {
+                <div class="ah-cal-wrap" @onclick:stopPropagation="true">
+                    @{ var (sv, ss) = AhCalState(true); }
+                    <div class="ah-cal-nav">
+                        <button class="ah-cal-nav-btn" @onclick="() => AhCalPrev(true)"><i class="bi bi-chevron-left"></i></button>
+                        <span class="ah-cal-month">@sv.ToString("MMM yyyy")</span>
+                        <button class="ah-cal-nav-btn" @onclick="() => AhCalNext(true)"><i class="bi bi-chevron-right"></i></button>
+                    </div>
+                    <div class="ah-cal-grid">
+                        @foreach (var d in new[]{"Mo","Tu","We","Th","Fr","Sa","Su"})
+                        { <div class="ah-cal-dow">@d</div> }
+                        @{ int so = ((int)new DateTime(sv.Year,sv.Month,1).DayOfWeek+6)%7; }
+                        @for (int b = 0; b < so; b++) { <div class="ah-cal-cell ah-cal-cell--empty"></div> }
+                        @for (int d = 1; d <= DateTime.DaysInMonth(sv.Year,sv.Month); d++)
+                        {
+                            var cd = new DateTime(sv.Year,sv.Month,d);
+                            var cls2 = "ah-cal-cell"
+                                + (ss.HasValue && ss.Value.Date==cd ? " ah-cal-cell--sel" : "")
+                                + (cd.Date==DateTime.Today && !(ss.HasValue && ss.Value.Date==cd) ? " ah-cal-cell--today" : "");
+                            var cap2 = cd;
+                            <div class="@cls2" @onclick="() => AhCalPick(true, cap2)">@d</div>
+                        }
+                    </div>
+                    <div class="ah-cal-footer">
+                        <button class="ah-cal-today-btn" @onclick="() => { ahCalViewStart = DateTime.Today; StateHasChanged(); }">Today</button>
+                    </div>
+                </div>
+            }
+            @if (ahEndDateOpen)
+            {
+                <div class="ah-cal-wrap" @onclick:stopPropagation="true">
+                    @{ var (ev, es) = AhCalState(false); }
+                    <div class="ah-cal-nav">
+                        <button class="ah-cal-nav-btn" @onclick="() => AhCalPrev(false)"><i class="bi bi-chevron-left"></i></button>
+                        <span class="ah-cal-month">@ev.ToString("MMM yyyy")</span>
+                        <button class="ah-cal-nav-btn" @onclick="() => AhCalNext(false)"><i class="bi bi-chevron-right"></i></button>
+                    </div>
+                    <div class="ah-cal-grid">
+                        @foreach (var d in new[]{"Mo","Tu","We","Th","Fr","Sa","Su"})
+                        { <div class="ah-cal-dow">@d</div> }
+                        @{ int eo = ((int)new DateTime(ev.Year,ev.Month,1).DayOfWeek+6)%7; }
+                        @for (int b = 0; b < eo; b++) { <div class="ah-cal-cell ah-cal-cell--empty"></div> }
+                        @for (int d = 1; d <= DateTime.DaysInMonth(ev.Year,ev.Month); d++)
+                        {
+                            var cd = new DateTime(ev.Year,ev.Month,d);
+                            var cls2 = "ah-cal-cell"
+                                + (es.HasValue && es.Value.Date==cd ? " ah-cal-cell--sel" : "")
+                                + (cd.Date==DateTime.Today && !(es.HasValue && es.Value.Date==cd) ? " ah-cal-cell--today" : "");
+                            var cap2 = cd;
+                            <div class="@cls2" @onclick="() => AhCalPick(false, cap2)">@d</div>
+                        }
+                    </div>
+                    <div class="ah-cal-footer">
+                        <button class="ah-cal-today-btn" @onclick="() => { ahCalViewEnd = DateTime.Today; StateHasChanged(); }">Today</button>
+                    </div>
+                </div>
+            }
+
+            <!-- Shortened day rules -->
+            @foreach (var (rule, idx) in ahShortenedRules.Select((r, i) => (r, i)))
+            {
+                var ci = idx;
+                <div class="ah-section-label" style="margin-top:24px;">Shortened day rule</div>
+
+                @* Row: [Property dropdown] [Condition dropdown] [h m time] [clock] [trash] *@
+                <div class="ah-rule-row" @ref="ahShortenedRules[ci].RowRef">
+
+                    @* Property dropdown *@
+                    <div class="ah-dd @(rule.PropOpen ? "ah-dd--open" : "")"
+                         @onclick="() => TogglePropDrop(ci)" @onclick:stopPropagation="true">
+                        <span class="@(string.IsNullOrEmpty(rule.Property) ? "ah-dd-ph" : "ah-dd-val")">
+                            @(string.IsNullOrEmpty(rule.Property) ? "Select a property" : rule.Property)
+                        </span>
+                        <i class="bi bi-chevron-down ah-dd-chev"></i>
+                        @if (rule.PropOpen)
+                        {
+                            <div class="ah-dd-menu @(rule.DropUp ? "ah-dd-menu--up" : "")" @onclick:stopPropagation="true">
+                                @foreach (var opt in AhPropertyOptions)
+                                {
+                                    var o = opt;
+                                    <div class="ah-dd-item @(rule.Property == o ? "ah-dd-item--sel" : "")"
+                                         @onclick="() => PickProperty(ci, o)">@o</div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @* Condition dropdown — options depend on property *@
+                    @if (!string.IsNullOrEmpty(rule.Property))
+                    {
+                        <div class="ah-dd ah-dd--cond @(rule.CondOpen ? "ah-dd--open" : "")"
+                             @onclick="() => ToggleCondDrop(ci)" @onclick:stopPropagation="true">
+                            <span class="@(string.IsNullOrEmpty(rule.Condition) ? "ah-dd-ph" : "ah-dd-val")">
+                                @(string.IsNullOrEmpty(rule.Condition) ? "Select" : rule.Condition)
+                            </span>
+                            <i class="bi bi-chevron-@(rule.CondOpen ? "up" : "down") ah-dd-chev"></i>
+                            @if (rule.CondOpen)
+                            {
+                                <div class="ah-dd-menu @(rule.DropUp ? "ah-dd-menu--up" : "")" @onclick:stopPropagation="true">
+                                    @foreach (var co in GetConditionOptions(rule.Property))
+                                    {
+                                        var cv = co;
+                                        <div class="ah-dd-item @(rule.Condition == cv ? "ah-dd-item--sel" : "")"
+                                             @onclick="() => PickCondition(ci, cv)">@cv</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        @* Time input: clock (HH:mm am/pm) or duration (h m) based on condition *@
+                        @if (UseClockTime(rule.Condition))
+                        {
+                            @* Clock time picker: shows e.g. 12:00 pm *@
+                            <div class="ah-rule-time">
+                                <input class="ah-time-seg ah-time-seg--clock" type="text" inputmode="numeric" maxlength="2"
+                                       placeholder="12"
+                                       value="@(rule.TimeH == 0 ? 12 : (rule.TimeH > 12 ? rule.TimeH - 12 : rule.TimeH))"
+                                       @onchange='@(e => { var raw = int.TryParse(e.Value?.ToString(), out var v) ? Math.Clamp(v,1,12) : 12; ahShortenedRules[ci].TimeH = (ahShortenedRules[ci].TimeH >= 12) ? raw + 12 : raw; if(ahShortenedRules[ci].TimeH==24) ahShortenedRules[ci].TimeH=12; StateHasChanged(); })' />
+                                <span class="ah-time-sep">:</span>
+                                <input class="ah-time-seg ah-time-seg--clock" type="text" inputmode="numeric" maxlength="2"
+                                       placeholder="00"
+                                       value="@rule.TimeM.ToString("D2")"
+                                       @onchange='@(e => { ahShortenedRules[ci].TimeM = int.TryParse(e.Value?.ToString(), out var v) ? Math.Clamp(v,0,59) : 0; StateHasChanged(); })' />
+                                <button class="ah-time-ampm" @onclick='() => { ahShortenedRules[ci].TimeH = ahShortenedRules[ci].TimeH >= 12 ? ahShortenedRules[ci].TimeH - 12 : ahShortenedRules[ci].TimeH + 12; StateHasChanged(); }'>
+                                    @(rule.TimeH >= 12 ? "pm" : "am")
+                                </button>
+                                <button class="ah-time-clock"><i class="bi bi-clock"></i></button>
+                            </div>
+                        }
+                        else
+                        {
+                            @* Duration picker: shows e.g. 0 h 0 m *@
+                            <div class="ah-rule-time">
+                                <input class="ah-time-seg" type="text" inputmode="numeric" maxlength="2"
+                                       value="@rule.TimeH"
+                                       @onchange='@(e => { ahShortenedRules[ci].TimeH = int.TryParse(e.Value?.ToString(), out var v) ? Math.Clamp(v,0,23) : 0; StateHasChanged(); })' />
+                                <span class="ah-time-sep">h</span>
+                                <input class="ah-time-seg" type="text" inputmode="numeric" maxlength="2"
+                                       value="@rule.TimeM"
+                                       @onchange='@(e => { ahShortenedRules[ci].TimeM = int.TryParse(e.Value?.ToString(), out var v) ? Math.Clamp(v,0,59) : 0; StateHasChanged(); })' />
+                                <span class="ah-time-sep">m</span>
+                                <button class="ah-time-clock"><i class="bi bi-clock"></i></button>
+                            </div>
+                        }
+                    }
+
+                    @* Trash *@
+                    <button class="ah-rule-del" @onclick="() => RemoveRule(ci)" title="Remove">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+
+                @* Apply to schedules toggle *@
+                @if (!string.IsNullOrEmpty(rule.Property))
+                {
+                    <div class="ah-apply-row">
+                        <label class="ah-apply-opt" @onclick="() => { ahShortenedRules[ci].ApplyAll = true; ahShortenedRules[ci].SchedulesOpen = false; StateHasChanged(); }">
+                            <div class="ah-apply-radio @(rule.ApplyAll ? "ah-apply-radio--on" : "")">
+                                @if (rule.ApplyAll) { <i class="bi bi-check-lg"></i> }
+                            </div>
+                            <span>Apply to all schedules</span>
+                        </label>
+                        <label class="ah-apply-opt" @onclick="() => { ahShortenedRules[ci].ApplyAll = false; StateHasChanged(); }">
+                            <div class="ah-apply-radio @(!rule.ApplyAll ? "ah-apply-radio--on" : "")">
+                                @if (!rule.ApplyAll) { <i class="bi bi-check-lg"></i> }
+                            </div>
+                            <span>Apply only to selected schedules</span>
+                        </label>
+                    </div>
+
+                    @* Select schedules dropdown — shown when ApplyAll = false *@
+                    @if (!rule.ApplyAll)
+                    {
+                        <div class="ah-sched-wrap" @onclick:stopPropagation="true">
+                            <div class="ah-sched-trigger @(rule.SchedulesOpen ? "ah-sched-trigger--open" : "")"
+                                 @onclick="() => { ahShortenedRules[ci].SchedulesOpen = !ahShortenedRules[ci].SchedulesOpen; StateHasChanged(); }">
+                                <span class="@(rule.SelectedSchedule == null ? "ah-dd-ph" : "ah-dd-val")">
+                                    @(rule.SelectedSchedule ?? "Select schedules")
+                                </span>
+                                <i class="bi bi-chevron-down ah-dd-chev"></i>
+                            </div>
+                            @if (rule.SchedulesOpen)
+                            {
+                                <div class="ah-sched-drop" @onclick:stopPropagation="true">
+                                    <div class="ah-sched-search-row">
+                                        <i class="bi bi-search"></i>
+                                        <input class="ah-sched-search" placeholder="Search schedules"
+                                               @bind="rule.ScheduleSearch" @bind:event="oninput" />
+                                    </div>
+                                    <div class="ah-sched-item"
+                                         @onclick='() => PickSchedule(ci, "Default Work Schedule")'>
+                                        Default Work Schedule
+                                    </div>
+                                    <div class="ah-sched-clear"
+                                         @onclick="() => ClearSchedule(ci)">
+                                        Clear selection
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            }
+
+            <!-- Add shortened day rule link -->
+            <button class="ah-add-rule-btn @(HasAllWorkHoursRule() ? "ah-add-rule-btn--disabled" : "")"
+                    @onclick="AddShortenedRule"
+                    disabled="@HasAllWorkHoursRule()"
+                    title="@(HasAllWorkHoursRule() ? "Cannot add more rules when \"All (work and overtime hours)\" is selected" : "")"
+                    style="margin-top:20px;">
+                <i class="bi bi-plus-lg"></i> Add shortened day rule
+            </button>
+
+            @if (!string.IsNullOrEmpty(ahError))
+            {
+                <div class="ah-save-err">@ahError</div>
+            }
+        </div>
+
+        <!-- Footer -->
+        <div class="ah-footer">
+            <button class="ah-footer-cancel" @onclick="CloseAddHolidayPanel">Cancel</button>
+            <button class="ah-footer-save" @onclick="ConfirmAddHoliday">Save</button>
+        </div>
+    </div>
+}
+
+<!-- ═══ EDIT HOLIDAY PANEL ═══ -->
+@if (showEditHolidayModal)
+{
+    <div class="ah-backdrop" @onclick="CloseEditHolidayPanel"></div>
+    <div class="ah-panel" @onclick:stopPropagation="true">
+        <div class="ah-header">
+            <span class="ah-title">Edit Holiday</span>
+            <button class="ah-close" @onclick="CloseEditHolidayPanel"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="ah-body">
+            <!-- Holiday Name -->
+            <div class="ah-section-label">Holiday Name</div>
+            <div class="ah-input-wrap @(ehNameErr ? "ah-input-wrap--err" : "")">
+                <input class="ah-text-input"
+                       placeholder="Holiday Name"
+                       @bind="editHolidayName" @bind:event="oninput"
+                       @onfocus="() => ehNameErr = false" />
+            </div>
+            @if (ehNameErr)
+            {
+                <div class="ah-err-msg">Holiday name is required.</div>
+            }
+
+            <!-- Date -->
+            <div class="ah-section-label" style="margin-top:28px;">Date</div>
+            <div class="ah-date-field @(ehCalOpen ? "ah-date-field--active" : "")" style="max-width:300px;"
+                 @onclick="() => { ehCalOpen = !ehCalOpen; }">
+                <span class="ah-date-val @(editHolidayDate == null ? "ah-date-placeholder" : "")">
+                    @(editHolidayDate.HasValue ? editHolidayDate.Value.ToString("yyyy-MM-dd") : "Select date")
+                </span>
+                <i class="bi bi-calendar3 ah-date-icon"
+                   @onclick="() => { ehCalView = editHolidayDate ?? DateTime.Today; ehCalOpen = true; StateHasChanged(); }"
+                   @onclick:stopPropagation="true"></i>
+            </div>
+
+            @if (ehCalOpen)
+            {
+                <div class="ah-cal-wrap" @onclick:stopPropagation="true">
+                    <div class="ah-cal-nav">
+                        <button class="ah-cal-nav-btn" @onclick="() => ehCalView = ehCalView.AddMonths(-1)"><i class="bi bi-chevron-left"></i></button>
+                        <span class="ah-cal-month">@ehCalView.ToString("MMM yyyy")</span>
+                        <button class="ah-cal-nav-btn" @onclick="() => ehCalView = ehCalView.AddMonths(1)"><i class="bi bi-chevron-right"></i></button>
+                    </div>
+                    <div class="ah-cal-grid">
+                        @foreach (var d in new[]{"Mo","Tu","We","Th","Fr","Sa","Su"})
+                        { <div class="ah-cal-dow">@d</div> }
+                        @{ int eho = ((int)new DateTime(ehCalView.Year, ehCalView.Month, 1).DayOfWeek + 6) % 7; }
+                        @for (int b = 0; b < eho; b++) { <div class="ah-cal-cell ah-cal-cell--empty"></div> }
+                        @for (int d = 1; d <= DateTime.DaysInMonth(ehCalView.Year, ehCalView.Month); d++)
+                        {
+                            var cd = new DateTime(ehCalView.Year, ehCalView.Month, d);
+                            var cls2 = "ah-cal-cell"
+                                + (editHolidayDate.HasValue && editHolidayDate.Value.Date == cd ? " ah-cal-cell--sel" : "")
+                                + (cd.Date == DateTime.Today && !(editHolidayDate.HasValue && editHolidayDate.Value.Date == cd) ? " ah-cal-cell--today" : "");
+                            var cap2 = cd;
+                            <div class="@cls2" @onclick="() => { editHolidayDate = cap2; ehCalOpen = false; StateHasChanged(); }">@d</div>
+                        }
+                    </div>
+                    <div class="ah-cal-footer">
+                        <button class="ah-cal-today-btn" @onclick="() => { ehCalView = DateTime.Today; StateHasChanged(); }">Today</button>
+                    </div>
+                </div>
+            }
+
+            <!-- Shortened day rules (read-only display) -->
+            <div style="margin-top:28px;">
+                <button class="ah-add-rule-btn" @onclick="() => { }">+ Add shortened day rule</button>
+            </div>
+        </div>
+        <div class="ah-footer">
+            <button class="ah-footer-cancel" @onclick="CloseEditHolidayPanel">Cancel</button>
+            <button class="ah-footer-save" @onclick="ConfirmEditHoliday">Save</button>
+        </div>
+    </div>
+}
+
+<!-- ═══ DELETE HOLIDAY CONFIRM ═══ -->
+@if (showDeleteConfirm)
+{
+    <div class="ht-modal-backdrop" @onclick="CancelDeleteHoliday"></div>
+    <div class="ht-modal-box" @onclick:stopPropagation="true">
+        <button class="ht-modal-close" @onclick="CancelDeleteHoliday"><i class="bi bi-x-lg"></i></button>
+        <div class="ht-modal-title">Are you sure you want to permanently delete "@(deleteTargetHoliday?.Name)"?</div>
+        <div class="ht-modal-sub">This action cannot be undone. Historical data will still be available.</div>
+        <div class="ht-modal-label">Type DELETE to confirm</div>
+        <input class="ht-modal-input @(deleteConfirmText == "DELETE" ? "ht-modal-input--valid" : "")"
+               placeholder="DELETE"
+               @bind="deleteConfirmText" @bind:event="oninput" />
+        <div class="ht-modal-actions">
+            <button class="ht-modal-cancel" @onclick="CancelDeleteHoliday">Cancel</button>
+            <button class="ht-modal-confirm @(deleteConfirmText != "DELETE" ? "ht-modal-confirm--disabled" : "")"
+                    disabled="@(deleteConfirmText != "DELETE")"
+                    @onclick="ConfirmDeleteHoliday">Confirm</button>
+        </div>
+    </div>
+}
+
+@code {
+
+    private class HolidayCalendar
+    {
+        public int    Id        { get; set; }
+        public string Name      { get; set; } = "";
+        public string Country   { get; set; } = "";
+        public bool   IsDefault { get; set; }
+        public List<HolidayEntry> Holidays { get; set; } = new();
+    }
+
+    private class HolidayEntry
+    {
+        public string   Name        { get; set; } = "";
+        public DateTime Date        { get; set; }
+        public string   DateDisplay { get; set; } = "";
+        public string   DayOfWeek   { get; set; } = "";
+    }
+
+    // ── Google Calendar IDs mapped to country display names ─────────────────
+    private static readonly Dictionary<string, string> GoogleCalendarIds = new()
+    {
+        ["Argentina"]      = "en.argentina%23holiday%40group.v.calendar.google.com",
+        ["Australia"]      = "en.australian%23holiday%40group.v.calendar.google.com",
+        ["Austria"]        = "en.austrian%23holiday%40group.v.calendar.google.com",
+        ["Belgium"]        = "en.be%23holiday%40group.v.calendar.google.com",
+        ["Brazil"]         = "en.brazilian%23holiday%40group.v.calendar.google.com",
+        ["Canada"]         = "en.canadian%23holiday%40group.v.calendar.google.com",
+        ["China"]          = "en.china%23holiday%40group.v.calendar.google.com",
+        ["Colombia"]       = "en.colombia%23holiday%40group.v.calendar.google.com",
+        ["Czech Republic"] = "en.czech%23holiday%40group.v.calendar.google.com",
+        ["Denmark"]        = "en.danish%23holiday%40group.v.calendar.google.com",
+        ["Egypt"]          = "en.eg%23holiday%40group.v.calendar.google.com",
+        ["Finland"]        = "en.finnish%23holiday%40group.v.calendar.google.com",
+        ["France"]         = "en.french%23holiday%40group.v.calendar.google.com",
+        ["Germany"]        = "en.german%23holiday%40group.v.calendar.google.com",
+        ["Greece"]         = "en.greek%23holiday%40group.v.calendar.google.com",
+        ["Hong Kong"]      = "en.hong_kong%23holiday%40group.v.calendar.google.com",
+        ["Hungary"]        = "en.hungarian%23holiday%40group.v.calendar.google.com",
+        ["India"]          = "en.indian%23holiday%40group.v.calendar.google.com",
+        ["Indonesia"]      = "en.indonesian%23holiday%40group.v.calendar.google.com",
+        ["Ireland"]        = "en.irish%23holiday%40group.v.calendar.google.com",
+        ["Israel"]         = "en.jewish_holidays%23holiday%40group.v.calendar.google.com",
+        ["Italy"]          = "en.italian%23holiday%40group.v.calendar.google.com",
+        ["Japan"]          = "en.japanese%23holiday%40group.v.calendar.google.com",
+        ["Kenya"]          = "en.kenyan%23holiday%40group.v.calendar.google.com",
+        ["Malaysia"]       = "en.malaysia%23holiday%40group.v.calendar.google.com",
+        ["Mexico"]         = "en.mexican%23holiday%40group.v.calendar.google.com",
+        ["Netherlands"]    = "en.dutch%23holiday%40group.v.calendar.google.com",
+        ["New Zealand"]    = "en.new_zealand%23holiday%40group.v.calendar.google.com",
+        ["Nigeria"]        = "en.nigerian%23holiday%40group.v.calendar.google.com",
+        ["Norway"]         = "en.norwegian%23holiday%40group.v.calendar.google.com",
+        ["Philippines"]    = "en.philippines%23holiday%40group.v.calendar.google.com",
+        ["Poland"]         = "en.polish%23holiday%40group.v.calendar.google.com",
+        ["Portugal"]       = "en.portuguese%23holiday%40group.v.calendar.google.com",
+        ["Romania"]        = "en.romanian%23holiday%40group.v.calendar.google.com",
+        ["Russia"]         = "en.russian%23holiday%40group.v.calendar.google.com",
+        ["Saudi Arabia"]   = "en.saudi_official_holidays%23holiday%40group.v.calendar.google.com",
+        ["Singapore"]      = "en.singapore%23holiday%40group.v.calendar.google.com",
+        ["South Africa"]   = "en.sa%23holiday%40group.v.calendar.google.com",
+        ["South Korea"]    = "en.south_korea%23holiday%40group.v.calendar.google.com",
+        ["Spain"]          = "en.spain%23holiday%40group.v.calendar.google.com",
+        ["Sri Lanka"]      = "en.srilanka%23holiday%40group.v.calendar.google.com",
+        ["Sweden"]         = "en.swedish%23holiday%40group.v.calendar.google.com",
+        ["Switzerland"]    = "en.swiss%23holiday%40group.v.calendar.google.com",
+        ["Taiwan"]         = "en.taiwan%23holiday%40group.v.calendar.google.com",
+        ["Thailand"]       = "en.thai%23holiday%40group.v.calendar.google.com",
+        ["Turkey"]         = "en.turkish%23holiday%40group.v.calendar.google.com",
+        ["UAE"]            = "en.ae%23holiday%40group.v.calendar.google.com",
+        ["Uganda"]         = "en.ugandan%23holiday%40group.v.calendar.google.com",
+        ["Ukraine"]        = "en.ukrainian%23holiday%40group.v.calendar.google.com",
+        ["United Kingdom"] = "en.uk%23holiday%40group.v.calendar.google.com",
+        ["United States"]  = "en.usa%23holiday%40group.v.calendar.google.com",
+        ["Vietnam"]        = "en.vietnamese%23holiday%40group.v.calendar.google.com",
+    };
+
+    private static readonly List<string> AllCountries = new(GoogleCalendarIds.Keys.OrderBy(k => k).ToList());
+
+    // ── Fetch and parse iCal from Google Calendar ────────────────────────────
+    private async Task<List<HolidayEntry>> FetchGoogleCalendarHolidays(string country)
+    {
+        if (!GoogleCalendarIds.TryGetValue(country, out var calId))
+            return new();
+
+        try
+        {
+            var url  = $"https://calendar.google.com/calendar/ical/{calId}/public/basic.ics";
+            using var http = HttpClientFactory.CreateClient("GoogleCalendar");
+            var ics  = await http.GetStringAsync(url);
+            return ParseIcal(ics);
+        }
+        catch (Exception ex)
+        {
+            importError = $"Could not import from Google Calendar: {ex.Message}";
+            return new();
+        }
+    }
+
+    // ── iCal parser: extracts VEVENT blocks ──────────────────────────────────
+    private static List<HolidayEntry> ParseIcal(string ics)
+    {
+        var result  = new List<HolidayEntry>();
+        var lines   = ics.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+
+        // Unfold continued lines (lines starting with space/tab are continuations)
+        var unfolded = new List<string>();
+        foreach (var line in lines)
+        {
+            if ((line.StartsWith(" ") || line.StartsWith("\t")) && unfolded.Count > 0)
+                unfolded[^1] += line.TrimStart();
+            else
+                unfolded.Add(line);
+        }
+
+        string? summary = null;
+        DateTime? dtStart = null;
+        bool inEvent = false;
+
+        foreach (var line in unfolded)
+        {
+            var trimmed = line.Trim();
+
+            if (trimmed == "BEGIN:VEVENT")  { inEvent = true; summary = null; dtStart = null; continue; }
+            if (trimmed == "END:VEVENT")
+            {
+                if (inEvent && summary != null && dtStart.HasValue)
+                {
+                    result.Add(new HolidayEntry
+                    {
+                        Name        = summary,
+                        Date        = dtStart.Value,
+                        DateDisplay = dtStart.Value.ToString("MMM, dd yyyy"),
+                        DayOfWeek   = dtStart.Value.ToString("dddd")
+                    });
+                }
+                inEvent = false; continue;
+            }
+
+            if (!inEvent) continue;
+
+            if (trimmed.StartsWith("SUMMARY:"))
+                summary = trimmed["SUMMARY:".Length..].Trim();
+            else if (trimmed.StartsWith("DTSTART"))
+            {
+                // Handles: DTSTART;VALUE=DATE:20260126  OR  DTSTART:20260126
+                var val = trimmed.Contains(':') ? trimmed[(trimmed.LastIndexOf(':') + 1)..].Trim() : "";
+                if (val.Length >= 8 &&
+                    int.TryParse(val[..4],  out var yr) &&
+                    int.TryParse(val[4..6], out var mo) &&
+                    int.TryParse(val[6..8], out var dy))
+                {
+                    try { dtStart = new DateTime(yr, mo, dy); } catch { }
+                }
+            }
+        }
+
+        return result.OrderBy(h => h.Date).ToList();
+    }
+
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    private static List<HolidayCalendar> _sharedCalendars = new();
+    private static int _sharedNextId = 1;
+    private List<HolidayCalendar> calendars => _sharedCalendars;
+    private HolidayCalendar?      selectedCalendar;
+    private string                calSearch       = "";
+    private int nextId { get => _sharedNextId; set => _sharedNextId = value; }
+    private int                   selectedYear    = DateTime.Today.Year;
+
+    private bool    showAddForm       = false;
+    private string  newCalName        = "";
+    private bool    newCalMakeDefault = true;
+    private bool    calNameErr        = false;
+    private bool    importLoading     = false;
+    private string? importError;
+    private bool    editMode          = false;
+    private int     editCalId;
+    private bool    addManually       = false;
+
+    private bool    countryDropOpen   = false;
+    private string? selectedCountry;
+    private string  countrySearch     = "";
+    private double  dropTop   = 0;
+    private double  dropLeft  = 0;
+    private double  dropWidth = 300;
+
+    private ElementReference triggerRef;
+    private ElementReference searchInputRef;
+    private ElementReference dotsButtonRef;
+
+    // ── Add Holiday Panel state ───────────────────────────────────────────────
+    private bool      showAddHolidayModal  = false;
+    private string    newHolidayName       = "";
+    private bool      ahNameErr            = false;
+    private DateTime? newHolidayStartDate  = null;
+    private DateTime? newHolidayEndDate    = null;
+    private bool      ahStartDateOpen      = false;
+    private bool      ahEndDateOpen        = false;
+    private DateTime  ahCalViewStart       = DateTime.Today;
+    private DateTime  ahCalViewEnd         = DateTime.Today;
+    private string    ahError              = "";
+    private List<ShortenedRule> ahShortenedRules = new();
+
+    // ── Edit Holiday state ────────────────────────────────────────────────────
+    private bool           showEditHolidayModal = false;
+    private HolidayEntry?  editingHoliday       = null;
+    private string         editHolidayName      = "";
+    private bool           ehNameErr            = false;
+    private DateTime?      editHolidayDate      = null;
+    private bool           ehCalOpen            = false;
+    private DateTime       ehCalView            = DateTime.Today;
+
+    // ── Delete Holiday confirm state ──────────────────────────────────────────
+    private bool           showDeleteConfirm    = false;
+    private HolidayEntry?  deleteTargetHoliday  = null;
+    private string         deleteConfirmText    = "";
+
+    private bool   toastVisible = false;
+    private bool   toastFading  = false;
+    private string toastMessage = "";
+    private System.Threading.CancellationTokenSource? toastCts;
+
+    private bool   showDotsMenu  = false;
+    private double dotsMenuTop   = 0;
+    private double dotsMenuLeft  = 0;
+
+    private bool   showRefreshModal     = false;
+    private string refreshOption        = "all";
+    private bool   isRefreshing         = false;
+    private DateTime specificRefreshDate = DateTime.Today;
+
+    private IEnumerable<HolidayCalendar> FilteredCalendars =>
+        string.IsNullOrWhiteSpace(calSearch)
+            ? calendars
+            : calendars.Where(c => c.Name.Contains(calSearch, StringComparison.OrdinalIgnoreCase));
+
+    protected override void OnInitialized() => selectedYear = DateTime.Today.Year;
+
+    // ── Country dropdown ──────────────────────────────────────────────────────
+    private async Task ToggleCountryDropAsync()
+    {
+        if (countryDropOpen) { CloseCountryDrop(); return; }
+        try
+        {
+            var rect = await JS.InvokeAsync<BoundingRect>(
+                "eval",
+                $"(()=>{{ var r=document.querySelector('.ht-country-wrap').getBoundingClientRect(); return {{top:r.bottom+window.scrollY,left:r.left+window.scrollX,width:r.width}}; }})()"
+            );
+            dropTop   = rect.Top + 4;
+            dropLeft  = rect.Left;
+            dropWidth = rect.Width;
+        }
+        catch { dropTop = 300; dropLeft = 300; dropWidth = 300; }
+        countryDropOpen = true;
+        StateHasChanged();
+        try { await JS.InvokeVoidAsync("eval", "setTimeout(()=>document.querySelector('.ht-country-search')?.focus(),50)"); } catch { }
+    }
+    private void CloseCountryDrop() { countryDropOpen = false; StateHasChanged(); }
+    private void PickCountry(string c) { selectedCountry = c; CloseCountryDrop(); }
+    private void OnCountrySearchInput(ChangeEventArgs e) { countrySearch = e.Value?.ToString() ?? ""; StateHasChanged(); }
+
+    // ── Calendar CRUD ─────────────────────────────────────────────────────────
+    private void SelectCalendar(HolidayCalendar cal) { selectedCalendar = cal; showAddForm = false; StateHasChanged(); }
+
+    private void OpenAddCalendar()
+    {
+        editMode          = false;
+        newCalName        = "";
+        newCalMakeDefault = !calendars.Any();
+        selectedCountry   = null;
+        countrySearch     = "";
+        countryDropOpen   = false;
+        calNameErr        = false;
+        importError       = null;
+        addManually       = false;
+        showAddForm       = true;
+        selectedCalendar  = null;
+    }
+
+    private void OpenEditCalendar(HolidayCalendar cal)
+    {
+        editMode          = true;
+        editCalId         = cal.Id;
+        newCalName        = cal.Name;
+        newCalMakeDefault = cal.IsDefault;
+        selectedCountry   = cal.Country;
+        countrySearch     = "";
+        countryDropOpen   = false;
+        calNameErr        = false;
+        importError       = null;
+        showAddForm       = true;
+    }
+
+    private void CancelAdd()
+    {
+        showAddForm     = false;
+        countryDropOpen = false;
+        countrySearch   = "";
+        StateHasChanged();
+    }
+
+    private async Task SaveCalendar()
+    {
+        calNameErr = string.IsNullOrWhiteSpace(newCalName);
+        if (calNameErr) return;
+
+        if (!addManually && selectedCountry == null && !editMode)
+        {
+            importError = "Please select a country to import holidays from.";
+            return;
+        }
+
+        importLoading = true;
+        importError   = null;
+        StateHasChanged();
+
+        if (editMode)
+        {
+            var existing = calendars.FirstOrDefault(c => c.Id == editCalId);
+            if (existing != null)
+            {
+                existing.Name = newCalName.Trim();
+                if (newCalMakeDefault)
+                {
+                    foreach (var c in calendars) c.IsDefault = false;
+                    existing.IsDefault = true;
+                }
+                selectedCalendar = existing;
+            }
+        }
+        else
+        {
+            if (newCalMakeDefault)
+                foreach (var c in calendars) c.IsDefault = false;
+
+            var holidays = addManually
+                ? new List<HolidayEntry>()
+                : await FetchGoogleCalendarHolidays(selectedCountry!);
+
+            var cal = new HolidayCalendar
+            {
+                Id        = nextId++,
+                Name      = newCalName.Trim(),
+                Country   = addManually ? "" : selectedCountry!,
+                IsDefault = newCalMakeDefault || !calendars.Any(),
+                Holidays  = holidays
+            };
+            calendars.Add(cal);
+            selectedCalendar = cal;
+        }
+
+        importLoading   = false;
+        showAddForm     = false;
+        countryDropOpen = false;
+        countrySearch   = "";
+        SyncPublicState();
+        StateHasChanged();
+
+        await ShowToast("Calendar saved");
+    }
+
+    private void DeleteHoliday(HolidayCalendar cal, HolidayEntry entry)
+    {
+        cal.Holidays.Remove(entry);
+        StateHasChanged();
+    }
+
+    // ── Edit Holiday ──────────────────────────────────────────────────────────
+    private void OpenEditHoliday(HolidayEntry entry)
+    {
+        editingHoliday      = entry;
+        editHolidayName     = entry.Name;
+        editHolidayDate     = entry.Date;
+        ehCalView           = entry.Date;
+        ehNameErr           = false;
+        ehCalOpen           = false;
+        showEditHolidayModal = true;
+    }
+
+    private void CloseEditHolidayPanel()
+    {
+        showEditHolidayModal = false;
+        ehCalOpen            = false;
+    }
+
+    private async Task ConfirmEditHoliday()
+    {
+        ehNameErr = string.IsNullOrWhiteSpace(editHolidayName);
+        if (ehNameErr) return;
+        if (editingHoliday == null) return;
+
+        editingHoliday.Name        = editHolidayName.Trim();
+        editingHoliday.Date        = editHolidayDate ?? editingHoliday.Date;
+        editingHoliday.DateDisplay = editingHoliday.Date.ToString("MMM, dd yyyy");
+        editingHoliday.DayOfWeek   = editingHoliday.Date.ToString("dddd");
+
+        showEditHolidayModal = false;
+        StateHasChanged();
+        await ShowToast("Holiday updated");
+    }
+
+    // ── Delete Holiday confirm ────────────────────────────────────────────────
+    private void AskDeleteHoliday(HolidayEntry entry)
+    {
+        deleteTargetHoliday = entry;
+        deleteConfirmText   = "";
+        showDeleteConfirm   = true;
+    }
+
+    private void CancelDeleteHoliday()
+    {
+        showDeleteConfirm   = false;
+        deleteTargetHoliday = null;
+        deleteConfirmText   = "";
+    }
+
+    private async Task ConfirmDeleteHoliday()
+    {
+        if (deleteConfirmText != "DELETE" || deleteTargetHoliday == null || selectedCalendar == null) return;
+        selectedCalendar.Holidays.Remove(deleteTargetHoliday);
+        CancelDeleteHoliday();
+        StateHasChanged();
+        await ShowToast("Holiday deleted");
+    }
+
+    private void OpenAddHoliday()
+    {
+        newHolidayName      = "";
+        ahNameErr           = false;
+        newHolidayStartDate = null;
+        newHolidayEndDate   = null;
+        ahStartDateOpen     = false;
+        ahEndDateOpen       = false;
+        ahCalViewStart      = DateTime.Today;
+        ahCalViewEnd        = DateTime.Today;
+        ahShortenedRules    = new();
+        ahError             = "";
+        showAddHolidayModal = true;
+    }
+
+    private void CloseAddHolidayPanel()
+    {
+        showAddHolidayModal = false;
+        ahStartDateOpen     = false;
+        ahEndDateOpen       = false;
+        foreach (var r in ahShortenedRules) { r.PropOpen = false; r.CondOpen = false; r.SchedulesOpen = false; }
+    }
+
+    private async Task ConfirmAddHoliday()
+    {
+        ahNameErr = string.IsNullOrWhiteSpace(newHolidayName);
+        if (ahNameErr) { ahError = ""; return; }
+        if (newHolidayStartDate == null) { ahError = "Please select a start date."; return; }
+        if (selectedCalendar == null) return;
+
+        var dt   = newHolidayStartDate.Value;
+        var name = newHolidayName.Trim();
+        selectedCalendar.Holidays.Add(new HolidayEntry
+        {
+            Name        = name,
+            Date        = dt,
+            DateDisplay = dt.ToString("MMM, dd yyyy"),
+            DayOfWeek   = dt.ToString("dddd")
+        });
+
+        // Switch the year tab so the new holiday is immediately visible
+        selectedYear = dt.Year;
+
+        CloseAddHolidayPanel();
+        SyncPublicState();
+        StateHasChanged();
+        await ShowToast($"\"{name}\" added successfully.");
+    }
+
+    // ── Sync to public static state (for Timesheets page) ───────────────────
+    private static void SyncPublicState()
+    {
+        HolidaysTabState.SharedCalendars = _sharedCalendars.Select(c => new HolidayCalendarPublic
+        {
+            Id        = c.Id,
+            Name      = c.Name,
+            IsDefault = c.IsDefault,
+            Holidays  = c.Holidays.Select(h => new HolidayEntryPublic { Name = h.Name, Date = h.Date }).ToList()
+        }).ToList();
+    }
+
+    // ── Shortened day rule — data model ──────────────────────────────────────
+    private class ShortenedRule
+    {
+        public string  Property         { get; set; } = "";
+        public bool    PropOpen         { get; set; } = false;
+        public string  Condition        { get; set; } = "";
+        public bool    CondOpen         { get; set; } = false;
+        public int     TimeH            { get; set; } = 0;
+        public int     TimeM            { get; set; } = 0;
+        public bool    ApplyAll         { get; set; } = true;
+        public bool    SchedulesOpen    { get; set; } = false;
+        public string? SelectedSchedule { get; set; } = null;
+        public string  ScheduleSearch   { get; set; } = "";
+        public bool    DropUp           { get; set; } = false;
+        public ElementReference RowRef  { get; set; }
+    }
+
+    private static readonly List<string> AhPropertyOptions = new()
+    {
+        "Expected work hours",
+        "Daily overtime",
+        "Daily double overtime",
+        "All (work and overtime hours)"
+    };
+
+    private static List<string> GetConditionOptions(string property) => property switch
+    {
+        "Expected work hours"           => new() { "are", "are until", "reduced by" },
+        "Daily overtime"                => new() { "starts after", "starts at", "reduced by" },
+        "Daily double overtime"         => new() { "starts after", "starts at", "reduced by" },
+        "All (work and overtime hours)" => new() { "reduced by" },
+        _                               => new() { "reduced by" }
+    };
+
+    private static bool UseClockTime(string condition) =>
+        condition is "are until" or "starts at";
+
+    private bool HasAllWorkHoursRule() =>
+        ahShortenedRules.Any(r => r.Property == "All (work and overtime hours)");
+
+    // ── Shortened day rule helpers ────────────────────────────────────────────
+    private void AddShortenedRule()
+    {
+        ahShortenedRules.Add(new ShortenedRule());
+        StateHasChanged();
+    }
+    private void RemoveRule(int idx)
+    {
+        if (idx >= 0 && idx < ahShortenedRules.Count)
+            ahShortenedRules.RemoveAt(idx);
+        StateHasChanged();
+    }
+    private async Task TogglePropDrop(int idx)
+    {
+        bool wasOpen = ahShortenedRules[idx].PropOpen;
+        for (int i = 0; i < ahShortenedRules.Count; i++)
+        {
+            ahShortenedRules[i].PropOpen = false;
+            ahShortenedRules[i].CondOpen = false;
+        }
+        ahStartDateOpen = false; ahEndDateOpen = false;
+        if (!wasOpen)
+        {
+            ahShortenedRules[idx].DropUp = await IsNearBottom(ahShortenedRules[idx].RowRef);
+            ahShortenedRules[idx].PropOpen = true;
+        }
+        StateHasChanged();
+    }
+    private async Task ToggleCondDrop(int idx)
+    {
+        bool wasOpen = ahShortenedRules[idx].CondOpen;
+        for (int i = 0; i < ahShortenedRules.Count; i++)
+        {
+            ahShortenedRules[i].CondOpen = false;
+            ahShortenedRules[i].PropOpen = false;
+        }
+        if (!wasOpen)
+        {
+            ahShortenedRules[idx].DropUp = await IsNearBottom(ahShortenedRules[idx].RowRef);
+            ahShortenedRules[idx].CondOpen = true;
+        }
+        StateHasChanged();
+    }
+    private async Task<bool> IsNearBottom(ElementReference el)
+    {
+        try
+        {
+            var result = await JS.InvokeAsync<double>(
+                "eval",
+                $"(()=>{{ try {{ var r=document.activeElement?.closest('.ah-rule-row')?.getBoundingClientRect(); return r ? r.bottom : 0; }} catch{{return 0;}} }})()");
+            var vh = await JS.InvokeAsync<double>("eval", "window.innerHeight");
+            return vh > 0 && result > vh * 0.6;
+        }
+        catch { return false; }
+    }
+
+    private void PickProperty(int idx, string opt)
+    {
+        ahShortenedRules[idx].Property  = opt;
+        ahShortenedRules[idx].PropOpen  = false;
+        var opts = GetConditionOptions(opt);
+        ahShortenedRules[idx].Condition = opts.Count > 0 ? opts[0] : "";
+        ahShortenedRules[idx].TimeH = 0;
+        ahShortenedRules[idx].TimeM = 0;
+        StateHasChanged();
+    }
+
+    private void PickCondition(int idx, string cond)
+    {
+        ahShortenedRules[idx].Condition = cond;
+        ahShortenedRules[idx].CondOpen  = false;
+        ahShortenedRules[idx].TimeH = 0;
+        ahShortenedRules[idx].TimeM = 0;
+        StateHasChanged();
+    }
+
+    // ── FIX: extracted methods to avoid nested double-quotes in Razor attributes ──
+    private void PickSchedule(int idx, string schedule)
+    {
+        ahShortenedRules[idx].SelectedSchedule = schedule;
+        ahShortenedRules[idx].SchedulesOpen    = false;
+        StateHasChanged();
+    }
+
+    private void ClearSchedule(int idx)
+    {
+        ahShortenedRules[idx].SelectedSchedule = null;
+        ahShortenedRules[idx].SchedulesOpen    = false;
+        StateHasChanged();
+    }
+
+    // ── Calendar helpers ──────────────────────────────────────────────────────
+    private void AhCalPrev(bool isStart)
+    {
+        if (isStart) ahCalViewStart = ahCalViewStart.AddMonths(-1);
+        else         ahCalViewEnd   = ahCalViewEnd.AddMonths(-1);
+    }
+    private void AhCalNext(bool isStart)
+    {
+        if (isStart) ahCalViewStart = ahCalViewStart.AddMonths(1);
+        else         ahCalViewEnd   = ahCalViewEnd.AddMonths(1);
+    }
+    private void AhCalPick(bool isStart, DateTime date)
+    {
+        if (isStart) { newHolidayStartDate = date; ahStartDateOpen = false; }
+        else         { newHolidayEndDate   = date; ahEndDateOpen   = false; }
+        StateHasChanged();
+    }
+    private (DateTime view, DateTime? sel) AhCalState(bool isStart)
+        => isStart ? (ahCalViewStart, newHolidayStartDate)
+                   : (ahCalViewEnd,   newHolidayEndDate);
+
+    // ── Toast ─────────────────────────────────────────────────────────────────
+    private async Task ShowToast(string message)
+    {
+        toastCts?.Cancel();
+        toastCts = new System.Threading.CancellationTokenSource();
+        var token = toastCts.Token;
+
+        toastMessage = message;
+        toastFading  = false;
+        toastVisible = true;
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(2500, token);
+            if (!token.IsCancellationRequested)
+            {
+                toastFading = true;
+                StateHasChanged();
+                await Task.Delay(400, token);
+                if (!token.IsCancellationRequested)
+                {
+                    toastVisible = false;
+                    StateHasChanged();
+                }
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    // ── Three-dot menu ─────────────────────────────────────────────────────────
+    private async Task ToggleDotsMenu()
+    {
+        if (showDotsMenu) { CloseDotsMenu(); return; }
+
+        try
+        {
+            var rect = await JS.InvokeAsync<BoundingRect>(
+                "eval",
+                "(()=>{ var el=document.querySelector('.ht-cal-header-right .ht-icon-btn'); var r=el.getBoundingClientRect(); return {top:r.bottom+window.scrollY+4,left:r.right+window.scrollX-160,width:r.width}; })()"
+            );
+            dotsMenuTop  = rect.Top;
+            dotsMenuLeft = rect.Left;
+        }
+        catch
+        {
+            dotsMenuTop  = 200;
+            dotsMenuLeft = 300;
+        }
+
+        showDotsMenu = true;
+        StateHasChanged();
+    }
+
+    private void CloseDotsMenu() { showDotsMenu = false; StateHasChanged(); }
+
+    private void OpenRefreshModal()
+    {
+        showDotsMenu     = false;
+        refreshOption    = "all";
+        specificRefreshDate = DateTime.Today;
+        showRefreshModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseRefreshModal() { showRefreshModal = false; StateHasChanged(); }
+
+    private async Task DoRefreshCalendar()
+    {
+        if (selectedCalendar == null) return;
+        isRefreshing = true;
+        StateHasChanged();
+
+        await Task.CompletedTask; // real fetch handles its own async
+
+        if (!string.IsNullOrEmpty(selectedCalendar.Country))
+        {
+            var refreshed = await FetchGoogleCalendarHolidays(selectedCalendar.Country);
+            if (refreshOption == "future")
+                refreshed = refreshed.Where(h => h.Date >= DateTime.Today).ToList();
+            else if (refreshOption == "specific")
+                refreshed = refreshed.Where(h => h.Date >= specificRefreshDate).ToList();
+
+            if (refreshed.Any())
+                selectedCalendar.Holidays = refreshed;
+            else
+                importError = "Could not fetch holidays from Google Calendar. Check your internet connection.";
+        }
+
+        isRefreshing     = false;
+        showRefreshModal = false;
+        StateHasChanged();
+
+        await ShowToast($"Calendar '{selectedCalendar.Name}' has been refreshed.");
+    }
+
+    public void Refresh() => StateHasChanged();
+
+    // JS interop helper
+    private class BoundingRect
+    {
+        public double Top   { get; set; }
+        public double Left  { get; set; }
+        public double Width { get; set; }
+    }
+}
+
+<style>
+    /* ═══════════════════════════════════════════════════
+       HOLIDAYS TAB  — full-width, fixed dropdown
+       ═══════════════════════════════════════════════════ */
+
+    .ht-layout {
+        display: flex;
+        width: 100%;
+        min-height: calc(100vh - 120px);
+        border: 1.5px solid #e8eaed;
+        border-radius: 10px;
+        background: #fff;
+    }
+
+    /* ── Sidebar ── */
+    .ht-sidebar {
+        width: 260px;
+        min-width: 260px;
+        flex-shrink: 0;
+        border-right: 1.5px solid #e8eaed;
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+        border-radius: 10px 0 0 10px;
+    }
+
+    .ht-sidebar-search {
+        display: flex; align-items: center; gap: 8px;
+        padding: 12px 14px; border-bottom: 1px solid #f0f0f0;
+    }
+    .ht-search-icon { color: #9ca3af; font-size: 13px; flex-shrink: 0; }
+    .ht-search-input {
+        border: none; outline: none; background: transparent;
+        font-size: 13px; color: #374151; font-family: inherit; width: 100%;
+    }
+    .ht-search-input::placeholder { color: #9ca3af; }
+
+    .ht-add-btn {
+        display: flex; align-items: center; gap: 7px;
+        padding: 11px 14px; color: #ff7a00; font-size: 14px; font-weight: 600;
+        cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background .15s;
+        user-select: none;
+    }
+    .ht-add-btn:hover { background: #fff7ed; }
+
+    .ht-no-calendars {
+        padding: 24px 14px; font-size: 13px; color: #9ca3af; text-align: center;
+    }
+
+    .ht-cal-item {
+        padding: 12px 14px; cursor: pointer;
+        border-bottom: 1px solid #f5f5f5;
+        border-left: 3px solid transparent;
+        transition: background .12s, border-color .12s;
+        user-select: none;
+    }
+    .ht-cal-item:hover { background: #fafafa; }
+    .ht-cal-item--active { background: #fff4ec; border-left-color: #ff7a00; }
+    .ht-cal-item-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .ht-cal-name { font-size: 13px; font-weight: 600; color: #374151; }
+    .ht-cal-item--active .ht-cal-name { color: #ff7a00; }
+    .ht-cal-dl { font-size: 12px; color: #ccc; }
+    .ht-cal-default {
+        display: inline-block; margin-top: 3px;
+        font-size: 10px; font-weight: 700; color: #9ca3af; letter-spacing: .5px;
+    }
+
+    /* ── Main panel ── */
+    .ht-main {
+        flex: 1;
+        min-width: 0;
+        background: #f9fafb;
+        padding: 24px 28px;
+        border-radius: 0 10px 10px 0;
+    }
+
+    /* ── Form card ── */
+    .ht-form-card {
+        background: #fff; border: 1.5px solid #e8eaed;
+        border-radius: 10px; padding: 32px 36px;
+        width: 100%; max-width: 700px;
+    }
+
+    .ht-form-row { margin-bottom: 22px; }
+    .ht-form-label {
+        display: block; font-size: 14px; font-weight: 600;
+        color: #374151; margin-bottom: 10px;
+    }
+    .ht-form-input {
+        width: 100%; padding: 11px 14px;
+        border: 1.5px solid #e5e7eb; border-radius: 8px;
+        font-size: 14px; color: #111827; font-family: inherit;
+        transition: border-color .15s; box-sizing: border-box;
+        outline: none; background: #fff;
+    }
+    .ht-form-input:focus { border-color: #ff7a00; }
+    .ht-form-input--err { border-color: #ef4444 !important; }
+    .ht-err-msg { display: block; font-size: 12px; color: #ef4444; margin-top: 5px; }
+
+    .ht-default-row { display: flex; align-items: center; gap: 8px; margin-bottom: 22px; }
+    .ht-checkbox { width: 16px; height: 16px; accent-color: #4ade80; cursor: pointer; flex-shrink: 0; }
+    .ht-checkbox-label {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 14px; color: #374151; cursor: pointer; margin: 0;
+    }
+    .ht-info-icon { font-size: 13px; color: #9ca3af; cursor: default; }
+
+    /* ── Hover tooltip ── */
+    .ht-tooltip-wrap {
+        position: relative; display: inline-flex; align-items: center;
+    }
+    .ht-tooltip-box {
+        visibility: hidden; opacity: 0;
+        position: absolute; left: 50%; bottom: calc(100% + 8px);
+        transform: translateX(-10%);
+        background: #1f2937; color: #fff;
+        font-size: 13px; font-weight: 400; line-height: 1.55;
+        padding: 12px 14px; border-radius: 8px;
+        width: 280px; pointer-events: none;
+        box-shadow: 0 4px 20px rgba(0,0,0,.22);
+        transition: opacity .15s, visibility .15s;
+        z-index: 9999; white-space: normal;
+    }
+    .ht-tooltip-box--sm { width: 220px; }
+    .ht-tooltip-box::after {
+        content: ''; position: absolute;
+        top: 100%; left: 14%; transform: translateX(-50%);
+        border: 6px solid transparent;
+        border-top-color: #1f2937;
+    }
+    .ht-tooltip-wrap:hover .ht-tooltip-box {
+        visibility: visible; opacity: 1;
+    }
+
+    .ht-radio-option {
+        display: flex; align-items: center; gap: 10px;
+        padding: 4px 0; font-size: 14px; color: #374151; margin-bottom: 12px;
+    }
+    .ht-radio-circle { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #d1d5db; flex-shrink: 0; }
+    .ht-radio-check {
+        width: 20px; height: 20px; border-radius: 50%;
+        background: #22c55e; color: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }
+
+    /* ── Country trigger ── */
+    .ht-country-wrap { position: relative; width: 100%; margin-bottom: 2px; }
+    .ht-country-trigger {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 11px 14px; border: 1.5px solid #e5e7eb; border-radius: 8px;
+        cursor: pointer; font-size: 14px; color: #111827;
+        background: #fff; transition: border-color .15s;
+        user-select: none; box-sizing: border-box;
+    }
+    .ht-country-trigger:hover  { border-color: #c5c5c5; }
+    .ht-country-trigger--open  { border-color: #ff7a00; }
+    .ht-placeholder            { color: #9ca3af; }
+    .ht-country-trigger i      { font-size: 11px; color: #6b7280; flex-shrink: 0; }
+
+    /* ── FIXED dropdown panel ── */
+    .ht-fixed-dropdown {
+        position: fixed;
+        z-index: 99999;
+        background: #fff;
+        border: 1.5px solid #e0e0e0;
+        border-radius: 10px;
+        box-shadow: 0 12px 40px rgba(0,0,0,.22);
+        display: flex;
+        flex-direction: column;
+        max-height: 320px;
+        animation: ht-dd-in .13s ease;
+    }
+    @@keyframes ht-dd-in {
+        from { opacity: 0; transform: translateY(-6px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .ht-country-search-wrap {
+        display: flex; align-items: center; gap: 8px;
+        padding: 10px 13px; border-bottom: 1px solid #f0f0f0;
+        background: #fafafa; border-radius: 10px 10px 0 0;
+        flex-shrink: 0;
+    }
+    .ht-country-search-wrap i { color: #9ca3af; font-size: 13px; flex-shrink: 0; }
+    .ht-country-search {
+        border: none; outline: none; font-size: 14px; color: #374151;
+        font-family: inherit; width: 100%; background: transparent;
+    }
+    .ht-country-search::placeholder { color: #9ca3af; }
+
+    .ht-country-list {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        max-height: 260px;
+        scrollbar-width: thin;
+        scrollbar-color: #d1d5db #f5f5f5;
+    }
+    .ht-country-list::-webkit-scrollbar       { width: 6px; }
+    .ht-country-list::-webkit-scrollbar-track { background: #f5f5f5; }
+    .ht-country-list::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    .ht-country-list::-webkit-scrollbar-thumb:hover { background: #aaa; }
+
+    .ht-country-item {
+        padding: 10px 14px; font-size: 14px; color: #374151;
+        cursor: pointer; transition: background .1s;
+        border-bottom: 1px solid #f5f5f5;
+    }
+    .ht-country-item:last-child  { border-bottom: none; }
+    .ht-country-item:hover       { background: #f3f4f6; }
+    .ht-country-item--sel        { background: #fff7ed; color: #ff7a00; font-weight: 600; }
+    .ht-country-empty {
+        padding: 20px; text-align: center; font-size: 13px; color: #9ca3af;
+    }
+
+    /* ── Info banner ── */
+    .ht-info-banner {
+        display: flex; align-items: flex-start; gap: 10px;
+        padding: 13px 16px; background: #fffbf4;
+        border: 1px solid #fed7aa; border-radius: 8px;
+        font-size: 13px; color: #92400e; margin-bottom: 14px;
+    }
+    .ht-info-banner-icon { color: #f97316; font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .ht-people-link { font-size: 13px; color: #6b7280; margin-bottom: 24px; line-height: 1.6; }
+    .ht-link { color: #ff7a00; font-weight: 600; text-decoration: underline; }
+
+    /* ── Buttons ── */
+    .ht-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+    .ht-btn-cancel {
+        padding: 10px 24px; border: none; background: transparent;
+        font-size: 14px; font-weight: 500; color: #6b7280; cursor: pointer;
+        font-family: inherit; border-radius: 8px; transition: background .15s;
+    }
+    .ht-btn-cancel:hover { background: #f3f4f6; }
+    .ht-btn-save {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 10px 28px; background: #ff7a00; color: #fff; border: none;
+        border-radius: 8px; font-size: 14px; font-weight: 700;
+        cursor: pointer; font-family: inherit; transition: background .15s;
+    }
+    .ht-btn-save:hover:not(:disabled) { background: #e66c00; }
+    .ht-btn-save:disabled             { background: #fbd5a7; cursor: not-allowed; }
+    .ht-mini-spin {
+        width: 14px; height: 14px; border-radius: 50%;
+        border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+        animation: ht-spin .6s linear infinite; display: inline-block;
+    }
+    @@keyframes ht-spin { to { transform: rotate(360deg); } }
+
+    .ht-import-err {
+        margin-top: 14px; padding: 10px 14px; background: #fef2f2;
+        border: 1px solid #fca5a5; border-radius: 8px;
+        color: #dc2626; font-size: 13px;
+        display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ── Calendar detail ── */
+    .ht-cal-detail { width: 100%; }
+    .ht-cal-header-card {
+        display: flex; align-items: center; justify-content: space-between;
+        background: #fff; border: 1.5px solid #e8eaed; border-radius: 10px;
+        padding: 16px 20px; margin-bottom: 16px;
+    }
+    .ht-cal-header-left  { display: flex; align-items: center; gap: 10px; }
+    .ht-cal-title        { font-size: 16px; font-weight: 700; color: #111827; }
+    .ht-cal-header-right { display: flex; align-items: center; gap: 6px; }
+
+    .ht-icon-btn {
+        width: 30px; height: 30px; border: 1.5px solid #e8eaed;
+        border-radius: 7px; background: #fff; cursor: pointer; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 13px; color: #6b7280;
+        transition: border-color .15s, color .15s, background .15s;
+    }
+    .ht-icon-btn:hover      { border-color: #ff7a00; color: #ff7a00; background: #fff7ed; }
+    .ht-icon-btn--del:hover { border-color: #ef4444; color: #ef4444; background: #fef2f2; }
+    .ht-icon-btn--sm        { width: 26px; height: 26px; font-size: 11px; }
+
+    .ht-holidays-panel {
+        background: #fff; border: 1.5px solid #e8eaed;
+        border-radius: 10px; overflow: hidden; width: 100%;
+    }
+    .ht-year-bar {
+        display: flex; align-items: center;
+        padding: 12px 20px 12px 0; border-bottom: none;
+    }
+    .ht-year-tabs { display: flex; gap: 2px; }
+    .ht-year-tab {
+        padding: 5px 14px; border: 1.5px solid #e8eaed; border-radius: 6px;
+        background: #fff; font-size: 13px; font-weight: 500; color: #6b7280;
+        cursor: pointer; font-family: inherit; transition: all .15s;
+    }
+    .ht-year-tab:hover     { border-color: #ff7a00; color: #ff7a00; }
+    .ht-year-tab--active   { border-color: #ff7a00; color: #ff7a00; background: #fff7ed; font-weight: 700; }
+
+    .ht-add-holiday-btn {
+        padding: 8px 20px; background: #ff7a00; color: #fff; border: none;
+        border-radius: 8px; font-size: 13px; font-weight: 600;
+        cursor: pointer; font-family: inherit; transition: background .15s;
+        white-space: nowrap;
+    }
+    .ht-add-holiday-btn:hover { background: #e66c00; }
+
+    .ht-table-head {
+        display: grid; grid-template-columns: 1fr 180px 160px 160px;
+        padding: 10px 20px; background: #fafafa;
+        border-top: 1px solid #f0f0f0; border-bottom: 1px solid #f0f0f0;
+        align-items: center;
+    }
+    .ht-th {
+        font-size: 12px; font-weight: 700; color: #6b7280;
+        letter-spacing: .3px;
+    }
+    .ht-th--actions { display: flex; justify-content: flex-end; }
+    .ht-holiday-row {
+        display: grid; grid-template-columns: 1fr 180px 160px 160px;
+        padding: 16px 20px; border-bottom: 1px solid #f5f5f5;
+        align-items: center; transition: background .1s;
+    }
+    .ht-holiday-row:last-child   { border-bottom: none; }
+    .ht-holiday-row:hover        { background: #fafafa; }
+    .ht-holiday-row:hover .ht-td--actions { opacity: 1; }
+
+    .ht-td           { font-size: 14px; color: #111827; }
+    .ht-td--muted    { color: #374151; }
+    .ht-td--actions  {
+        display: flex; align-items: center; gap: 6px;
+        justify-content: flex-end; opacity: 0; transition: opacity .15s;
+    }
+
+    .ht-no-holidays {
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 10px; padding: 60px 20px; text-align: center;
+    }
+    .ht-no-holidays-icon {
+        font-size: 52px; color: #d1d5db; margin-bottom: 4px;
+        position: relative;
+    }
+    .ht-no-holidays-icon i { font-size: 52px; color: #c0bfbf; }
+    .ht-no-holidays-title { font-size: 16px; font-weight: 700; color: #111827; }
+    .ht-no-holidays-sub   { font-size: 14px; color: #6b7280; margin-bottom: 6px; }
+    .ht-add-holiday-btn--center { margin-top: 4px; }
+
+    /* ── Empty state ── */
+    .ht-empty-state {
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; min-height: 300px; gap: 10px; text-align: center;
+    }
+    .ht-empty-icon  { font-size: 48px; color: #d1d5db; }
+    .ht-empty-title { font-size: 18px; font-weight: 700; color: #374151; }
+    .ht-empty-sub   { font-size: 14px; color: #9ca3af; }
+
+    /* ── Modal ── */
+    .ht-modal-back {
+        position: fixed; inset: 0; z-index: 1100;
+        background: rgba(0,0,0,.45);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .ht-modal {
+        background: #fff; border-radius: 12px; padding: 28px;
+        width: 420px; max-width: calc(100vw - 32px);
+        box-shadow: 0 20px 60px rgba(0,0,0,.2);
+        animation: ht-modal-in .18s ease;
+    }
+    @@keyframes ht-modal-in {
+        from { opacity: 0; transform: scale(.95); }
+        to   { opacity: 1; transform: scale(1); }
+    }
+    .ht-modal-head {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 20px; font-size: 18px; font-weight: 700; color: #111827;
+    }
+    .ht-modal-close {
+        width: 32px; height: 32px; border: none; background: #f3f4f6;
+        border-radius: 7px; cursor: pointer; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 14px; color: #6b7280; transition: background .15s;
+    }
+    .ht-modal-close:hover { background: #e5e7eb; }
+    .ht-modal-body        { margin-bottom: 4px; }
+    .ht-modal-foot {
+        display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;
+    }
+
+    /* ── Toast ── */
+    .ht-toast {
+        position: fixed; top: 20px; right: 24px; z-index: 99999;
+        display: flex; align-items: center; gap: 10px;
+        background: #111827; color: #fff;
+        padding: 12px 20px; border-radius: 10px;
+        font-size: 14px; font-weight: 500;
+        box-shadow: 0 8px 32px rgba(0,0,0,.22);
+        animation: ht-toast-in .25s ease;
+        transition: opacity .4s ease;
+    }
+    .ht-toast--fade { opacity: 0; }
+    .ht-toast-icon  { color: #22c55e; font-size: 16px; flex-shrink: 0; }
+    @@keyframes ht-toast-in {
+        from { opacity: 0; transform: translateY(-12px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Three-dot menu ── */
+    .ht-dots-menu {
+        position: fixed; z-index: 9000;
+        background: #fff; border: 1.5px solid #e0e0e0;
+        border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.16);
+        min-width: 180px;
+        animation: ht-dd-in .13s ease;
+    }
+    .ht-dots-menu-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 11px 16px; font-size: 14px; color: #374151;
+        cursor: pointer; transition: background .1s;
+        border-radius: 6px;
+    }
+    .ht-dots-menu-item:hover { background: #f3f4f6; color: #ff7a00; }
+    .ht-dots-menu-item i     { font-size: 14px; }
+
+    /* ── Refresh modal specifics ── */
+    .ht-refresh-modal { width: 460px; }
+    .ht-refresh-desc  { font-size: 14px; color: #6b7280; margin-bottom: 16px; margin-top: 0; }
+    .ht-refresh-options-label {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 12px;
+    }
+    .ht-refresh-options { display: flex; gap: 20px; flex-wrap: wrap; }
+    .ht-refresh-opt {
+        display: flex; align-items: center; gap: 8px;
+        font-size: 14px; color: #374151; cursor: pointer; user-select: none;
+    }
+    .ht-refresh-radio {
+        width: 18px; height: 18px; border-radius: 50%;
+        border: 2px solid #d1d5db; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 10px; color: #fff; transition: all .15s;
+    }
+    .ht-refresh-radio--checked { background: #22c55e; border-color: #22c55e; }
+
+    /* ── Form name preview ── */
+    .ht-form-name-preview {
+        font-size: 20px; font-weight: 700; color: #111827;
+        margin-bottom: 24px; min-height: 28px;
+        transition: color .15s;
+    }
+
+    /* ── Edit mode country display ── */
+    .ht-edit-country {
+        font-size: 14px; color: #374151; margin-bottom: 20px;
+        padding: 10px 14px; background: #f9fafb;
+        border-radius: 8px; border: 1px solid #e5e7eb;
+    }
+
+    /* ── Specific date picker ── */
+    .ht-specific-date-wrap {
+        margin-top: 18px;
+        animation: ht-dd-in .15s ease;
+    }
+    .ht-specific-date-label {
+        display: block; font-size: 13px; font-weight: 600;
+        color: #374151; margin-bottom: 8px;
+    }
+    .ht-specific-date-input-wrap {
+        position: relative; display: flex; align-items: center;
+    }
+    .ht-specific-date-input {
+        width: 100%; padding: 11px 40px 11px 14px;
+        border: 1.5px solid #d1d5db; border-radius: 8px;
+        font-size: 14px; font-weight: 600; color: #111827;
+        font-family: inherit; outline: none; background: #fff;
+        box-sizing: border-box; cursor: pointer;
+        transition: border-color .15s;
+        appearance: none; -webkit-appearance: none;
+    }
+    .ht-specific-date-input:focus { border-color: #ff7a00; }
+    .ht-specific-date-icon {
+        position: absolute; right: 13px;
+        font-size: 15px; color: #9ca3af; pointer-events: none;
+    }
+
+    /* ── Members section ── */
+    .ht-members-section { margin: 20px 0 8px; }
+    .ht-members-title {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 12px; font-weight: 700; color: #374151;
+        letter-spacing: .5px; margin-bottom: 6px;
+    }
+
+    /* ════════════════════════════════════════
+       SHORTENED RULE ROW
+       ════════════════════════════════════════ */
+
+    .ah-rule-row {
+        display: flex; align-items: center; gap: 10px;
+        flex-wrap: nowrap;
+    }
+
+    .ah-dd {
+        position: relative; display: flex; align-items: center;
+        justify-content: space-between; gap: 8px;
+        border: 1.5px solid #e5e7eb; border-radius: 10px;
+        padding: 13px 15px; cursor: pointer; background: #fff;
+        user-select: none; transition: border-color .15s;
+        min-width: 0;
+    }
+    .ah-dd:hover      { border-color: #d1d5db; }
+    .ah-dd--open      { border-color: #ff7a00; }
+    .ah-dd:not(.ah-dd--cond) { flex: 1 1 200px; }
+    .ah-dd--cond      { flex: 0 0 130px; min-width: 115px; }
+
+    .ah-dd-ph   { font-size: 14px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ah-dd-val  { font-size: 14px; color: #111827; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ah-dd-chev { font-size: 12px; color: #6b7280; flex-shrink: 0; }
+
+    .ah-dd-menu {
+        position: absolute; top: calc(100% + 4px); left: 0;
+        min-width: 100%; z-index: 400;
+        background: #fff; border: 1.5px solid #e5e7eb; border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.13); overflow: hidden;
+        animation: ah-slide-in .12s ease;
+    }
+    .ah-dd-menu--up {
+        top: auto;
+        bottom: calc(100% + 4px);
+    }
+    .ah-dd-item {
+        padding: 13px 16px; font-size: 14px; color: #374151;
+        cursor: pointer; transition: background .1s;
+        border-bottom: 1px solid #f5f5f5; white-space: nowrap;
+    }
+    .ah-dd-item:last-child { border-bottom: none; }
+    .ah-dd-item:hover      { background: #f9fafb; color: #111827; }
+    .ah-dd-item--sel       { background: #fff7ed; color: #ff7a00; font-weight: 600; }
+
+    .ah-rule-time {
+        display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+        border: 1.5px solid #e5e7eb; border-radius: 10px;
+        padding: 13px 14px; background: #fff;
+    }
+    .ah-time-seg {
+        width: 26px; text-align: center; border: none; outline: none;
+        font-size: 14px; font-weight: 600; color: #111827;
+        font-family: inherit; background: transparent;
+        -moz-appearance: textfield; appearance: textfield;
+    }
+    .ah-time-seg--clock { width: 26px; }
+    .ah-time-seg::-webkit-inner-spin-button,
+    .ah-time-seg::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .ah-time-sep { font-size: 14px; color: #374151; font-weight: 500; }
+    .ah-time-ampm {
+        padding: 2px 6px; border: 1px solid #e5e7eb; border-radius: 5px;
+        background: #f9fafb; font-size: 12px; font-weight: 700; color: #374151;
+        cursor: pointer; font-family: inherit; margin-left: 2px;
+        transition: background .15s, color .15s;
+    }
+    .ah-time-ampm:hover { background: #fff7ed; color: #ff7a00; border-color: #ff7a00; }
+    .ah-time-clock {
+        width: 24px; height: 24px; border: none; background: transparent;
+        cursor: pointer; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 14px; color: #9ca3af; margin-left: 2px;
+        transition: color .15s;
+    }
+    .ah-time-clock:hover { color: #ff7a00; }
+
+    .ah-apply-row {
+        display: flex; align-items: center; gap: 24px;
+        margin-top: 12px; margin-bottom: 4px;
+    }
+    .ah-apply-opt {
+        display: flex; align-items: center; gap: 8px;
+        cursor: pointer; user-select: none; font-size: 14px; color: #374151;
+    }
+    .ah-apply-radio {
+        width: 22px; height: 22px; border-radius: 50%;
+        border: 2px solid #d1d5db; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 12px; color: #fff; transition: all .15s;
+    }
+    .ah-apply-radio--on { background: #22c55e; border-color: #22c55e; }
+
+    .ah-sched-wrap { margin-top: 10px; position: relative; }
+    .ah-sched-trigger {
+        display: flex; align-items: center; justify-content: space-between;
+        border: 1.5px solid #e5e7eb; border-radius: 8px;
+        padding: 11px 14px; cursor: pointer; background: #fff;
+        user-select: none; transition: border-color .15s;
+    }
+    .ah-sched-trigger:hover   { border-color: #d1d5db; }
+    .ah-sched-trigger--open   { border-color: #ff7a00; }
+    .ah-sched-drop {
+        position: absolute; top: calc(100% + 2px); left: 0; right: 0; z-index: 400;
+        background: #fff; border: 1.5px solid #e5e7eb; border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.13);
+        overflow: hidden; animation: ah-slide-in .12s ease;
+    }
+    .ah-sched-search-row {
+        display: flex; align-items: center; gap: 8px;
+        padding: 10px 14px; border-bottom: 1px solid #f0f0f0;
+        background: #fafafa;
+    }
+    .ah-sched-search-row i { font-size: 13px; color: #9ca3af; flex-shrink: 0; }
+    .ah-sched-search {
+        border: none; outline: none; font-size: 13px; color: #374151;
+        font-family: inherit; width: 100%; background: transparent;
+    }
+    .ah-sched-search::placeholder { color: #9ca3af; }
+    .ah-sched-item {
+        padding: 12px 14px; font-size: 13px; color: #374151;
+        cursor: pointer; transition: background .1s;
+        border-bottom: 1px solid #f5f5f5;
+    }
+    .ah-sched-item:hover { background: #f9fafb; color: #111827; }
+    .ah-sched-clear {
+        padding: 10px 14px; font-size: 13px; color: #9ca3af;
+        cursor: pointer; transition: color .1s;
+    }
+    .ah-sched-clear:hover { color: #ef4444; }
+
+    /* ════════════════════════════════════════════════
+       ADD HOLIDAY PANEL — Jibble-style right slide-in
+       ════════════════════════════════════════════════ */
+
+    .ah-backdrop {
+        position: fixed; inset: 0; z-index: 1200;
+        background: rgba(0,0,0,.35);
+    }
+    .ah-panel {
+        position: fixed; top: 0; right: 0; bottom: 0;
+        width: 680px; max-width: 100vw; z-index: 1201;
+        background: #fff;
+        display: flex; flex-direction: column;
+        box-shadow: -8px 0 40px rgba(0,0,0,.16);
+        animation: ah-slide-in .22s ease;
+    }
+    @@keyframes ah-slide-in {
+        from { transform: translateX(60px); opacity: 0; }
+        to   { transform: translateX(0);    opacity: 1; }
+    }
+
+    .ah-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 26px 32px 22px; border-bottom: 1.5px solid #f0f0f0;
+        flex-shrink: 0;
+    }
+    .ah-title { font-size: 22px; font-weight: 700; color: #111827; }
+    .ah-close {
+        width: 36px; height: 36px; border: none; background: transparent;
+        cursor: pointer; border-radius: 8px; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 18px; color: #6b7280; transition: background .15s;
+    }
+    .ah-close:hover { background: #f3f4f6; color: #111827; }
+
+    .ah-body { flex: 1; overflow-y: auto; padding: 32px 32px 20px; }
+
+    .ah-section-label {
+        font-size: 16px; font-weight: 600; color: #111827; margin-bottom: 12px;
+    }
+
+    .ah-input-wrap {
+        border: 1.5px solid #e5e7eb; border-radius: 10px;
+        padding: 15px 18px; background: #fff; transition: border-color .15s;
+    }
+    .ah-input-wrap:focus-within { border-color: #ff7a00; }
+    .ah-input-wrap--err { border-color: #ef4444 !important; }
+    .ah-text-input {
+        width: 100%; border: none; outline: none; background: transparent;
+        font-size: 15px; color: #111827; font-family: inherit;
+    }
+    .ah-text-input::placeholder { color: #9ca3af; }
+    .ah-err-msg { font-size: 12px; color: #ef4444; margin-top: 5px; }
+
+    .ah-dates-row {
+        display: flex; gap: 14px;
+    }
+    .ah-date-field {
+        flex: 1; display: flex; align-items: center; justify-content: space-between;
+        border: 1.5px solid #e5e7eb; border-radius: 10px;
+        padding: 15px 16px; cursor: pointer; transition: border-color .15s;
+        background: #fff; user-select: none;
+    }
+    .ah-date-field:hover { border-color: #d1d5db; }
+    .ah-date-field--active { border-color: #ff7a00; }
+    .ah-date-val { font-size: 15px; color: #111827; font-weight: 500; }
+    .ah-date-placeholder { color: #9ca3af !important; font-weight: 400 !important; }
+    .ah-date-icon { font-size: 16px; color: #9ca3af; flex-shrink: 0; cursor: pointer; transition: color .15s; }
+    .ah-date-icon:hover { color: #ff7a00; }
+
+    .ah-cal-wrap {
+        margin-top: 6px; margin-bottom: 4px;
+        border: 1.5px solid #e5e7eb; border-radius: 10px;
+        background: #fff; padding: 10px 12px 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,.07);
+        animation: ah-slide-in .15s ease;
+        max-width: 280px;
+    }
+    .ah-cal-nav {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 8px;
+    }
+    .ah-cal-nav-btn {
+        width: 24px; height: 24px; border: 1.5px solid #e8eaed; border-radius: 5px;
+        background: #fff; cursor: pointer; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 10px; color: #6b7280; transition: all .15s;
+    }
+    .ah-cal-nav-btn:hover { border-color: #ff7a00; color: #ff7a00; }
+    .ah-cal-month { font-size: 13px; font-weight: 700; color: #111827; }
+    .ah-cal-grid {
+        display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px;
+    }
+    .ah-cal-dow {
+        text-align: center; font-size: 10px; font-weight: 600;
+        color: #9ca3af; padding: 2px 0 5px;
+    }
+    .ah-cal-cell {
+        aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+        border-radius: 50%; font-size: 11px; font-weight: 500; color: #111827;
+        cursor: pointer; transition: background .12s;
+    }
+    .ah-cal-cell:hover { background: #f3f4f6; }
+    .ah-cal-cell--today {
+        color: #ff7a00; font-weight: 700;
+        border: 2px solid #ff7a00; border-radius: 50%;
+    }
+    .ah-cal-cell--sel { background: #ff7a00 !important; color: #fff !important; font-weight: 700; }
+    .ah-cal-cell--future { color: #d1d5db; cursor: default; }
+    .ah-cal-cell--future:hover { background: transparent; }
+    .ah-cal-cell--empty { cursor: default; }
+    .ah-cal-footer {
+        display: flex; justify-content: flex-end;
+        border-top: 1px solid #f0f0f0; margin-top: 6px; padding-top: 6px;
+    }
+    .ah-cal-today-btn {
+        border: none; background: transparent; font-size: 12px;
+        font-weight: 600; color: #ff7a00; cursor: pointer;
+        font-family: inherit; padding: 2px 6px; border-radius: 5px;
+        transition: background .15s;
+    }
+    .ah-cal-today-btn:hover { background: #fff7ed; }
+
+    .ah-shortened-row {
+        display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+    }
+    .ah-select-wrap {
+        flex: 1; position: relative;
+        display: flex; align-items: center; justify-content: space-between;
+        border: 1.5px solid #e5e7eb; border-radius: 8px;
+        padding: 12px 14px; cursor: pointer; background: #fff;
+        transition: border-color .15s; user-select: none;
+    }
+    .ah-select-wrap:hover { border-color: #d1d5db; }
+    .ah-select-wrap--open { border-color: #ff7a00; }
+    .ah-select-placeholder { font-size: 14px; color: #9ca3af; }
+    .ah-select-val { font-size: 14px; color: #111827; font-weight: 500; }
+    .ah-select-chevron { font-size: 12px; color: #6b7280; flex-shrink: 0; }
+    .ah-select-dropdown {
+        position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 300;
+        background: #fff; border: 1.5px solid #e5e7eb; border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.12);
+        overflow: hidden;
+        animation: ah-slide-in .13s ease;
+    }
+    .ah-select-option {
+        padding: 12px 16px; font-size: 14px; color: #374151;
+        cursor: pointer; transition: background .1s;
+        border-bottom: 1px solid #f5f5f5;
+    }
+    .ah-select-option:last-child { border-bottom: none; }
+    .ah-select-option:hover { background: #f9fafb; color: #111827; }
+    .ah-select-option--sel { background: #fff7ed; color: #ff7a00; font-weight: 600; }
+    .ah-rule-del {
+        width: 32px; height: 32px; flex-shrink: 0;
+        border: none; background: transparent; cursor: pointer;
+        border-radius: 6px; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 15px; color: #9ca3af; transition: color .15s, background .15s;
+    }
+    .ah-rule-del:hover { color: #ef4444; background: #fef2f2; }
+
+    .ah-add-rule-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        margin-top: 20px; border: none; background: transparent;
+        font-size: 15px; font-weight: 600; color: #ff7a00;
+        cursor: pointer; font-family: inherit; padding: 0;
+        transition: color .15s;
+    }
+    .ah-add-rule-btn:hover:not(:disabled) { color: #e66c00; }
+    .ah-add-rule-btn--disabled,
+    .ah-add-rule-btn:disabled {
+        color: #d1d5db !important;
+        cursor: not-allowed !important;
+        opacity: 0.6;
+    }
+
+    .ah-save-err {
+        margin-top: 14px; padding: 10px 14px;
+        background: #fef2f2; border: 1px solid #fca5a5;
+        border-radius: 8px; color: #dc2626; font-size: 13px;
+    }
+
+    .ah-footer {
+        display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+        padding: 20px 32px; border-top: 1.5px solid #f0f0f0; flex-shrink: 0;
+        background: #fff;
+    }
+    .ah-footer-cancel {
+        padding: 12px 28px; border: none; background: transparent;
+        font-size: 15px; font-weight: 600; color: #ff7a00;
+        cursor: pointer; font-family: inherit; border-radius: 8px;
+        transition: background .15s;
+    }
+    .ah-footer-cancel:hover { background: #fff7ed; }
+    .ah-footer-save {
+        padding: 12px 32px; background: #ff7a00; color: #fff; border: none;
+        border-radius: 8px; font-size: 15px; font-weight: 700;
+        cursor: pointer; font-family: inherit; transition: background .15s;
+    }
+    .ah-footer-save:hover { background: #e66c00; }
+    /* ── Delete Confirm Modal ───────────────────────────────────────────── */
+    .ht-modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 3000;
+    }
+    .ht-modal-box {
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+        z-index: 3001; background: #fff; border-radius: 16px;
+        padding: 36px 40px 32px; width: 520px; max-width: 95vw;
+        box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+    }
+    .ht-modal-close {
+        position: absolute; top: 18px; right: 18px;
+        background: none; border: none; cursor: pointer;
+        font-size: 18px; color: #6b7280; line-height: 1;
+    }
+    .ht-modal-title {
+        font-size: 20px; font-weight: 700; color: #111827;
+        margin-bottom: 14px; padding-right: 24px; line-height: 1.35;
+    }
+    .ht-modal-sub {
+        font-size: 14px; color: #6b7280; margin-bottom: 24px; line-height: 1.5;
+    }
+    .ht-modal-label {
+        font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px;
+    }
+    .ht-modal-input {
+        width: 100%; padding: 13px 16px; border: 1.5px solid #e5e7eb;
+        border-radius: 8px; font-size: 15px; font-family: inherit;
+        outline: none; box-sizing: border-box; transition: border-color .15s;
+        margin-bottom: 28px;
+    }
+    .ht-modal-input:focus { border-color: #ff7a00; }
+    .ht-modal-input--valid { border-color: #ff7a00; }
+    .ht-modal-actions {
+        display: flex; justify-content: flex-end; gap: 14px; align-items: center;
+    }
+    .ht-modal-cancel {
+        background: none; border: none; font-size: 15px; font-weight: 600;
+        color: #374151; cursor: pointer; padding: 10px 20px;
+        border-radius: 8px; font-family: inherit;
+    }
+    .ht-modal-cancel:hover { background: #f3f4f6; }
+    .ht-modal-confirm {
+        background: #dc2626; color: #fff; border: none;
+        border-radius: 8px; padding: 12px 28px;
+        font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit;
+        transition: background .15s;
+    }
+    .ht-modal-confirm:hover { background: #b91c1c; }
+    .ht-modal-confirm--disabled { background: #fca5a5; cursor: not-allowed; }
+</style>

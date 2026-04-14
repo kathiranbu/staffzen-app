@@ -1,0 +1,347 @@
+@* Getting Started — Device selection step matching Jibble reference *@
+
+<div class="gsof-root">
+
+    <!-- Left panel -->
+    <div class="gsof-left">
+        <img src="Images/Dashboard/greeting-illustration.png" class="gsof-illustration" alt="Illustration" />
+    </div>
+
+    <!-- Right panel -->
+    <div class="gsof-right">
+        <div class="gsof-inner">
+
+            <h1 class="gsof-title">What devices will your team be using?</h1>
+            <p class="gsof-sub">
+                Select one or more devices. Your choice will customize your set up process.<br />
+                You can always adjust the selections later.
+            </p>
+
+            <!-- Device options -->
+            <div class="gsdf-list">
+
+                <div class="gsdf-item @(MobileApps ? "gsdf-item-selected" : "")" @onclick="() => MobileApps = !MobileApps">
+                    <div class="gsdf-icon-wrap">
+                        <svg viewBox="0 0 80 90" width="56" height="56" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="15" y="5" width="50" height="80" rx="8" fill="#e8eef8" stroke="#c5d3e8" stroke-width="2"/>
+                            <rect x="22" y="18" width="36" height="48" rx="2" fill="#d0dcf0"/>
+                            <rect x="30" y="14" width="20" height="3" rx="1.5" fill="#b0bfd8"/>
+                            <circle cx="40" cy="75" r="4" fill="#b0bfd8"/>
+                            <rect x="26" y="22" width="28" height="4" rx="2" fill="#a0b4d4"/>
+                            <rect x="26" y="30" width="20" height="3" rx="1.5" fill="#b8cce4"/>
+                            <rect x="26" y="37" width="24" height="3" rx="1.5" fill="#b8cce4"/>
+                            <rect x="50" y="44" width="12" height="14" rx="3" fill="#ff6600"/>
+                            <!-- leaf -->
+                            <ellipse cx="64" cy="28" rx="7" ry="12" fill="#c8e6c9" transform="rotate(20 64 28)"/>
+                            <line x1="64" y1="38" x2="62" y2="22" stroke="#a5d6a7" stroke-width="1.5"/>
+                        </svg>
+                    </div>
+                    <div class="gsdf-text">
+                        <span class="gsdf-name">Mobile Apps</span>
+                        <span class="gsdf-desc">With GPS &amp; facial recognition</span>
+                    </div>
+                    <div class="gsdf-checkbox @(MobileApps ? "gsdf-checkbox-checked" : "")">
+                        @if (MobileApps)
+                        {
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <polyline points="2,6 5,9 10,3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        }
+                    </div>
+                </div>
+
+                <div class="gsdf-item @(SharedKiosk ? "gsdf-item-selected" : "")" @onclick="() => SharedKiosk = !SharedKiosk">
+                    <div class="gsdf-icon-wrap">
+                        <svg viewBox="0 0 80 80" width="56" height="56" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="10" y="10" width="60" height="45" rx="4" fill="#e8eef8" stroke="#c5d3e8" stroke-width="2"/>
+                            <rect x="16" y="16" width="48" height="33" rx="2" fill="#d0dcf0"/>
+                            <rect x="16" y="16" width="48" height="10" rx="2" fill="#4a7cc7" opacity="0.7"/>
+                            <rect x="20" y="32" width="30" height="4" rx="2" fill="#a0b4d4"/>
+                            <rect x="20" y="40" width="22" height="3" rx="1.5" fill="#b8cce4"/>
+                            <rect x="55" y="30" width="8" height="18" rx="2" fill="#ff6600" opacity="0.85"/>
+                            <text x="57" y="42" font-size="6" fill="white" font-family="sans-serif">SCAN</text>
+                            <!-- dots -->
+                            <circle cx="16" cy="10" r="3" fill="#a8d8ea" opacity="0.7"/>
+                            <circle cx="68" cy="54" r="2.5" fill="#ff6600" opacity="0.5"/>
+                        </svg>
+                    </div>
+                    <div class="gsdf-text">
+                        <span class="gsdf-name">Shared Kiosk</span>
+                        <span class="gsdf-desc">Quick in &amp; out with PIN, NFC or biometric verification</span>
+                    </div>
+                    <div class="gsdf-checkbox @(SharedKiosk ? "gsdf-checkbox-checked" : "")">
+                        @if (SharedKiosk)
+                        {
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <polyline points="2,6 5,9 10,3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        }
+                    </div>
+                </div>
+
+                <div class="gsdf-item @(WebBrowser ? "gsdf-item-selected" : "")" @onclick="() => WebBrowser = !WebBrowser">
+                    <div class="gsdf-icon-wrap">
+                        <svg viewBox="0 0 80 70" width="56" height="56" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="5" y="8" width="70" height="50" rx="4" fill="#e8eef8" stroke="#c5d3e8" stroke-width="2"/>
+                            <rect x="5" y="8" width="70" height="14" rx="4" fill="#d0dcf0"/>
+                            <circle cx="15" cy="15" r="3" fill="#f0a0a0"/>
+                            <circle cx="25" cy="15" r="3" fill="#f0d080"/>
+                            <circle cx="35" cy="15" r="3" fill="#90d090"/>
+                            <rect x="12" y="28" width="35" height="5" rx="2" fill="#4a7cc7" opacity="0.6"/>
+                            <rect x="12" y="37" width="25" height="4" rx="2" fill="#b8cce4"/>
+                            <circle cx="63" cy="42" r="10" fill="#ff6600" opacity="0.15" stroke="#ff6600" stroke-width="1.5"/>
+                            <line x1="63" y1="36" x2="63" y2="48" stroke="#ff6600" stroke-width="2"/>
+                            <line x1="57" y1="42" x2="69" y2="42" stroke="#ff6600" stroke-width="2"/>
+                            <!-- dots -->
+                            <circle cx="10" cy="8" r="3" fill="#a8d8ea" opacity="0.6"/>
+                        </svg>
+                    </div>
+                    <div class="gsdf-text">
+                        <span class="gsdf-name">Web Browser</span>
+                        <span class="gsdf-desc">Seamless clock in and out from the browser</span>
+                    </div>
+                    <div class="gsdf-checkbox @(WebBrowser ? "gsdf-checkbox-checked" : "")">
+                        @if (WebBrowser)
+                        {
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <polyline points="2,6 5,9 10,3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        }
+                    </div>
+                </div>
+
+                <div class="gsdf-item @(DesktopApps ? "gsdf-item-selected" : "")" @onclick="() => DesktopApps = !DesktopApps">
+                    <div class="gsdf-icon-wrap">
+                        <svg viewBox="0 0 80 80" width="56" height="56" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="8" y="10" width="64" height="44" rx="4" fill="#e8eef8" stroke="#c5d3e8" stroke-width="2"/>
+                            <rect x="14" y="16" width="52" height="32" rx="2" fill="#d0dcf0"/>
+                            <rect x="14" y="16" width="52" height="10" rx="2" fill="#4a7cc7" opacity="0.6"/>
+                            <rect x="18" y="32" width="32" height="4" rx="2" fill="#a0b4d4"/>
+                            <rect x="18" y="40" width="22" height="3" rx="1.5" fill="#b8cce4"/>
+                            <rect x="52" y="30" width="10" height="14" rx="2" fill="#4a7cc7" opacity="0.5"/>
+                            <circle cx="58" cy="37" r="4" fill="#ff6600" opacity="0.85"/>
+                            <line x1="58" y1="34" x2="58" y2="40" stroke="white" stroke-width="1.5"/>
+                            <line x1="55" y1="37" x2="61" y2="37" stroke="white" stroke-width="1.5"/>
+                            <!-- monitor stand -->
+                            <rect x="34" y="54" width="12" height="6" rx="1" fill="#c5d3e8"/>
+                            <rect x="28" y="60" width="24" height="3" rx="1.5" fill="#c5d3e8"/>
+                            <!-- dots -->
+                            <circle cx="72" cy="10" r="3" fill="#a8d8ea" opacity="0.6"/>
+                        </svg>
+                    </div>
+                    <div class="gsdf-text">
+                        <span class="gsdf-name">Desktop Apps</span>
+                        <span class="gsdf-desc">Automate tracking time on installed apps</span>
+                    </div>
+                    <div class="gsdf-checkbox @(DesktopApps ? "gsdf-checkbox-checked" : "")">
+                        @if (DesktopApps)
+                        {
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <polyline points="2,6 5,9 10,3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        }
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Continue button — grey/disabled when nothing selected -->
+            <button class="gsdf-btn-continue @(AnySelected ? "gsdf-btn-active" : "")"
+                    @onclick="OnContinue"
+                    disabled="@(!AnySelected || ContinueLoading)">
+                @(ContinueLoading ? "Setting up..." : "Continue")
+            </button>
+
+        </div>
+    </div>
+</div>
+
+<style>
+    .gsof-root {
+        display: flex;
+        height: calc(100vh - 57px);
+        overflow: hidden;
+        background: #f0f2f5;
+    }
+
+    .gsof-left {
+        flex: 0 0 50%;
+        background: #eef0f5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px 40px;
+        overflow: hidden;
+    }
+
+    .gsof-illustration {
+        width: 100%;
+        max-width: 320px;
+        object-fit: contain;
+    }
+
+    .gsof-right {
+        flex: 0 0 50%;
+        background: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px 56px;
+        overflow-y: auto;
+    }
+
+    .gsof-inner {
+        width: 100%;
+        max-width: 520px;
+    }
+
+    .gsof-title {
+        font-size: 28px;
+        font-weight: 900;
+        color: #111;
+        line-height: 1.15;
+        margin: 0 0 10px;
+        letter-spacing: -0.5px;
+        outline: none !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    .gsof-sub {
+        font-size: 13px;
+        color: #888;
+        margin: 0 0 22px;
+        font-weight: 400;
+        line-height: 1.6;
+    }
+
+    /* ── Device list ── */
+    .gsdf-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 18px;
+    }
+
+    .gsdf-item {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 16px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 10px;
+        cursor: pointer;
+        background: #fff;
+        transition: border-color 0.15s, background 0.15s;
+        user-select: none;
+    }
+
+    .gsdf-item:hover {
+        border-color: #c0c8d8;
+        background: #fafbfc;
+    }
+
+    .gsdf-item-selected {
+        border-color: #ff6600 !important;
+        background: #fff9f5 !important;
+    }
+
+    .gsdf-icon-wrap {
+        flex-shrink: 0;
+        width: 72px;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f4f6fa;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .gsdf-text {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .gsdf-name {
+        font-size: 15px;
+        font-weight: 700;
+        color: #111;
+    }
+
+    .gsdf-desc {
+        font-size: 13px;
+        color: #888;
+    }
+
+    /* ── Checkbox ── */
+    .gsdf-checkbox {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #d1d5db;
+        border-radius: 4px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s, border-color 0.15s;
+        background: #fff;
+    }
+
+    .gsdf-checkbox-checked {
+        background: #ff6600 !important;
+        border-color: #ff6600 !important;
+    }
+
+    /* ── Continue button ── */
+    .gsdf-btn-continue {
+        width: 100%;
+        padding: 14px;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 700;
+        cursor: not-allowed;
+        letter-spacing: 0.2px;
+        background: #e0e0e0;
+        color: #aaa;
+        transition: background 0.2s, color 0.2s;
+    }
+
+    .gsdf-btn-active {
+        background: #ff6600 !important;
+        color: #fff !important;
+        cursor: pointer !important;
+    }
+
+    .gsdf-btn-active:hover:not(:disabled) {
+        background: #e55a00 !important;
+    }
+
+    @@media (max-width: 900px) {
+        .gsof-left { display: none; }
+        .gsof-right { padding: 40px 28px; }
+        .gsof-title { font-size: 22px; }
+    }
+</style>
+
+@code {
+    [Parameter] public bool ContinueLoading { get; set; }
+    [Parameter] public EventCallback OnContinue { get; set; }
+
+    [Parameter] public bool MobileApps { get; set; }
+    [Parameter] public EventCallback<bool> MobileAppsChanged { get; set; }
+
+    [Parameter] public bool SharedKiosk { get; set; }
+    [Parameter] public EventCallback<bool> SharedKioskChanged { get; set; }
+
+    [Parameter] public bool WebBrowser { get; set; }
+    [Parameter] public EventCallback<bool> WebBrowserChanged { get; set; }
+
+    [Parameter] public bool DesktopApps { get; set; }
+    [Parameter] public EventCallback<bool> DesktopAppsChanged { get; set; }
+
+    bool AnySelected => MobileApps || SharedKiosk || WebBrowser || DesktopApps;
+}
