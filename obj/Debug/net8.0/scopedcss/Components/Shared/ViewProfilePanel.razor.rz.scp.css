@@ -1,9 +1,0 @@
-/* Keyframe animations for ViewProfilePanel — must live here, not in the razor @keyframes block */
-
-@keyframes vp-spin-b-lxz42lnis6 {
-    to { transform: rotate(360deg); }
-}
-
-@keyframes vp-shimmer-b-lxz42lnis6 {
-    to { background-position: -200% 0; }
-}
